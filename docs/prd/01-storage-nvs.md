@@ -1,5 +1,7 @@
 # PRD 01 — Storage (NVS)
 
+**Status: concluída** (commit `d92fb39`)
+
 Fonte: [PLANO_ROTEADOR.md](../PLANO_ROTEADOR.md), Fase 1.
 
 ## Objetivo

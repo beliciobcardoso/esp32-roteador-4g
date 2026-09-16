@@ -1,5 +1,7 @@
 # PRD 02 — WiFi AP
 
+**Status: concluída** (validado em hardware pelo usuário)
+
 Fonte: [PLANO_ROTEADOR.md](../PLANO_ROTEADOR.md), Fase 2.
 
 ## Objetivo
