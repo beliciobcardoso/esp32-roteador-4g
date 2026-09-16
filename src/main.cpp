@@ -1,5 +1,9 @@
 #include <Arduino.h>
 
+#include "adapters/nvs_settings_repository.h"
+#include "usecases/load_settings.h"
+#include "usecases/save_settings.h"
+
 #define BATTERY_PIN 35
 #define BOARD_POWERON_PIN 12
 #define TEST_LED_PIN 32 // GPIO32 para testar led externo
@@ -76,6 +80,29 @@ int voltageToPercent(float voltage) {
   return 0;
 }
 
+// Teste isolado da Fase 1 (storage): grava config default no primeiro boot,
+// depois so le e confirma persistencia. Sem WiFi/HTTP ainda (fases futuras).
+void testSettingsStorage() {
+  NvsSettingsRepository repository;
+  LoadSettingsUseCase loadUseCase(repository);
+  SaveSettingsUseCase saveUseCase(repository);
+
+  RouterSettings loaded = loadUseCase.execute();
+  Serial.println("--- Router settings (apos load) ---");
+  Serial.printf("SSID: %s | APN: %s | Admin user: %s\n",
+                loaded.wifi_ssid.c_str(), loaded.apn.c_str(), loaded.admin_user.c_str());
+
+  SaveSettingsResult result = saveUseCase.execute(loaded);
+  if (!result.success) {
+    Serial.printf("Falha ao salvar settings: %s\n", to_string(result.error));
+    return;
+  }
+
+  RouterSettings reloaded = loadUseCase.execute();
+  bool persisted = reloaded.wifi_ssid == loaded.wifi_ssid && reloaded.apn == loaded.apn;
+  Serial.printf("Persistencia confirmada: %s\n", persisted ? "sim" : "nao");
+}
+
 void setup() {
   pinMode(BOARD_POWERON_PIN, OUTPUT);
   digitalWrite(BOARD_POWERON_PIN, HIGH);
@@ -84,6 +111,8 @@ void setup() {
   delay(100); // pequena margem para o circuito de power estabilizar
   Serial.begin(115200);
   analogReadResolution(12);
+
+  testSettingsStorage();
 }
 
 void loop() {
