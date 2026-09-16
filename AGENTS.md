@@ -33,7 +33,7 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 - `infra/` — wrappers finos sobre APIs ESP-IDF/Arduino (WiFi AP, PPP, NAT)
 - `main.cpp` — só orquestração/injeção, zero lógica de negócio
 
-**Estado atual:** só protótipo de leitura de bateria em `src/main.cpp`. Nenhuma fase do plano (NVS, WiFi AP, HTTP config, PPP, NAT) foi implementada ainda.
+**Estado atual:** Fase 1 (NVS storage) implementada — ver [docs/prd/01-storage-nvs.md](docs/prd/01-storage-nvs.md). Fases 2-6 (WiFi AP, HTTP config, PPP, NAT, integração/testes de carga) ainda não implementadas — PRDs em [docs/prd/](docs/prd/).
 
 ## Decisões já fechadas (não reabrir sem motivo)
 
@@ -51,6 +51,12 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 ## Débitos técnicos conhecidos
 
 Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
+
+## Workflow de PRD/feature (obrigatório — consultar antes de iniciar e antes de concluir)
+
+- **Ao iniciar** uma feature de um PRD: criar branch a partir de `developer` (nunca direto em `main`)
+- **Ao finalizar** uma feature: aguardar validação do usuário antes de qualquer `git commit` ou merge para `developer`
+- **Proibido criar PRs sem autorização explícita do usuário** — em nenhuma hipótese
 
 ## Regras de código
 
