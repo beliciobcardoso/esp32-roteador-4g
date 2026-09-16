@@ -1,5 +1,7 @@
 # PRD 03 — Servidor de Configuração HTTP
 
+**Status: concluída** (validado em hardware pelo usuário)
+
 Fonte: [PLANO_ROTEADOR.md](../PLANO_ROTEADOR.md), Fase 3.
 
 ## Objetivo
