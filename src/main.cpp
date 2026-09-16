@@ -1,6 +1,8 @@
 #include <Arduino.h>
+#include <WiFi.h>
 
 #include "adapters/nvs_settings_repository.h"
+#include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
 #include "usecases/save_settings.h"
 
@@ -103,6 +105,25 @@ void testSettingsStorage() {
   Serial.printf("Persistencia confirmada: %s\n", persisted ? "sim" : "nao");
 }
 
+// Teste isolado da Fase 2 (WiFi AP): sobe o AP com as settings persistidas/default
+// e confirma via serial o SSID e IP fixo. Sem HTTP/PPP/NAT ainda (fases futuras).
+void testWifiAp() {
+  NvsSettingsRepository repository;
+  LoadSettingsUseCase loadUseCase(repository);
+  RouterSettings settings = loadUseCase.execute();
+
+  WifiAp wifiAp;
+  bool started = wifiAp.start(settings);
+
+  Serial.println("--- WiFi AP ---");
+  if (!started) {
+    Serial.println("Falha ao subir o AP");
+    return;
+  }
+  Serial.printf("AP ativo | SSID: %s | IP: %s\n",
+                settings.wifi_ssid.c_str(), WiFi.softAPIP().toString().c_str());
+}
+
 void setup() {
   pinMode(BOARD_POWERON_PIN, OUTPUT);
   digitalWrite(BOARD_POWERON_PIN, HIGH);
@@ -113,6 +134,7 @@ void setup() {
   analogReadResolution(12);
 
   testSettingsStorage();
+  testWifiAp();
 }
 
 void loop() {
