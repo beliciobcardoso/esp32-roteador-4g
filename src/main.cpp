@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
+#include "adapters/http_config_handler.h"
 #include "adapters/nvs_settings_repository.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
@@ -124,6 +125,13 @@ void testWifiAp() {
                 settings.wifi_ssid.c_str(), WiFi.softAPIP().toString().c_str());
 }
 
+// Persistentes por toda a vida do firmware — o WebServer precisa sobreviver entre
+// chamadas de loop(), diferente dos testes isolados acima que sao "fire and forget".
+NvsSettingsRepository httpRepository;
+LoadSettingsUseCase httpLoadUseCase(httpRepository);
+SaveSettingsUseCase httpSaveUseCase(httpRepository);
+HttpConfigHandler httpConfigHandler(httpLoadUseCase, httpSaveUseCase);
+
 void setup() {
   pinMode(BOARD_POWERON_PIN, OUTPUT);
   digitalWrite(BOARD_POWERON_PIN, HIGH);
@@ -135,9 +143,12 @@ void setup() {
 
   testSettingsStorage();
   testWifiAp();
+  httpConfigHandler.begin();
 }
 
 void loop() {
+  httpConfigHandler.handleClient();
+
   digitalWrite(TEST_LED_PIN, HIGH);
   delay(500);
   digitalWrite(TEST_LED_PIN, LOW);
