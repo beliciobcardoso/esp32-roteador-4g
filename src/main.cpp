@@ -5,6 +5,7 @@
 #include "../include/config.h"
 #include "adapters/http_config_handler.h"
 #include "adapters/nvs_settings_repository.h"
+#include "infra/link_supervisor.h"
 #include "infra/modem_ppp.h"
 #include "infra/nat_bridge.h"
 #include "infra/wifi_ap.h"
@@ -97,15 +98,20 @@ HttpConfigHandler httpConfigHandler(loadSettingsUseCase, saveSettingsUseCase);
 WifiAp wifiAp;
 ModemPpp modemPpp;
 NatBridge natBridge;
+LinkSupervisor linkSupervisor(modemPpp, natBridge);
 
-// Attach LTE ja terminou quando chegamos aqui; o que falta e so LCP/IPCP, questao de
-// segundos. Um minuto e folga pra rede ruim, nao expectativa.
-constexpr uint32_t kPppIpTimeoutMs = 60000;
+// Ponte entre o adaptador HTTP e o supervisor: o handler nao conhece o modem, e o
+// supervisor nao conhece HTTP.
+void onUplinkSettingsChanged(const RouterSettings& updated) {
+  linkSupervisor.applySettings(updated);
+}
 
-// Sobe o roteador na ordem que as dependencias exigem: config -> AP -> modem -> NAT.
-// Cada etapa so faz sentido com a anterior de pe, entao para na primeira falha e diz
-// onde parou. O AP fica no ar mesmo se o 4G falhar — e por ele que se chega na pagina
-// de configuracao pra corrigir o APN, entao derrubar tudo deixaria a placa inacessivel.
+// Sobe o roteador na ordem que as dependencias exigem: config -> AP -> supervisao do
+// uplink. O AP e sincrono porque a pagina de configuracao depende dele; o 4G fica com o
+// supervisor, que conecta em background e reconecta sozinho depois.
+//
+// O AP fica no ar mesmo se o 4G nunca conectar — e por ele que se chega na pagina de
+// configuracao pra corrigir o APN, entao derrubar tudo deixaria a placa inacessivel.
 bool startRouting() {
   RouterSettings settings = loadSettingsUseCase.execute();
   Serial.printf("Roteamento: SSID \"%s\" | APN \"%s\"\n",
@@ -117,22 +123,12 @@ bool startRouting() {
   }
   Serial.printf("Roteamento: AP no ar em %s\n", WiFi.softAPIP().toString().c_str());
 
-  if (!modemPpp.start(settings)) {
-    Serial.println("Roteamento: parou no modem — AP continua no ar so pra configuracao");
+  if (!linkSupervisor.begin(settings)) {
+    Serial.println("Roteamento: parou na supervisao do uplink — AP so pra configuracao");
     return false;
   }
 
-  if (!modemPpp.waitForIp(kPppIpTimeoutMs)) {
-    Serial.println("Roteamento: parou esperando IP da operadora — sem uplink, sem NAT");
-    return false;
-  }
-
-  if (!natBridge.enable(modemPpp.netif())) {
-    Serial.println("Roteamento: parou no NAT — clientes do AP nao vao sair pra internet");
-    return false;
-  }
-
-  Serial.println("Roteamento: completo — clientes do AP saem pelo 4G");
+  Serial.println("Roteamento: AP no ar, uplink 4G conectando em background");
   return true;
 }
 
@@ -150,17 +146,40 @@ void setup() {
   esp_log_level_set("gpio", ESP_LOG_WARN);
 
   startRouting();
+  httpConfigHandler.onUplinkSettingsChanged(&onUplinkSettingsChanged);
   httpConfigHandler.begin();
 }
 
-void loop() {
-  httpConfigHandler.handleClient();
+// Cadencias do loop. Antes eram delay() em sequencia, o que segurava o loop inteiro por
+// ~3s: o handleClient() so rodava uma vez a cada 3s (a pagina de config demorava a
+// responder) e a supervisao do modem so reagiria a uma queda com ate 3s de atraso.
+constexpr unsigned long kLedBlinkIntervalMs = 500;
+constexpr unsigned long kBatteryReportIntervalMs = 3000;
 
-  digitalWrite(TEST_LED_PIN, HIGH);
-  delay(500);
-  digitalWrite(TEST_LED_PIN, LOW);
-  delay(500);
+// Marcos da ultima execucao de cada tarefa periodica. unsigned long com aritmetica de
+// subtracao trata o overflow de millis() (~49 dias) corretamente — nao trocar por
+// comparacao direta de instantes, que quebra na virada.
+unsigned long lastLedToggleMs = 0;
+unsigned long lastBatteryReportMs = 0;
+bool ledOn = false;
 
+void blinkLed(unsigned long now) {
+  if (now - lastLedToggleMs < kLedBlinkIntervalMs) {
+    return;
+  }
+  lastLedToggleMs = now;
+  ledOn = !ledOn;
+  digitalWrite(TEST_LED_PIN, ledOn ? HIGH : LOW);
+}
+
+void reportBattery(unsigned long now) {
+  if (now - lastBatteryReportMs < kBatteryReportIntervalMs) {
+    return;
+  }
+  lastBatteryReportMs = now;
+
+  // Ainda bloqueia ~100ms (NUM_SAMPLES x delay(5)). Mantido: a media e o que tira o ruido
+  // do ADC, e 100ms a cada 3s nao atrapalha nem o HTTP nem a supervisao do modem.
   float batteryVoltage = readBatteryVoltage();
   int percent = voltageToPercent(batteryVoltage);
 
@@ -169,6 +188,12 @@ void loop() {
   Serial.print("V | ~");
   Serial.print(percent);
   Serial.println("%");
+}
 
-  delay(2000);
+void loop() {
+  unsigned long now = millis();
+
+  httpConfigHandler.handleClient();
+  blinkLed(now);
+  reportBattery(now);
 }
