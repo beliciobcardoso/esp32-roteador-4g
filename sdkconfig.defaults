@@ -3,3 +3,23 @@ CONFIG_LWIP_IP_FORWARD=y
 CONFIG_LWIP_NAPT=y
 CONFIG_FREERTOS_HZ=1000
 CONFIG_AUTOSTART_ARDUINO=y
+
+# Fase 4 (modem PPP via esp_modem) — habilita suporte PPP no esp_netif/lwIP,
+# desligado por default no sdkconfig do esp-wrover-kit.
+CONFIG_LWIP_PPP_SUPPORT=y
+
+# A Vivo autentica o APN via PAP. Sem PAP_SUPPORT o lwIP compila
+# pppapi_set_auth fora e esp_netif_ppp_set_auth devolve ESP_ERR_ESP_NETIF_IF_NOT_READY,
+# ou seja: usuario/senha do APN seriam ignorados sem nenhum erro de conexao.
+CONFIG_LWIP_PPP_PAP_SUPPORT=y
+
+# Fase 4: a flash real da T-A7670E R2 e de 4MB, mas o board esp-wrover-kit do PlatformIO
+# entrava com o default de 2MB e a tabela partitions_singleapp (app de 1MB, ja em 87%).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Tabela propria: dois slots de app de 1.875MB para OTA. O dispositivo fica em campo
+# com link celular proprio — gravar por serial em cada atualizacao nao e viavel, e o
+# dual-slot permite voltar atras se um firmware ruim subir.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+

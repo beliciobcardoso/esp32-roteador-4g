@@ -1,0 +1,321 @@
+#include "modem_ppp.h"
+
+#include <Arduino.h>
+#include <esp_event.h>
+#include <esp_log.h>
+
+// Workaround: esp_modem_api.h usa `PdpContext` numa declaracao de funcao antes de
+// qualquer forward-declare do tipo (gap do header da versao ^1.1.0 do componente
+// espressif/esp_modem). So precisa ser um tipo incompleto para a declaracao compilar.
+struct PdpContext;
+
+#include <esp_modem_api.h>
+#include <esp_netif.h>
+#include <esp_netif_ppp.h>
+
+#include <string_view>
+
+#include "../../include/config.h"
+
+namespace {
+
+// Ton(uart) da SIMCom: a UART do A7670 so fica pronta ~8s depois do pulso de PWRKEY.
+// O orcamento precisa passar disso com folga, senao o sync falha por pura pressa.
+constexpr int kAtSyncMaxAttempts = 20;
+constexpr int kAtSyncRetryDelayMs = 1000;
+// Passou de Ton(uart) sem responder: o pulso provavelmente nao pegou. Tenta de novo.
+constexpr int kAtSyncRepulseAttempt = 12;
+// Ton(pwrkey) do A7670: a SIMCom exige o pino segurado por ~1s. Os 100ms que
+// estavam aqui ficavam abaixo do minimo e o primeiro pulso simplesmente nao ligava
+// o modulo — o sync AT so passava depois do re-pulso. Valor conferido contra o
+// LilyGo-Modem-Series (examples/Network), que usa delay(1000).
+constexpr int kPwrKeyPulseMs = 1000;
+// O modem responde AT antes de terminar de inicializar o SIM; o orcamento cobre
+// essa janela sem confundir "SIM acordando" com "SIM ausente".
+constexpr int kSimReadyMaxAttempts = 20;
+constexpr int kSimReadyRetryDelayMs = 1000;
+constexpr int kSimReadyLogEvery = 5;
+constexpr int kRegistrationMaxAttempts = 60;
+constexpr int kRegistrationRetryDelayMs = 1000;
+// Despejo de diagnostico a cada N tentativas — o suficiente pra acompanhar a evolucao
+// do attach sem afogar o serial.
+constexpr int kRegistrationLogEvery = 10;
+
+void onPppEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
+  if (base == IP_EVENT && id == IP_EVENT_PPP_GOT_IP) {
+    Serial.println("PPP: IP recebido da operadora");
+  } else if (base == NETIF_PPP_STATUS && id == NETIF_PPP_ERRORUSER) {
+    Serial.println("PPP: modem parou (erro do usuario/timeout)");
+  }
+}
+
+// O A7670E leva alguns segundos alem do pulso de PWRKEY pra comecar a responder AT,
+// e o esp_modem nao tenta de novo sozinho: sem essa espera o set_mode(DATA) seguinte
+// falha silenciosamente. Tempo medido na T-A7670E R2: sync passa na 3a tentativa.
+//
+// Pulso de PWRKEY isolado: usado no power-on e de novo se o modem nao responder AT,
+// espelhando o retry do exemplo oficial. Desligar exigiria segurar >=2.5s (Toff da
+// SIMCom), entao repetir um pulso de 100ms nunca derruba um modem ja ligado.
+void pulsePwrKey() {
+  digitalWrite(MODEM_PWRKEY_PIN, LOW);
+  delay(100);
+  digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+  delay(kPwrKeyPulseMs);
+  digitalWrite(MODEM_PWRKEY_PIN, LOW);
+}
+
+// O A7670E leva ~8s (Ton(uart) da SIMCom) alem do pulso de PWRKEY pra comecar a
+// responder AT, e o esp_modem nao tenta de novo sozinho: sem essa espera o
+// set_mode(DATA) seguinte falha silenciosamente.
+bool waitForAtReady(esp_modem_dce_t* dce) {
+  for (int attempt = 1; attempt <= kAtSyncMaxAttempts; attempt++) {
+    if (esp_modem_sync(dce) == ESP_OK) {
+      Serial.printf("Modem: respondeu AT na tentativa %d\n", attempt);
+      return true;
+    }
+
+    if (attempt == kAtSyncRepulseAttempt) {
+      Serial.println("Modem: sem resposta AT apos Ton(uart), repetindo pulso de PWRKEY");
+      pulsePwrKey();
+    }
+    delay(kAtSyncRetryDelayMs);
+  }
+  Serial.println("Modem: nao respondeu AT — verificar alimentacao e pinagem da UART");
+  return false;
+}
+
+// Estados do +CREG (3GPP TS 27.007): 1 = registrado na rede local, 5 = em roaming.
+bool isRegistered(int state) {
+  return state == 1 || state == 5;
+}
+
+// Callback de esp_modem_command: recebe cada linha crua da resposta. ESP_OK encerra o
+// comando com sucesso, ESP_FAIL com erro, e qualquer outro valor pede mais linhas ate
+// estourar o timeout. Imprimir a linha aqui e o unico jeito pratico de ver o dialogo
+// AT sem depender dos ESP_LOGV do componente.
+esp_err_t onAtResponseLine(uint8_t* data, size_t len) {
+  // Corta o CR/LF do fim so pra nao picotar o log em linhas vazias.
+  while (len > 0 && (data[len - 1] == '\r' || data[len - 1] == '\n')) {
+    len--;
+  }
+  if (len > 0) {
+    Serial.printf("    AT< %.*s\n", static_cast<int>(len), reinterpret_cast<const char*>(data));
+  }
+
+  std::string_view line(reinterpret_cast<const char*>(data), len);
+  if (line.find("ERROR") != std::string_view::npos) {
+    return ESP_FAIL;
+  }
+  if (line.find("OK") != std::string_view::npos) {
+    return ESP_OK;
+  }
+  return ESP_ERR_NOT_FINISHED;
+}
+
+// esp_modem_command e uma das poucas funcoes da C API escritas a mao (nao geradas pelo
+// .inc): a assinatura do header bate com a implementacao, sem std::string no meio.
+// esp_modem_set_pdp_context, gerada, declara PdpContext& em C++ mas recebe o struct C
+// de const char* na implementacao — tipos de layout incompativel, nao da pra usar.
+bool runAtCommand(esp_modem_dce_t* dce, const char* command, uint32_t timeoutMs) {
+  Serial.printf("    AT> %s\n", command);
+  esp_err_t result = esp_modem_command(dce, command, &onAtResponseLine, timeoutMs);
+  if (result != ESP_OK) {
+    Serial.printf("    AT! falhou [%s]\n", esp_err_to_name(result));
+  }
+  return result == ESP_OK;
+}
+
+// ATENCAO: nao usar esp_modem_at nem nenhum comando com saida de string (get_imsi,
+// get_operator_name). O header do componente, compilado em C++, declara o parametro
+// de saida como `std::string&`, mas a implementacao em esp_modem_c_api.cpp e
+// `char *p_out` e faz strlcpy ate CONFIG_ESP_MODEM_C_API_STR_MAX nele. Passar um
+// std::string arrasa a stack e derruba a placa no interrupt watchdog. Os comandos
+// com saida int/bool nao tem esse problema: ali a ABI de referencia e ponteiro
+// coincide de verdade.
+void dumpNetworkDiagnostics(esp_modem_dce_t* dce) {
+  int rssi = 0;
+  int ber = 0;
+  esp_err_t csqResult = esp_modem_get_signal_quality(dce, rssi, ber);
+  // RSSI 99 no 3GPP TS 27.007 significa "desconhecido ou nao detectavel", nao sinal zero.
+  Serial.printf("    CSQ [%s] rssi=%d ber=%d\n", esp_err_to_name(csqResult), rssi, ber);
+
+  // Resposta crua do registro e da operadora: o parser do esp_modem pega so o campo
+  // depois da primeira virgula, e ja devolveu estado=11 (que nao existe no 3GPP
+  // TS 27.007). Ver o texto literal e a unica forma de saber o que o modulo respondeu.
+  runAtCommand(dce, "AT+CEREG?\r", 2000);
+  runAtCommand(dce, "AT+COPS?\r", 5000);
+  runAtCommand(dce, "AT+CGDCONT?\r", 2000);
+}
+
+// Logo depois do boot o modulo ja responde AT mas ainda esta lendo o cartao: nessa
+// janela AT+CPIN? volta "+CME ERROR: 14 (SIM busy)" e o esp_modem so propaga
+// ESP_FAIL, indistinguivel de cartao ausente. Uma sondagem unica dava falso negativo
+// — insiste dentro de um orcamento antes de culpar o hardware.
+// ESP_OK com pinOk=false e outra coisa: o cartao respondeu e esta pedindo PIN, o que
+// nenhum retry resolve.
+bool waitForSimReady(esp_modem_dce_t* dce) {
+  for (int attempt = 1; attempt <= kSimReadyMaxAttempts; attempt++) {
+    bool pinOk = false;
+    esp_err_t pinResult = esp_modem_read_pin(dce, pinOk);
+    if (pinResult == ESP_OK && pinOk) {
+      Serial.printf("Modem: SIM pronto na tentativa %d\n", attempt);
+      return true;
+    }
+    if (pinResult == ESP_OK && !pinOk) {
+      Serial.println("Modem: SIM pede PIN — desbloquear o cartao antes de usar");
+      return false;
+    }
+    if (attempt % kSimReadyLogEvery == 1) {
+      Serial.printf("Modem: aguardando SIM (%ds) | CPIN -> [%s]\n",
+                    attempt, esp_err_to_name(pinResult));
+    }
+    delay(kSimReadyRetryDelayMs);
+  }
+  Serial.println("Modem: SIM nao respondeu ao AT+CPIN? — conferir encaixe do cartao");
+  return false;
+}
+
+// O esp_modem so manda AT+CGDCONT dentro de setup_data_mode(), que roda no
+// set_mode(DATA) — ou seja, depois da espera por registro. Tarde demais: em LTE o
+// attach ja carrega um PDN Connectivity Request, entao o modulo tentava registrar
+// com o contexto de fabrica dele e a operadora recusava (CEREG=3). Gravar o APN
+// aqui, antes do CEREG, e o que faz o attach usar o APN certo.
+bool applyPdpContext(esp_modem_dce_t* dce, const String& apn) {
+  // esp_modem_set_apn() nao serve aqui: ele so troca o PdpContext guardado em memoria,
+  // que continua sendo enviado la no setup_data_mode(). Precisa ser o AT cru agora.
+  String command = "AT+CGDCONT=1,\"IP\",\"" + apn + "\"\r";
+  Serial.printf("Modem: gravando APN \"%s\" no contexto 1\n", apn.c_str());
+  return runAtCommand(dce, command.c_str(), 3000);
+}
+
+// Discar antes do modem registrar na rede faz o PPP subir e nunca receber IP.
+// Attach LTE leva bem mais que o handshake AT, entao precisa de espera propria.
+// Os parametros OUT do esp_modem sao referencia (nao ponteiro) quando o header
+// e incluido em C++.
+bool waitForNetwork(esp_modem_dce_t* dce, const String& apn) {
+  if (!waitForSimReady(dce)) {
+    return false;
+  }
+
+  if (!applyPdpContext(dce, apn)) {
+    return false;
+  }
+
+  for (int attempt = 1; attempt <= kRegistrationMaxAttempts; attempt++) {
+    int state = 0;
+    esp_err_t result = esp_modem_get_network_registration_state(dce, state);
+    if (result == ESP_OK && isRegistered(state)) {
+      int rssi = 0;
+      int ber = 0;
+      esp_modem_get_signal_quality(dce, rssi, ber);
+      Serial.printf("Modem: registrado (CEREG=%d) apos %ds | RSSI=%d\n", state, attempt, rssi);
+      return true;
+    }
+
+    if (attempt % kRegistrationLogEvery == 1) {
+      Serial.printf("Modem: aguardando registro (%ds) | CEREG -> [%s] estado=%d\n",
+                    attempt, esp_err_to_name(result), state);
+      dumpNetworkDiagnostics(dce);
+    }
+    delay(kRegistrationRetryDelayMs);
+  }
+
+  Serial.println("Modem: nao registrou na rede — verificar antena LTE, SIM e cobertura");
+  return false;
+}
+
+}  // namespace
+
+void ModemPpp::powerOnSequence() {
+  // Ordem da sequencia oficial da LilyGO (LilyGo-Modem-Series, examples/Network):
+  // POWERON HIGH -> pulso de RESET -> DTR LOW -> pulso de PWRKEY.
+  // POWERON (GPIO12) ja foi ligado no setup(), antes de tudo.
+
+  // O modem tem alimentacao propria e sobrevive a um reboot do ESP32 — sem reset ele
+  // pode continuar em modo de dados ou dormindo, e a UART fica muda. O reset e o unico
+  // jeito de partir de um estado conhecido. 2600ms segue o Treset da SIMCom (min 2s).
+  pinMode(MODEM_RESET_PIN, OUTPUT);
+  digitalWrite(MODEM_RESET_PIN, !MODEM_RESET_LEVEL);
+  delay(100);
+  digitalWrite(MODEM_RESET_PIN, MODEM_RESET_LEVEL);
+  delay(2600);
+  digitalWrite(MODEM_RESET_PIN, !MODEM_RESET_LEVEL);
+
+  // DTR em nivel alto mantem o modulo em sleep, ignorando AT.
+  pinMode(MODEM_DTR_PIN, OUTPUT);
+  digitalWrite(MODEM_DTR_PIN, LOW);
+
+  pinMode(MODEM_PWRKEY_PIN, OUTPUT);
+  pulsePwrKey();
+}
+
+bool ModemPpp::start(const RouterSettings& settings) {
+  // Para depurar o dialogo AT cru: ligar CONFIG_ESP_MODEM_ADD_DEBUG_LOGS=y e
+  // CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y, e subir os TAGs command_lib, modem_api e
+  // uart_terminal para ESP_LOG_VERBOSE. Sao esses os TAGs reais do componente
+  // ("esp-modem" nao e TAG de nada e nao produz saida nenhuma).
+  powerOnSequence();
+
+  // esp_netif e o event loop default sao pre-requisito de esp_netif_new/esp_event_handler_register
+  // (todo exemplo oficial esp_modem chama isso antes). Idempotente: retorna ESP_ERR_INVALID_STATE se
+  // ja inicializado (ex.: pelo WiFi arduino), o que e esperado aqui e nao indica falha.
+  esp_netif_init();
+  esp_event_loop_create_default();
+
+  esp_event_handler_register(IP_EVENT, IP_EVENT_PPP_GOT_IP, &onPppEvent, nullptr);
+  esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &onPppEvent, nullptr);
+
+  esp_netif_config_t netifPppConfig = ESP_NETIF_DEFAULT_PPP();
+  esp_netif_t* pppNetif = esp_netif_new(&netifPppConfig);
+  if (pppNetif == nullptr) {
+    return false;
+  }
+
+  // A Vivo exige PAP no APN (usuario/senha "vivo"). Autenticar na camada PPP evita
+  // AT+CGAUTH: o esp_modem_at do componente declara o parametro de saida como
+  // std::string& no header C++ mas faz strlcpy de char* na implementacao, e usa-lo
+  // arrasa a stack. Operadora sem autenticacao so deixa os campos vazios.
+  // Exige CONFIG_LWIP_PPP_PAP_SUPPORT=y: sem isso o esp_netif devolve
+  // ESP_ERR_ESP_NETIF_IF_NOT_READY e a autenticacao e silenciosamente ignorada.
+  if (settings.apn_user.length() > 0) {
+    esp_err_t authResult = esp_netif_ppp_set_auth(pppNetif, NETIF_PPP_AUTHTYPE_PAP,
+                                                  settings.apn_user.c_str(),
+                                                  settings.apn_password.c_str());
+    Serial.printf("PPP: auth PAP usuario=\"%s\" -> [%s]\n",
+                  settings.apn_user.c_str(), esp_err_to_name(authResult));
+    if (authResult != ESP_OK) {
+      Serial.println("PPP: falha ao configurar PAP — conexao segue sem autenticacao");
+    }
+  }
+
+  esp_modem_dte_config_t dteConfig = ESP_MODEM_DTE_DEFAULT_CONFIG();
+  dteConfig.uart_config.tx_io_num = MODEM_TX_PIN;
+  dteConfig.uart_config.rx_io_num = MODEM_RX_PIN;
+  dteConfig.uart_config.baud_rate = MODEM_UART_BAUD;
+  // A7670E aqui usa so TX/RX (sem flow control) — o default do esp_modem deixa
+  // rts_io_num/cts_io_num apontando pra GPIOs reais (27/23), que colidem com o TX
+  // (GPIO27) e causam falha silenciosa no uart_set_pin. Desliga os dois.
+  dteConfig.uart_config.rts_io_num = UART_PIN_NO_CHANGE;
+  dteConfig.uart_config.cts_io_num = UART_PIN_NO_CHANGE;
+
+  esp_modem_dce_config_t dceConfig = ESP_MODEM_DCE_DEFAULT_CONFIG(settings.apn.c_str());
+
+  // A7670E usa conjunto de comandos AT compativel com o perfil SIM7600 do esp_modem.
+  esp_modem_dce_t* dce = esp_modem_new_dev(ESP_MODEM_DCE_SIM7600, &dteConfig, &dceConfig, pppNetif);
+  Serial.printf("Modem: esp_modem_new_dev -> %s\n", dce == nullptr ? "NULL" : "ok");
+  if (dce == nullptr) {
+    return false;
+  }
+
+  if (!waitForAtReady(dce)) {
+    return false;
+  }
+
+  if (!waitForNetwork(dce, settings.apn)) {
+    return false;
+  }
+
+  esp_err_t modeResult = esp_modem_set_mode(dce, ESP_MODEM_MODE_DATA);
+  Serial.printf("Modem: set_mode(DATA) -> %s\n", esp_err_to_name(modeResult));
+  return modeResult == ESP_OK;
+}

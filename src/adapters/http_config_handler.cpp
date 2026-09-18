@@ -35,6 +35,7 @@ void HttpConfigHandler::handleGetRoot() {
   String page = kConfigPageTemplate;
   page.replace("{{SSID}}", current.wifi_ssid);
   page.replace("{{APN}}", current.apn);
+  page.replace("{{APN_USER}}", current.apn_user);
   page.replace("{{ADMIN_USER}}", current.admin_user);
   server_.send(200, "text/html", page);
 }
@@ -50,6 +51,9 @@ void HttpConfigHandler::handlePostRoot() {
   String newWifiPassword = server_.arg("wifi_password");
   updated.wifi_password = newWifiPassword.length() > 0 ? newWifiPassword : current.wifi_password;
   updated.apn = server_.arg("apn");
+  updated.apn_user = server_.arg("apn_user");
+  String newApnPassword = server_.arg("apn_password");
+  updated.apn_password = newApnPassword.length() > 0 ? newApnPassword : current.apn_password;
   updated.admin_user = server_.arg("admin_user");
   String newAdminPassword = server_.arg("admin_password");
   updated.admin_password = newAdminPassword.length() > 0 ? newAdminPassword : current.admin_password;

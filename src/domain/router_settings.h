@@ -7,6 +7,10 @@ struct RouterSettings {
   String wifi_ssid;
   String wifi_password;
   String apn;
+  // Credenciais PAP do APN. Opcionais de proposito: varias operadoras aceitam APN
+  // sem autenticacao, e exigir os campos quebraria esses casos.
+  String apn_user;
+  String apn_password;
   String admin_user;
   String admin_password;
 };
