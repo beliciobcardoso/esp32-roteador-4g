@@ -6,6 +6,7 @@
 #include "adapters/http_config_handler.h"
 #include "adapters/nvs_settings_repository.h"
 #include "infra/modem_ppp.h"
+#include "infra/nat_bridge.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
 #include "usecases/save_settings.h"
@@ -85,70 +86,55 @@ int voltageToPercent(float voltage) {
   return 0;
 }
 
-// Teste isolado da Fase 1 (storage): grava config default no primeiro boot,
-// depois so le e confirma persistencia. Sem WiFi/HTTP ainda (fases futuras).
-void testSettingsStorage() {
-  NvsSettingsRepository repository;
-  LoadSettingsUseCase loadUseCase(repository);
-  SaveSettingsUseCase saveUseCase(repository);
+// Persistentes por toda a vida do firmware: o WebServer precisa sobreviver entre
+// chamadas de loop(), e o modem/AP guardam os handles de esp_netif que o NAT usa e
+// que a reconexao automatica (Fase 6) vai precisar.
+NvsSettingsRepository settingsRepository;
+LoadSettingsUseCase loadSettingsUseCase(settingsRepository);
+SaveSettingsUseCase saveSettingsUseCase(settingsRepository);
+HttpConfigHandler httpConfigHandler(loadSettingsUseCase, saveSettingsUseCase);
 
-  RouterSettings loaded = loadUseCase.execute();
-  Serial.println("--- Router settings (apos load) ---");
-  Serial.printf("SSID: %s | APN: %s | Admin user: %s\n",
-                loaded.wifi_ssid.c_str(), loaded.apn.c_str(), loaded.admin_user.c_str());
+WifiAp wifiAp;
+ModemPpp modemPpp;
+NatBridge natBridge;
 
-  SaveSettingsResult result = saveUseCase.execute(loaded);
-  if (!result.success) {
-    Serial.printf("Falha ao salvar settings: %s\n", to_string(result.error));
-    return;
+// Attach LTE ja terminou quando chegamos aqui; o que falta e so LCP/IPCP, questao de
+// segundos. Um minuto e folga pra rede ruim, nao expectativa.
+constexpr uint32_t kPppIpTimeoutMs = 60000;
+
+// Sobe o roteador na ordem que as dependencias exigem: config -> AP -> modem -> NAT.
+// Cada etapa so faz sentido com a anterior de pe, entao para na primeira falha e diz
+// onde parou. O AP fica no ar mesmo se o 4G falhar — e por ele que se chega na pagina
+// de configuracao pra corrigir o APN, entao derrubar tudo deixaria a placa inacessivel.
+bool startRouting() {
+  RouterSettings settings = loadSettingsUseCase.execute();
+  Serial.printf("Roteamento: SSID \"%s\" | APN \"%s\"\n",
+                settings.wifi_ssid.c_str(), settings.apn.c_str());
+
+  if (!wifiAp.start(settings)) {
+    Serial.println("Roteamento: parou no SoftAP — nem o AP nem a config HTTP vao responder");
+    return false;
+  }
+  Serial.printf("Roteamento: AP no ar em %s\n", WiFi.softAPIP().toString().c_str());
+
+  if (!modemPpp.start(settings)) {
+    Serial.println("Roteamento: parou no modem — AP continua no ar so pra configuracao");
+    return false;
   }
 
-  RouterSettings reloaded = loadUseCase.execute();
-  bool persisted = reloaded.wifi_ssid == loaded.wifi_ssid && reloaded.apn == loaded.apn;
-  Serial.printf("Persistencia confirmada: %s\n", persisted ? "sim" : "nao");
-}
-
-// Teste isolado da Fase 2 (WiFi AP): sobe o AP com as settings persistidas/default
-// e confirma via serial o SSID e IP fixo. Sem HTTP/PPP/NAT ainda (fases futuras).
-void testWifiAp() {
-  NvsSettingsRepository repository;
-  LoadSettingsUseCase loadUseCase(repository);
-  RouterSettings settings = loadUseCase.execute();
-
-  WifiAp wifiAp;
-  bool started = wifiAp.start(settings);
-
-  Serial.println("--- WiFi AP ---");
-  if (!started) {
-    Serial.println("Falha ao subir o AP");
-    return;
+  if (!modemPpp.waitForIp(kPppIpTimeoutMs)) {
+    Serial.println("Roteamento: parou esperando IP da operadora — sem uplink, sem NAT");
+    return false;
   }
-  Serial.printf("AP ativo | SSID: %s | IP: %s\n",
-                settings.wifi_ssid.c_str(), WiFi.softAPIP().toString().c_str());
+
+  if (!natBridge.enable(modemPpp.netif())) {
+    Serial.println("Roteamento: parou no NAT — clientes do AP nao vao sair pra internet");
+    return false;
+  }
+
+  Serial.println("Roteamento: completo — clientes do AP saem pelo 4G");
+  return true;
 }
-
-// Teste isolado da Fase 4 (modem PPP): power-on do A7670E e sobe PPPoS com o APN
-// salvo. IP da operadora chega de forma assincrona (log via onPppEvent), nao
-// bloqueia o boot. Sem NAT/roteamento ainda (fase seguinte).
-void testModemPpp() {
-  NvsSettingsRepository repository;
-  LoadSettingsUseCase loadUseCase(repository);
-  RouterSettings settings = loadUseCase.execute();
-
-  ModemPpp modemPpp;
-  bool started = modemPpp.start(settings);
-
-  Serial.println("--- Modem PPP ---");
-  Serial.printf("Inicializacao do DCE/PPPoS: %s | APN: %s\n",
-                started ? "ok" : "falhou", settings.apn.c_str());
-}
-
-// Persistentes por toda a vida do firmware — o WebServer precisa sobreviver entre
-// chamadas de loop(), diferente dos testes isolados acima que sao "fire and forget".
-NvsSettingsRepository httpRepository;
-LoadSettingsUseCase httpLoadUseCase(httpRepository);
-SaveSettingsUseCase httpSaveUseCase(httpRepository);
-HttpConfigHandler httpConfigHandler(httpLoadUseCase, httpSaveUseCase);
 
 void setup() {
   pinMode(BOARD_POWERON_PIN, OUTPUT);
@@ -163,9 +149,7 @@ void setup() {
   // leitura de bateria, o que afoga o resto do serial.
   esp_log_level_set("gpio", ESP_LOG_WARN);
 
-  testSettingsStorage();
-  testWifiAp();
-  testModemPpp();
+  startRouting();
   httpConfigHandler.begin();
 }
 

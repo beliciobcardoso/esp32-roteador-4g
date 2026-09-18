@@ -1,6 +1,8 @@
+# Fase 5 (NAT): LWIP_IPV4_NAPT depende de LWIP_IP_FORWARD e ja faz
+# `select LWIP_L2_TO_L3_COPY` sozinho (lwip/Kconfig:212-216) — sem a copia L2->L3 o
+# driver WiFi entrega buffers que o forward nao pode reescrever.
 CONFIG_LWIP_IPV4_NAPT=y
 CONFIG_LWIP_IP_FORWARD=y
-CONFIG_LWIP_NAPT=y
 CONFIG_FREERTOS_HZ=1000
 CONFIG_AUTOSTART_ARDUINO=y
 

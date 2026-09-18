@@ -33,13 +33,20 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 - `infra/` — wrappers finos sobre APIs ESP-IDF/Arduino (WiFi AP, PPP, NAT)
 - `main.cpp` — só orquestração/injeção, zero lógica de negócio
 
-**Estado atual:** Fase 1 (NVS storage) implementada — ver [docs/prd/01-storage-nvs.md](docs/prd/01-storage-nvs.md). Fases 2-6 (WiFi AP, HTTP config, PPP, NAT, integração/testes de carga) ainda não implementadas — PRDs em [docs/prd/](docs/prd/).
+**Estado atual:** Fases 1-5 concluídas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP e NAT/roteamento. Um celular conectado no AP navega pelo 4G. Falta a Fase 6 (integração, testes de carga com múltiplos clientes, reconexão automática). PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
+
+A configuração persistida (chaves da NVS, defaults de fábrica, como consultar e apagar) está documentada em [docs/CONFIGURACAO_NVS.md](docs/CONFIGURACAO_NVS.md).
 
 ## Decisões já fechadas (não reabrir sem motivo)
 
 - PPP via `esp_modem` (componente oficial ESP-IDF), não TinyGSM — TinyGSM não expõe interface IP roteável
+- Sequência de subida do roteador fica em `main.cpp`, não num caso de uso — decidido na
+  Fase 5. Orquestrar `WifiAp`/`ModemPpp`/`NatBridge` em `usecases/` exigiria ou acoplar a
+  camada a implementação concreta, ou criar três interfaces que nunca terão segunda
+  implementação neste hardware. É side-effect em hardware, não regra de domínio.
+  Justificativa completa em [docs/prd/05-nat-roteamento.md](docs/prd/05-nat-roteamento.md)
 - Config web: HTTP Basic Auth, IP fixo (sem portal cativo)
-- Persistência: NVS sem criptografia
+- Persistência: NVS sem criptografia — aceitável em bancada, bloqueante para campo (débito 10)
 - Até 20 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`)
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico
     não suporta SAE em softAP no IDF 4.4 (`ESP32_WIFI_ENABLE_WPA3_SAE` cobre só o lado
