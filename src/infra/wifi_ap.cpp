@@ -24,12 +24,19 @@ bool WifiAp::start(const RouterSettings& settings) {
     return false;
   }
 
-  // WiFi.softAP() do core Arduino nao expoe authmode WPA2/WPA3 misto diretamente;
-  // decisao fechada exige WIFI_AUTH_WPA2_WPA3_PSK, entao ajustamos via API ESP-IDF.
+  // WPA3 em softAP nao existe no ESP32 classico com IDF 4.4: o Kconfig
+  // ESP32_WIFI_ENABLE_WPA3_SAE cobre so o lado station ("connection with eligible
+  // AP's"). SoftAP SAE chegou no IDF 5.x (ESP_WIFI_SOFTAP_SAE_SUPPORT). Pedir
+  // WIFI_AUTH_WPA2_WPA3_PSK aqui so gerava "Invalid authmode 7" e o driver caia
+  // num modo nao determinado. Fixamos WPA2-PSK explicitamente em vez de confiar
+  // no default do core Arduino.
   wifi_config_t current_config;
-  if (esp_wifi_get_config(WIFI_IF_AP, &current_config) == ESP_OK) {
-    current_config.ap.authmode = WIFI_AUTH_WPA2_WPA3_PSK;
-    esp_wifi_set_config(WIFI_IF_AP, &current_config);
+  if (esp_wifi_get_config(WIFI_IF_AP, &current_config) != ESP_OK) {
+    return false;
+  }
+  current_config.ap.authmode = WIFI_AUTH_WPA2_PSK;
+  if (esp_wifi_set_config(WIFI_IF_AP, &current_config) != ESP_OK) {
+    return false;
   }
 
   return true;

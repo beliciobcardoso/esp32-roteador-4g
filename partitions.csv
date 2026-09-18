@@ -1,0 +1,18 @@
+# Tabela de particoes 4MB com OTA dual-slot — LilyGO T-A7670E R2 (ESP32-WROVER-E).
+# Substitui o partitions_singleapp.csv default do board esp-wrover-kit, que assumia
+# flash de 2MB e limitava o app a 1MB (ja estava em 87% na Fase 4).
+#
+# nvs e phy_init mantem offset e tamanho identicos ao layout anterior de proposito:
+# assim as RouterSettings persistidas sobrevivem a gravacao desta tabela nova.
+# Trocar esses dois offsets no futuro obriga erase_flash e apaga a config do usuario.
+#
+# O vao de 0x12000 a 0x20000 (56KB) e inevitavel: particao de app precisa de offset
+# alinhado em 0x10000, e otadata tem tamanho fixo de 0x2000.
+#
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x6000,
+phy_init,   data, phy,     0xF000,   0x1000,
+otadata,    data, ota,     0x10000,  0x2000,
+app0,       app,  ota_0,   0x20000,  0x1D0000,
+app1,       app,  ota_1,   0x1F0000, 0x1D0000,
+spiffs,     data, spiffs,  0x3C0000, 0x40000,

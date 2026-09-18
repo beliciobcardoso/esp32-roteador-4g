@@ -40,17 +40,29 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 - PPP via `esp_modem` (componente oficial ESP-IDF), não TinyGSM — TinyGSM não expõe interface IP roteável
 - Config web: HTTP Basic Auth, IP fixo (sem portal cativo)
 - Persistência: NVS sem criptografia
-- Até 20 clientes WiFi simultâneos, WPA2/WPA3 misto (`WIFI_AUTH_WPA2_WPA3_PSK`)
+- Até 20 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`)
+  - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico
+    não suporta SAE em softAP no IDF 4.4 (`ESP32_WIFI_ENABLE_WPA3_SAE` cobre só o lado
+    station). O driver rejeitava com `Invalid authmode 7`. Reabrir se migrarmos para IDF 5.x.
 
 ## Hardware — cuidados obrigatórios
 
 - `BOARD_POWERON_PIN` (GPIO12) tem que ir `HIGH` no `setup()` — sem isso a placa desliga sozinha rodando só na bateria
 - `VOLTAGE_DIVIDER_RATIO` em `main.cpp` é calibrado por multímetro numa placa específica — não é universal (ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md))
 - Só um processo por vez na porta serial — upload falha com `Device or resource busy` se o monitor estiver aberto
+- A porta serial reenumera após o reset do upload (`ttyACM0` → `ttyACM1`) — sempre usar o caminho estável `/dev/serial/by-id/...`, nunca o numerado
+- Pulso de PWRKEY do A7670E precisa de 1000 ms (`Ton(pwrkey)`) — 100 ms faz o handshake AT demorar ou falhar
+- `sdkconfig.<env>` é gerado e ignorado pelo git; o PlatformIO **não** reaplica `sdkconfig.defaults` enquanto ele existir — apagar o arquivo, limpar `.pio/build` não basta
 
 ## Débitos técnicos conhecidos
 
 Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
+
+## Histórico de depuração
+
+- Fase 4 (modem PPP): [docs/DEPURACAO_FASE_4_MODEM_PPP.md](docs/DEPURACAO_FASE_4_MODEM_PPP.md) —
+  armadilhas do `esp_modem`, ordem do `AT+CGDCONT`, PAP no lwIP, `sdkconfig.defaults` que não
+  recarrega. Consultar antes de mexer no modem ou em flags de Kconfig.
 
 ## Workflow de PRD/feature (obrigatório — consultar antes de iniciar e antes de concluir)
 

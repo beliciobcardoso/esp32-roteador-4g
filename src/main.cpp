@@ -1,14 +1,16 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_log.h>
 
+#include "../include/config.h"
 #include "adapters/http_config_handler.h"
 #include "adapters/nvs_settings_repository.h"
+#include "infra/modem_ppp.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
 #include "usecases/save_settings.h"
 
 #define BATTERY_PIN 35
-#define BOARD_POWERON_PIN 12
 #define TEST_LED_PIN 32 // GPIO32 para testar led externo
 
 // Ratio calibrado com multimetro em 16/09:
@@ -125,6 +127,22 @@ void testWifiAp() {
                 settings.wifi_ssid.c_str(), WiFi.softAPIP().toString().c_str());
 }
 
+// Teste isolado da Fase 4 (modem PPP): power-on do A7670E e sobe PPPoS com o APN
+// salvo. IP da operadora chega de forma assincrona (log via onPppEvent), nao
+// bloqueia o boot. Sem NAT/roteamento ainda (fase seguinte).
+void testModemPpp() {
+  NvsSettingsRepository repository;
+  LoadSettingsUseCase loadUseCase(repository);
+  RouterSettings settings = loadUseCase.execute();
+
+  ModemPpp modemPpp;
+  bool started = modemPpp.start(settings);
+
+  Serial.println("--- Modem PPP ---");
+  Serial.printf("Inicializacao do DCE/PPPoS: %s | APN: %s\n",
+                started ? "ok" : "falhou", settings.apn.c_str());
+}
+
 // Persistentes por toda a vida do firmware — o WebServer precisa sobreviver entre
 // chamadas de loop(), diferente dos testes isolados acima que sao "fire and forget".
 NvsSettingsRepository httpRepository;
@@ -141,8 +159,13 @@ void setup() {
   Serial.begin(115200);
   analogReadResolution(12);
 
+  // Cada analogRead reconfigura o pino e o driver loga em INFO — 20 linhas por
+  // leitura de bateria, o que afoga o resto do serial.
+  esp_log_level_set("gpio", ESP_LOG_WARN);
+
   testSettingsStorage();
   testWifiAp();
+  testModemPpp();
   httpConfigHandler.begin();
 }
 

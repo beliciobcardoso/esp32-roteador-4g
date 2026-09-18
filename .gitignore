@@ -5,3 +5,10 @@ sdkconfig.*
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Componentes baixados pelo ESP-IDF Component Manager — reprodutíveis a partir de
+# src/idf_component.yml + dependencies.lock (este sim versionado).
+managed_components/
+
+# Índice da ferramenta Serena (agente), não é artefato do projeto.
+.serena/

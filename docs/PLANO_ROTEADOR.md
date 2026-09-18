@@ -8,7 +8,8 @@ Decisões já fechadas, que este plano assume como dadas:
 - Acesso à página de config: IP fixo (sem portal cativo)
 - Persistência de credenciais: NVS sem criptografia
 - Até 20 clientes WiFi simultâneos
-- WiFi AP: WPA2/WPA3 misto (`WIFI_AUTH_WPA2_WPA3_PSK`)
+- WiFi AP: WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — WPA3 em softAP exige IDF 5.x,
+  indisponível no ESP32 clássico com IDF 4.4 (ver AGENTS.md)
 
 ## Por que esp_modem em vez de TinyGSM
 
@@ -89,9 +90,11 @@ Usuário abre 192.168.4.1
 - `adapters/http_config_handler`: rotas GET/POST, Basic Auth, chama `save_settings`
 - Teste: acessar `192.168.4.1` do celular conectado no AP, editar e salvar configs, confirmar persistência após reboot
 
-### Fase 4 — Modem PPP
+### Fase 4 — Modem PPP — ✅ concluída
 - `infra/modem_ppp`: integra `esp_modem`, sequência de power-on do A7670E (PWRKEY), sobe PPPoS com o APN salvo
 - Teste: confirmar que a interface PPP recebe IP da operadora (log via serial)
+- **Validado em campo:** registro LTE em ~3 s na Vivo, PAP aceito, IP e DNS da operadora atribuídos
+- Percalços e diagnósticos descartados: [DEPURACAO_FASE_4_MODEM_PPP.md](DEPURACAO_FASE_4_MODEM_PPP.md)
 
 ### Fase 5 — NAT / roteamento
 - `infra/nat_bridge`: habilita NAPT entre a interface AP e a interface PPP
