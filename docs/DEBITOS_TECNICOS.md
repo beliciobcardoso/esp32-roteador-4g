@@ -223,11 +223,14 @@ linhas. Não entrou na Fase 6 por ser fora do escopo dela.
 
 ---
 
-Débitos 15 a 21 vieram de uma revisão de código completa em 18/09/2026, não de uma fase de
-implementação. Ainda **não foram priorizados** — a ordem aqui é a da revisão, não de
-importância. Cada um registra explicitamente o que foi confirmado por leitura de fonte e o
-que segue em aberto, porque a severidade de um deles depende de um teste que ainda não foi
-feito.
+Daqui pra frente os débitos vêm de revisão de código, não de fase de implementação, e
+nenhum deles **foi priorizado** — a ordem é a de descoberta, não de importância. Cada um
+registra explicitamente o que foi confirmado por leitura de fonte e o que segue em aberto,
+porque a severidade de alguns depende de teste que ainda não foi feito.
+
+- **15 a 21** — revisão completa do código em 18/09/2026.
+- **22** — análise do projeto em 18/09/2026, posterior e independente da anterior. Mesma
+  data, revisão diferente: não faz parte do lote acima.
 
 ## 15. `validate()` não impõe os limites de comprimento do 802.11
 
@@ -389,3 +392,49 @@ justamente de quem chega sem contexto.
 **Ação:** revisar as referências de linha ao fechar cada fase, junto com a atualização do
 `PLANO_ROTEADOR.md`. Alternativa mais durável: citar símbolo em vez de linha
 (`main.cpp` → `readBatteryVoltage()`), que não envelhece — mas perde o link clicável.
+
+## 22. Estado do uplink é exposto pelo supervisor e ninguém consome
+
+**Onde:** [src/infra/link_supervisor.h:38-41](../src/infra/link_supervisor.h:38) —
+`state()` e `consecutiveFailures()`
+
+Os dois acessores públicos não têm chamador fora da própria classe. Confirmado por busca em
+`src/` e `include/`: as únicas referências a `linkSupervisor` no `main.cpp` são `begin()` e
+`applySettings()`.
+
+O comentário em [link_supervisor.h:56-58](../src/infra/link_supervisor.h:56) afirma o
+contrário — "Lida pela task do loop() via state()/consecutiveFailures()" — e é essa leitura
+cruzada que justifica o `volatile` nos dois membros. A justificativa está correta como
+raciocínio e descreve um consumidor que não existe. Quem chegar aqui vai procurar a leitura
+no `loop()` e não encontrar.
+
+**O sintoma real não é o código morto.** É que a página de configuração não mostra estado
+nenhum do uplink. Quem está associado ao AP sem internet não consegue distinguir:
+
+- `Connecting` — tentativa em andamento, esperar resolve
+- `Backoff` — já falhou, vai tentar de novo em até 60 s
+- orçamento de reinício esgotado — causa externa (SIM, cobertura, crédito), esperar não
+  resolve nada
+
+Os dois primeiros saem de `state()` e `consecutiveFailures()`. **O terceiro não sai de
+lugar nenhum:** a condição é `gRebootsWithoutUplink >= kMaxRebootsWithoutUplink`, e
+`gRebootsWithoutUplink` é variável de namespace anônimo em
+[link_supervisor.cpp](../src/infra/link_supervisor.cpp) sem acessor — só aparece no
+`Serial.printf` da transição. É justamente o estado mais útil de mostrar, porque é o único
+em que esperar não adianta.
+
+Tudo isso só sai pelo serial hoje. Em campo não há serial — e a página de configuração, que
+é o único canal que sobra, é onde a pessoa vai olhar primeiro quando a internet cai.
+
+**Ação:** expor o estado na página de configuração (`GET /`), o que torna o comentário do
+header verdadeiro e o `volatile` necessário de fato. Note que os dois acessores existentes
+não bastam — o orçamento de reinício precisa de um terceiro, e ele é `RTC_NOINIT_ATTR` lido
+e escrito só pela task do supervisor, então vale a mesma análise de concorrência que
+justificou o `volatile` nos outros dois.
+
+A alternativa honesta, se a decisão for não mostrar status, é remover os acessores e o
+trecho do comentário que fala da leitura pelo `loop()` — mas aí o `volatile` perde a
+justificativa registrada e precisa de outra.
+
+Relacionado: o PRD 07 cita "histórico de quedas do uplink" como consumidor do relógio. Um
+histórico pressupõe que o estado corrente já apareça em algum lugar; esta é a peça anterior.
