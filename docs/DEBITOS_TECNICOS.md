@@ -220,3 +220,172 @@ essas linhas se misturam com erro de verdade.
 
 **Ação:** `server_.onNotFound(...)` devolvendo 404 limpo, sem vazar detalhe interno. Duas
 linhas. Não entrou na Fase 6 por ser fora do escopo dela.
+
+---
+
+Débitos 15 a 21 vieram de uma revisão de código completa em 18/09/2026, não de uma fase de
+implementação. Ainda **não foram priorizados** — a ordem aqui é a da revisão, não de
+importância. Cada um registra explicitamente o que foi confirmado por leitura de fonte e o
+que segue em aberto, porque a severidade de um deles depende de um teste que ainda não foi
+feito.
+
+## 15. `validate()` não impõe os limites de comprimento do 802.11
+
+**Onde:** [src/domain/router_settings.cpp:7-14](../src/domain/router_settings.cpp:7)
+
+A validação checa vazio e mínimo de 8 caracteres, mas não o **máximo**: SSID pode ter 40
+caracteres e senha de AP pode ter 70, e os dois são persistidos na NVS.
+
+**Confirmado por leitura** (core Arduino 2.0.17, `libraries/WiFi/src/WiFiAP.cpp`):
+
+- `WiFiAPClass::softAP()` (linhas 136-150) **não valida comprimento máximo**. Só rejeita
+  SSID vazio e senha entre 1 e 7 caracteres — e essa segunda checagem o nosso `validate()`
+  já cobre. Uma revisão anterior afirmou que o core rejeita SSID acima de 32; não rejeita.
+- `wifi_softap_config()` (linhas 102-120) monta a config assim:
+
+  ```c
+  _wifi_strncpy((char*)wifi_config->ap.ssid, ssid, 32);  // copia 32 bytes SEM terminador
+  wifi_config->ap.ssid_len = strlen(ssid);               // recebe 40, não truncado
+  ```
+
+  `_wifi_strncpy` (linhas 53-65) faz `if (src_len >= dst_len) src_len = dst_len;`. Ou seja:
+  com SSID de 40 caracteres o driver recebe um `wifi_ap_config_t` internamente
+  inconsistente — buffer de 32 bytes sem NUL, e `ssid_len` valendo 40. Mesma coisa na
+  senha, com `password[64]`.
+
+**Em aberto:** o que o driver faz com essa config. `libnet80211.a` é blob, e a doc de
+`esp_wifi_set_config` lista `ESP_ERR_WIFI_PASSWORD` mas não `ESP_ERR_WIFI_SSID`, fechando
+com "others: refer to the error code in esp_err.h". Dois desfechos possíveis, com
+severidades muito diferentes:
+
+- **Driver rejeita** → `esp_wifi_set_config` falha → `softAP()` devolve false →
+  `startRouting()` para no SoftAP ([src/main.cpp:120](../src/main.cpp:120)). Como
+  SSID/senha só valem após reboot ([http_config_handler.cpp:84](../src/adapters/http_config_handler.cpp:84)),
+  o usuário salva, vê "Configuração salva", reinicia e a placa fica sem AP — e sem AP não
+  há página de configuração. Recuperação só por serial ou `erase_flash`.
+- **Driver aceita** → AP sobe com SSID truncado em 32. O usuário se conecta normalmente,
+  só não vê o nome que digitou. Incômodo, não perda de acesso.
+
+**Ação:** duas etapas, e a segunda depende da primeira.
+
+1. Determinar o desfecho com um sketch de bancada que chame `WiFi.softAP()` com SSID de 40
+   caracteres e logue o retorno, **sem persistir nada na NVS** — assim a dúvida se resolve
+   sem arriscar deixar a placa sem AP.
+2. Impor os limites em `validate()` (SSID ≤ 32 bytes, senha de AP entre 8 e 63) com os
+   `SettingsValidationError` correspondentes. Vale nos dois desfechos; o que muda é a
+   urgência.
+
+## 16. `NvsSettingsRepository::save()` sempre reporta sucesso
+
+**Onde:** [src/adapters/nvs_settings_repository.cpp:45-61](../src/adapters/nvs_settings_repository.cpp:45)
+
+A função termina em `return true` fixo e não checa nenhum dos oito retornos que a
+`Preferences` oferece. A interface promete o contrário —
+"true se a gravação foi bem-sucedida"
+([settings_repository.h:14](../src/adapters/settings_repository.h:14)) — e o HTTP responde
+"Configuração salva." mesmo sem nada ter sido gravado.
+
+**Confirmado por leitura** (`libraries/Preferences/src/Preferences.cpp`):
+
+- `begin()` (linhas 33-56) devolve `false` se `nvs_open` falhar, e também se a instância já
+  estiver aberta.
+- `putString()` (linhas 267-283) devolve `0` se `nvs_set_str` **ou** `nvs_commit` falhar —
+  partição cheia (`ESP_ERR_NVS_NOT_ENOUGH_SPACE`) cai exatamente aí.
+
+**Cuidado na correção:** `putString()` devolve `strlen(value)`, então uma gravação
+bem-sucedida de string vazia também devolve `0`. Como `apn_user` e `apn_password` são
+opcionais e podem ser vazios de propósito
+([router_settings.h:10-14](../src/domain/router_settings.h:10)), testar `> 0` em todos os
+campos criaria falso negativo justamente no caso legítimo. O critério tem que distinguir
+"gravou vazio" de "não gravou".
+
+**Ação:** propagar o retorno do `begin()` e checar os `putString`/`putInt`/`putBool` com um
+critério que tolere campo opcional vazio. Vira mais relevante na Fase 7, que sobe o schema
+para 3 e reescreve todos os campos de uma vez.
+
+## 17. Valores da configuração vão para o HTML sem escape
+
+**Onde:** [src/adapters/http_config_handler.cpp:35-39](../src/adapters/http_config_handler.cpp:35)
+
+`page.replace("{{SSID}}", current.wifi_ssid)` injeta o valor direto dentro de
+`value="..."`. Um `"`, `<` ou `&` em SSID, APN ou usuário admin quebra o atributo e pode
+deixar o formulário inutilizável — inclusive impedindo a correção do próprio valor pela
+página que o quebrou.
+
+Nenhuma dessas strings é filtrada: `validate()` não restringe caracteres, e SSID em 802.11
+é sequência de bytes arbitrária. Mas o vetor exige estar autenticado como admin e digitar
+um caractere incomum num campo de nome de rede, então é **baixa probabilidade com
+consequência local** — não é XSS explorável por terceiro, é tiro no próprio pé.
+
+**Ação:** escapar os quatro valores interpolados (`&`, `<`, `>`, `"`) antes do `replace`.
+Uma função de escape no `html_page` resolve; é a mesma correção para os quatro campos.
+
+## 18. Lógica de bateria mora no `main.cpp`, contra a regra do próprio AGENTS.md
+
+**Onde:** [src/main.cpp:30-88](../src/main.cpp:30)
+
+O `AGENTS.md` declara para o `main.cpp`: "só orquestração/injeção, zero lógica de negócio".
+São 70 das 198 linhas do arquivo em curva de descarga Li-ion, média de ADC e interpolação
+tensão → percentual — lógica pura, que pertenceria a `domain/battery` (conversão) +
+`infra/battery_adc` (leitura do pino).
+
+Não é bug: o código funciona e está validado. É desalinhamento entre a regra declarada e o
+arquivo, e explica por que os **débitos 1, 2 e 3 são todos sintomas do mesmo trecho** —
+ratio hardcoded, truncamento silencioso e ausência de suavização são três consequências de
+a conversão não ter camada própria.
+
+**Ação:** extrair junto com o débito 1 (que já prevê mover o ratio para configuração).
+Fazer as duas coisas separadamente significa mexer no mesmo código duas vezes. Extraída
+para `domain/`, a conversão passa a ser testável sem hardware — ver débito 19.
+
+## 19. Nenhum teste automatizado, e nenhum ambiente onde rodar um
+
+**Onde:** [platformio.ini](../platformio.ini) — não há env `native`; não há diretório `test/`
+
+O projeto adotou Clean Architecture explicitamente para isolar regra de negócio de
+hardware, e hoje existem duas funções puras que essa escolha tornou testáveis sem placa:
+`validate()` ([router_settings.cpp](../src/domain/router_settings.cpp)) e
+`voltageToPercent()` ([main.cpp:73](../src/main.cpp:73), assim que sair do `main` — débito
+18). Nenhuma das duas tem teste, e não há ambiente configurado para executar um.
+
+O retorno prático disso é concreto: o débito 15 é um caso de limite em `validate()`, e um
+teste de limite o pegaria em segundos, sem hardware e sem depender do comportamento do
+driver.
+
+**Ação:** env `native` no `platformio.ini` com os testes de `validate()` — incluindo os
+limites do débito 15, uma vez decididos. Escopo deliberadamente pequeno: só o que é puro.
+Testar `infra/` exigiria mock de ESP-IDF e não se paga aqui.
+
+## 20. Porta serial de um adaptador específico versionada no `platformio.ini`
+
+**Onde:** [platformio.ini](../platformio.ini) — `upload_port` e `monitor_port`
+
+Os dois apontam para `/dev/serial/by-id/usb-1a86_USB_Single_Serial_58EF052375-if00`. O
+caminho `by-id` resolve um problema real e está bem justificado no comentário do arquivo
+(o número do `ttyACM` muda entre replugues), mas o serial `58EF052375` é de **um** adaptador
+físico: qualquer segunda placa ou segunda máquina precisa editar um arquivo rastreado pelo
+git para conseguir gravar, e essa edição depois aparece como sujeira em todo `git status`.
+
+**Ação:** aceitar `${sysenv.ESP_PORT}` com o valor atual como fallback, ou mover os dois
+para um `platformio_override.ini` ignorado pelo git. Enquanto houver uma placa e uma
+máquina, é atrito zero — o débito existe para não custar uma hora de confusão quando
+aparecer a segunda.
+
+## 21. Referências de linha deste arquivo saem de sincronia sem aviso
+
+**Onde:** este arquivo — débitos 1 e 3
+
+Os links com número de linha envelhecem silenciosamente conforme o código anda:
+
+- Débito 1 aponta [src/main.cpp:11](../src/main.cpp:11); `VOLTAGE_DIVIDER_RATIO` está hoje
+  na linha 22.
+- Débito 3 aponta `src/main.cpp:51-60` como a leitura de bateria; essa faixa hoje é o meio
+  da tabela da curva de descarga, e `readBatteryVoltage()` está em 62-71.
+
+Os dois ainda são encontráveis pelo nome do símbolo, então o custo hoje é pequeno. Mas este
+arquivo é o mecanismo de memória do projeto entre fases, e referência errada gasta confiança
+justamente de quem chega sem contexto.
+
+**Ação:** revisar as referências de linha ao fechar cada fase, junto com a atualização do
+`PLANO_ROTEADOR.md`. Alternativa mais durável: citar símbolo em vez de linha
+(`main.cpp` → `readBatteryVoltage()`), que não envelhece — mas perde o link clicável.
