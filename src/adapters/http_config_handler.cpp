@@ -64,5 +64,31 @@ void HttpConfigHandler::handlePostRoot() {
     return;
   }
 
-  server_.send(200, "text/plain", "Configuracao salva.");
+  // Nem todo campo entra em vigor do mesmo jeito, e a resposta precisa dizer qual e qual
+  // — senao o usuario troca o SSID, ve "salvo" e fica esperando a rede nova aparecer.
+  bool uplinkChanged = updated.apn != current.apn || updated.apn_user != current.apn_user ||
+                       updated.apn_password != current.apn_password;
+  bool apChanged = updated.wifi_ssid != current.wifi_ssid ||
+                   updated.wifi_password != current.wifi_password;
+
+  String message = "Configuracao salva.";
+  if (uplinkChanged) {
+    // Derrubar e resubir o PPP nao afeta a associacao dos clientes ao AP, entao isso
+    // pode ser feito sem reboot. Ate um minuto porque inclui o power-on do modem, o
+    // registro na rede e o IPCP.
+    message += " APN alterado: reconectando o 4G agora, pode levar ate 1 minuto.";
+  }
+  if (apChanged) {
+    // Mudar SSID/senha derruba todo mundo que esta associado — inclusive quem acabou de
+    // enviar este formulario. Fazer isso aqui cortaria a resposta antes dela chegar.
+    message += " SSID e senha do Wi-Fi so valem apos reiniciar a placa.";
+  }
+
+  server_.send(200, "text/plain", message);
+
+  // Depois do send: a reconexao e assincrona, mas manter a resposta na frente evita que
+  // qualquer mudanca futura nesse caminho segure o cliente esperando.
+  if (uplinkChanged && uplinkChanged_ != nullptr) {
+    uplinkChanged_(updated);
+  }
 }

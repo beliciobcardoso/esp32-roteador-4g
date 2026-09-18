@@ -4,11 +4,6 @@
 #include <esp_event.h>
 #include <esp_log.h>
 
-// Workaround: esp_modem_api.h usa `PdpContext` numa declaracao de funcao antes de
-// qualquer forward-declare do tipo (gap do header da versao ^1.1.0 do componente
-// espressif/esp_modem). So precisa ser um tipo incompleto para a declaracao compilar.
-struct PdpContext;
-
 #include <esp_modem_api.h>
 #include <esp_netif.h>
 #include <esp_netif_ppp.h>
@@ -50,12 +45,51 @@ constexpr int kGotIpPollIntervalMs = 250;
 // leitura-modificacao-escrita envolvida.
 volatile bool gPppHasIp = false;
 
+// esp_event_handler_register com o mesmo (base, id, handler, arg) cria uma entrada nova a
+// cada chamada e o handler passa a ser invocado N vezes. Como start() roda de novo a cada
+// reconexao, o registro precisa acontecer uma unica vez na vida do processo.
+bool gPppEventsRegistered = false;
+
+// Nomes dos codigos de NETIF_PPP_STATUS (esp_netif_ppp.h:50-62). Vale o log literal: a
+// diferenca entre ERRORAUTHFAIL (senha do APN errada, retry nao resolve) e ERRORPEERDEAD
+// (operadora sumiu, retry e exatamente o que resolve) muda o diagnostico em campo.
+const char* pppStatusName(int32_t id) {
+  switch (id) {
+    case NETIF_PPP_ERRORNONE: return "ERRORNONE";
+    case NETIF_PPP_ERRORPARAM: return "ERRORPARAM";
+    case NETIF_PPP_ERROROPEN: return "ERROROPEN";
+    case NETIF_PPP_ERRORDEVICE: return "ERRORDEVICE";
+    case NETIF_PPP_ERRORALLOC: return "ERRORALLOC";
+    case NETIF_PPP_ERRORUSER: return "ERRORUSER";
+    case NETIF_PPP_ERRORCONNECT: return "ERRORCONNECT";
+    case NETIF_PPP_ERRORAUTHFAIL: return "ERRORAUTHFAIL";
+    case NETIF_PPP_ERRORPROTOCOL: return "ERRORPROTOCOL";
+    case NETIF_PPP_ERRORPEERDEAD: return "ERRORPEERDEAD";
+    case NETIF_PPP_ERRORIDLETIMEOUT: return "ERRORIDLETIMEOUT";
+    case NETIF_PPP_ERRORCONNECTTIME: return "ERRORCONNECTTIME";
+    case NETIF_PPP_ERRORLOOPBACK: return "ERRORLOOPBACK";
+    default: return "?";
+  }
+}
+
 void onPppEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
   if (base == IP_EVENT && id == IP_EVENT_PPP_GOT_IP) {
     Serial.println("PPP: IP recebido da operadora");
     gPppHasIp = true;
-  } else if (base == NETIF_PPP_STATUS && id == NETIF_PPP_ERRORUSER) {
-    Serial.println("PPP: modem parou (erro do usuario/timeout)");
+    return;
+  }
+
+  if (base == IP_EVENT && id == IP_EVENT_PPP_LOST_IP) {
+    Serial.println("PPP: perdeu o IP da operadora");
+    gPppHasIp = false;
+    return;
+  }
+
+  // ERRORNONE (id 0) e o fechamento limpo da sessao, nao um erro — mas tambem significa
+  // que o enlace nao esta mais de pe, entao derruba o estado igual aos outros.
+  if (base == NETIF_PPP_STATUS) {
+    Serial.printf("PPP: enlace caiu | NETIF_PPP_STATUS=%s (%d)\n", pppStatusName(id),
+                  static_cast<int>(id));
     gPppHasIp = false;
   }
 }
@@ -273,8 +307,12 @@ bool ModemPpp::start(const RouterSettings& settings) {
   esp_netif_init();
   esp_event_loop_create_default();
 
-  esp_event_handler_register(IP_EVENT, IP_EVENT_PPP_GOT_IP, &onPppEvent, nullptr);
-  esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &onPppEvent, nullptr);
+  if (!gPppEventsRegistered) {
+    esp_event_handler_register(IP_EVENT, IP_EVENT_PPP_GOT_IP, &onPppEvent, nullptr);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_PPP_LOST_IP, &onPppEvent, nullptr);
+    esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &onPppEvent, nullptr);
+    gPppEventsRegistered = true;
+  }
 
   esp_netif_config_t netifPppConfig = ESP_NETIF_DEFAULT_PPP();
   netif_ = esp_netif_new(&netifPppConfig);
@@ -312,17 +350,17 @@ bool ModemPpp::start(const RouterSettings& settings) {
   esp_modem_dce_config_t dceConfig = ESP_MODEM_DCE_DEFAULT_CONFIG(settings.apn.c_str());
 
   // A7670E usa conjunto de comandos AT compativel com o perfil SIM7600 do esp_modem.
-  esp_modem_dce_t* dce = esp_modem_new_dev(ESP_MODEM_DCE_SIM7600, &dteConfig, &dceConfig, netif_);
-  Serial.printf("Modem: esp_modem_new_dev -> %s\n", dce == nullptr ? "NULL" : "ok");
-  if (dce == nullptr) {
+  dce_ = esp_modem_new_dev(ESP_MODEM_DCE_SIM7600, &dteConfig, &dceConfig, netif_);
+  Serial.printf("Modem: esp_modem_new_dev -> %s\n", dce_ == nullptr ? "NULL" : "ok");
+  if (dce_ == nullptr) {
     return false;
   }
 
-  if (!waitForAtReady(dce)) {
+  if (!waitForAtReady(dce_)) {
     return false;
   }
 
-  if (!waitForNetwork(dce, settings.apn)) {
+  if (!waitForNetwork(dce_, settings.apn)) {
     return false;
   }
 
@@ -330,7 +368,7 @@ bool ModemPpp::start(const RouterSettings& settings) {
   // da sessao anterior.
   gPppHasIp = false;
 
-  esp_err_t modeResult = esp_modem_set_mode(dce, ESP_MODEM_MODE_DATA);
+  esp_err_t modeResult = esp_modem_set_mode(dce_, ESP_MODEM_MODE_DATA);
   Serial.printf("Modem: set_mode(DATA) -> %s\n", esp_err_to_name(modeResult));
   return modeResult == ESP_OK;
 }
@@ -348,4 +386,24 @@ bool ModemPpp::waitForIp(uint32_t timeoutMs) {
   Serial.printf("PPP: operadora nao entregou IP em %us — LCP/IPCP nao fechou\n",
                 timeoutMs / 1000);
   return false;
+}
+
+// Nao tenta voltar pro modo de comando antes de destruir: a sequencia de escape leva
+// segundos, falha justamente quando o modulo travou (que e quando isso e chamado), e o
+// powerOnSequence do proximo start() da um reset por hardware que resolve de qualquer
+// jeito. Ordem importa — o DCE referencia o netif, entao morre primeiro.
+void ModemPpp::stop() {
+  if (dce_ != nullptr) {
+    esp_modem_destroy(dce_);
+    dce_ = nullptr;
+  }
+  if (netif_ != nullptr) {
+    esp_netif_destroy(netif_);
+    netif_ = nullptr;
+  }
+  gPppHasIp = false;
+}
+
+bool ModemPpp::hasIp() const {
+  return gPppHasIp;
 }

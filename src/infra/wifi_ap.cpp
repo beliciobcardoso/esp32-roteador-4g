@@ -8,7 +8,10 @@ const IPAddress kApIp(192, 168, 4, 1);
 const IPAddress kApGateway(192, 168, 4, 1);
 const IPAddress kApSubnet(255, 255, 255, 0);
 const uint8_t kApChannel = 1;
-const int kMaxClients = 20;
+// Teto do driver no ESP32 classico: ESP_WIFI_MAX_CONN_NUM vale 15
+// (esp_wifi_types.h:320). Pedir mais que isso nao e ambicao, e numero mentiroso —
+// o softAP aceita o valor e silenciosamente atende 15.
+const int kMaxClients = 15;
 }  // namespace
 
 bool WifiAp::start(const RouterSettings& settings) {

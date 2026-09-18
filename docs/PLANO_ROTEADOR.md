@@ -7,7 +7,7 @@ Decisões já fechadas, que este plano assume como dadas:
 - Autenticação da página de config: HTTP Basic Auth simples
 - Acesso à página de config: IP fixo (sem portal cativo)
 - Persistência de credenciais: NVS sem criptografia
-- Até 20 clientes WiFi simultâneos
+- Até 15 clientes WiFi simultâneos (teto do driver `ESP_WIFI_MAX_CONN_NUM`)
 - WiFi AP: WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — WPA3 em softAP exige IDF 5.x,
   indisponível no ESP32 clássico com IDF 4.4 (ver AGENTS.md)
 
@@ -116,11 +116,43 @@ Usuário abre 192.168.4.1
 - ⚠️ Cliente que associa antes do PPP subir recebe DNS `192.168.4.1` e só resolve nome
   depois de renovar o lease (débito 9)
 
-### Fase 6 — Integração e testes de carga
-- Testar com múltiplos dispositivos simultâneos — o alvo é 20, mas hoje o driver
-  entrega 10; exige `CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM=0` (débito 5)
-- Validar reconexão automática se o modem cair
-- Validar que salvar config nova reconecta corretamente sem exigir reboot manual (ou define que reboot é necessário e avisa o usuário na página)
+### Fase 6 — Integração e reconexão automática — ✅ concluída
+- `loop()` non-blocking: blink e leitura de bateria passam a ser agendados por `millis()`
+  (fecha o débito 4). Sem isso, qualquer supervisão vivendo no `loop()` reagiria com até
+  3 s de atraso e travaria o `handleClient()` no meio
+- `infra/link_supervisor`: task FreeRTOS própria que conecta o 4G, detecta queda pelos
+  eventos do PPP e reconecta com backoff (5→10→20→40→60 s), rearmando o NAT a cada sessão
+  nova. Reboot após 10 falhas seguidas, no máximo 2 vezes — contador em `RTC_NOINIT_ATTR`,
+  porque falha permanente (SIM fora, sem cobertura) reiniciaria a placa a cada ~12 min para
+  sempre e derrubaria quem estivesse no AP
+- `CONFIG_LWIP_ENABLE_LCP_ECHO=y` (3 s × 3 falhas): sem isso uma perda silenciosa de RF
+  nunca gera evento e o roteador vira buraco negro com o PPP eternamente "up"
+- `kMaxClients` corrigido de 20 para 15 — `ESP_WIFI_MAX_CONN_NUM` é teto do driver no
+  ESP32 clássico, 20 nunca foi alcançável (débito 5 reescrito)
+- Config a quente: mudar APN reconecta sozinho; mudar SSID/senha exige reboot e a página
+  de configuração diz isso na resposta do POST
+- **Carga com dispositivos reais está fora do escopo desta fase**
+- **Validado em campo:** queda de RF recupera em ~16 s (LCP echo → `ERRORPEERDEAD`); troca
+  de APN reconecta a quente; SIM removido percorre o backoff inteiro e reinicia na décima
+  falha (`rst:0xc SW_CPU_RESET`). Durante a queda inteira o AP seguiu no ar — um cliente
+  associou na oitava falha e recebeu DHCP com o 4G morto havia 9 min
+- **Orçamento de reinícios validado em bancada:** o contador atravessou o `esp_restart()`
+  (`reinicio 1/2` → `reinicio 2/2`) e o terceiro reboot foi suprimido — sem ele a placa
+  reiniciaria para sempre. Depois disso o supervisor segue tentando com backoff de 60 s e o
+  AP não cai mais sozinho
+- ⚠️ Rajadas de `pppos_input_tcpip failed with -1` sob tráfego — débito 13 em
+  [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md)
+- Acertos, erros e lições da fase: [prd/06-integracao-testes-carga.md](prd/06-integracao-testes-carga.md#retrospectiva-da-fase)
+
+### Fase 7 — Relógio (NTP + fuso) — planejada
+
+- `infra/clock`: SNTP sincronizado ao subir o uplink e a cada reconexão
+- Campo `timezone` na NVS (`kCurrentSchema` 2→3, descarta a config atual) e `<select>` de
+  fuso na página de configuração, valendo a quente
+- Fonte é NTP, não `AT+CCLK?`/NITZ — NITZ depende da operadora entregar
+- **Consumidores da hora ficam fora do escopo**: histórico de quedas, agendamento de
+  reboot, expiração de sessão e carimbo de OTA dependem disso, mas vêm depois
+- Detalhes em [prd/07-relogio-ntp.md](prd/07-relogio-ntp.md)
 
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
 

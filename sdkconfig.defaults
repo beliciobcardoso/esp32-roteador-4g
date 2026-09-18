@@ -25,3 +25,15 @@ CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
+# Fase 6: sem isso o driver reserva slots de chave para o ESP-NOW e corta o AP em 10
+# clientes ("Affected by the ESP-NOW encrypt num, set the max connection num to 10").
+# Nao usamos ESP-NOW em lugar nenhum, entao zerar libera o teto real de 15
+# (ESP_WIFI_MAX_CONN_NUM, esp_wifi_types.h:320).
+CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM=0
+
+# Fase 6 (reconexao): sem LCP echo uma perda silenciosa de RF nunca gera evento — o PPP
+# fica "up" para sempre, o NAT continua armado e o roteador vira buraco negro. Com echo,
+# 3 falhas de 3s viram NETIF_PPP_ERRORPEERDEAD em ~9s, que e o gatilho da reconexao.
+CONFIG_LWIP_ENABLE_LCP_ECHO=y
+CONFIG_LWIP_LCP_ECHOINTERVAL=3
+CONFIG_LWIP_LCP_MAXECHOFAILS=3
