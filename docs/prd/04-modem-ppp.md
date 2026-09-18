@@ -1,5 +1,9 @@
 # PRD 04 — Modem PPP
 
+**Status: concluída** (validado em hardware pelo usuário — registro LTE em ~3 s na Vivo, PAP aceito, IP e DNS da operadora atribuídos)
+
+Percalços e diagnósticos descartados: [DEPURACAO_FASE_4_MODEM_PPP.md](../DEPURACAO_FASE_4_MODEM_PPP.md)
+
 Fonte: [PLANO_ROTEADOR.md](../PLANO_ROTEADOR.md), Fase 4.
 
 ## Objetivo

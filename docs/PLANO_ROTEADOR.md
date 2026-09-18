@@ -74,21 +74,32 @@ Usuário abre 192.168.4.1
 
 ## Ordem de implementação (fases)
 
-### Fase 1 — Storage (NVS)
+### Fase 1 — Storage (NVS) — ✅ concluída
 - `domain/router_settings` (struct + validação)
 - `adapters/settings_repository` (interface)
 - `adapters/nvs_settings_repository` (implementação)
 - `usecases/load_settings`, `usecases/save_settings`
 - Teste isolado: gravar e ler de volta via serial, sem rede nem HTTP ainda
+- **Validado em campo:** grava defaults, relê após reboot, persistência confirmada
+- Evoluiu na Fase 4: schema NVS versionado (v2) para acomodar `apn_user`/`apn_password`
+  sem deixar placas já gravadas subirem com campos vazios
 
-### Fase 2 — WiFi AP
+### Fase 2 — WiFi AP — ✅ concluída (com ressalvas)
 - `infra/wifi_ap`: sobe SoftAP com SSID/senha vindos do `load_settings`, IP fixo (ex: `192.168.4.1`)
 - Teste: conectar um celular no AP e confirmar que recebe IP por DHCP
+- **Validado em campo:** celular conecta e recebe IP por DHCP
+- ⚠️ Dois critérios originais não se sustentaram, descobertos na Fase 4:
+  - WPA2/WPA3 misto é inalcançável no ESP32 clássico com IDF 4.4 — revisado para WPA2-PSK
+  - "até 20 clientes" não é cumprido: o driver corta em 10 (chaves do ESP-NOW).
+    Ver débito 5 em [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md); validar na Fase 6
 
-### Fase 3 — Servidor de configuração HTTP
+### Fase 3 — Servidor de configuração HTTP — ✅ concluída
 - `adapters/html_page`: formulário simples (SSID, senha WiFi, APN, usuário/senha admin)
 - `adapters/http_config_handler`: rotas GET/POST, Basic Auth, chama `save_settings`
 - Teste: acessar `192.168.4.1` do celular conectado no AP, editar e salvar configs, confirmar persistência após reboot
+- **Validado em campo:** GET renderiza o formulário, POST persiste, configs sobrevivem ao reboot
+- Evoluiu na Fase 4: formulário ganhou `apn_user`/`apn_password` (senha em branco mantém a atual)
+- ⚠️ `loop()` bloqueia `handleClient()` por ~3 s por ciclo — débito 4 em [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md)
 
 ### Fase 4 — Modem PPP — ✅ concluída
 - `infra/modem_ppp`: integra `esp_modem`, sequência de power-on do A7670E (PWRKEY), sobe PPPoS com o APN salvo
@@ -102,7 +113,8 @@ Usuário abre 192.168.4.1
 - Teste final: celular conectado no AP navega na internet através do modem 4G
 
 ### Fase 6 — Integração e testes de carga
-- Testar com múltiplos dispositivos simultâneos (até 20)
+- Testar com múltiplos dispositivos simultâneos — o alvo é 20, mas hoje o driver
+  entrega 10; exige `CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM=0` (débito 5)
 - Validar reconexão automática se o modem cair
 - Validar que salvar config nova reconecta corretamente sem exigir reboot manual (ou define que reboot é necessário e avisa o usuário na página)
 

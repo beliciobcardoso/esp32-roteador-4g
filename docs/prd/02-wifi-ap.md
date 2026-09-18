@@ -1,6 +1,8 @@
 # PRD 02 — WiFi AP
 
-**Status: concluída** (validado em hardware pelo usuário)
+**Status: concluída com ressalvas** (validado em hardware pelo usuário)
+
+⚠️ Revisado na Fase 4: WPA2/WPA3 misto é inalcançável no ESP32 clássico com IDF 4.4 (virou WPA2-PSK), e o limite de clientes entregue é 10, não 20 — ver débito 5 em [DEBITOS_TECNICOS.md](../DEBITOS_TECNICOS.md).
 
 Fonte: [PLANO_ROTEADOR.md](../PLANO_ROTEADOR.md), Fase 2.
 
