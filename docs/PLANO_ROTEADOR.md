@@ -107,10 +107,14 @@ Usuário abre 192.168.4.1
 - **Validado em campo:** registro LTE em ~3 s na Vivo, PAP aceito, IP e DNS da operadora atribuídos
 - Percalços e diagnósticos descartados: [DEPURACAO_FASE_4_MODEM_PPP.md](DEPURACAO_FASE_4_MODEM_PPP.md)
 
-### Fase 5 — NAT / roteamento
-- `infra/nat_bridge`: habilita NAPT entre a interface AP e a interface PPP
-- `usecases/start_routing`: orquestra a ordem (settings → AP → modem → NAT)
-- Teste final: celular conectado no AP navega na internet através do modem 4G
+### Fase 5 — NAT / roteamento — ✅ concluída
+- `infra/nat_bridge`: habilita NAPT na interface **AP** (não na PPP — ver PRD 05) e
+  entrega o DNS da operadora aos clientes pela opção 6 do DHCP
+- Orquestração (settings → AP → modem → espera IP → NAT) ficou em `main.cpp`, não em
+  `usecases/start_routing` — decisão registrada no PRD 05
+- Validado em hardware: celular conectado no AP navegou pelo 4G
+- ⚠️ Cliente que associa antes do PPP subir recebe DNS `192.168.4.1` e só resolve nome
+  depois de renovar o lease (débito 9)
 
 ### Fase 6 — Integração e testes de carga
 - Testar com múltiplos dispositivos simultâneos — o alvo é 20, mas hoje o driver

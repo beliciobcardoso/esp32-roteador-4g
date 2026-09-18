@@ -40,12 +40,23 @@ constexpr int kRegistrationRetryDelayMs = 1000;
 // Despejo de diagnostico a cada N tentativas — o suficiente pra acompanhar a evolucao
 // do attach sem afogar o serial.
 constexpr int kRegistrationLogEvery = 10;
+constexpr int kGotIpPollIntervalMs = 250;
+
+// O IP da operadora chega num evento tratado pela tarefa do event loop, nao pela tarefa
+// que chamou start(). Estado de arquivo em vez de membro porque o handler e uma funcao
+// livre e a placa tem exatamente um modem — passar `this` no `arg` custaria expor os
+// tipos do esp_event no header de uma classe que nao fala de eventos.
+// volatile basta: e uma palavra alinhada, escrita por uma tarefa e lida por outra, sem
+// leitura-modificacao-escrita envolvida.
+volatile bool gPppHasIp = false;
 
 void onPppEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
   if (base == IP_EVENT && id == IP_EVENT_PPP_GOT_IP) {
     Serial.println("PPP: IP recebido da operadora");
+    gPppHasIp = true;
   } else if (base == NETIF_PPP_STATUS && id == NETIF_PPP_ERRORUSER) {
     Serial.println("PPP: modem parou (erro do usuario/timeout)");
+    gPppHasIp = false;
   }
 }
 
@@ -266,8 +277,8 @@ bool ModemPpp::start(const RouterSettings& settings) {
   esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &onPppEvent, nullptr);
 
   esp_netif_config_t netifPppConfig = ESP_NETIF_DEFAULT_PPP();
-  esp_netif_t* pppNetif = esp_netif_new(&netifPppConfig);
-  if (pppNetif == nullptr) {
+  netif_ = esp_netif_new(&netifPppConfig);
+  if (netif_ == nullptr) {
     return false;
   }
 
@@ -278,7 +289,7 @@ bool ModemPpp::start(const RouterSettings& settings) {
   // Exige CONFIG_LWIP_PPP_PAP_SUPPORT=y: sem isso o esp_netif devolve
   // ESP_ERR_ESP_NETIF_IF_NOT_READY e a autenticacao e silenciosamente ignorada.
   if (settings.apn_user.length() > 0) {
-    esp_err_t authResult = esp_netif_ppp_set_auth(pppNetif, NETIF_PPP_AUTHTYPE_PAP,
+    esp_err_t authResult = esp_netif_ppp_set_auth(netif_, NETIF_PPP_AUTHTYPE_PAP,
                                                   settings.apn_user.c_str(),
                                                   settings.apn_password.c_str());
     Serial.printf("PPP: auth PAP usuario=\"%s\" -> [%s]\n",
@@ -301,7 +312,7 @@ bool ModemPpp::start(const RouterSettings& settings) {
   esp_modem_dce_config_t dceConfig = ESP_MODEM_DCE_DEFAULT_CONFIG(settings.apn.c_str());
 
   // A7670E usa conjunto de comandos AT compativel com o perfil SIM7600 do esp_modem.
-  esp_modem_dce_t* dce = esp_modem_new_dev(ESP_MODEM_DCE_SIM7600, &dteConfig, &dceConfig, pppNetif);
+  esp_modem_dce_t* dce = esp_modem_new_dev(ESP_MODEM_DCE_SIM7600, &dteConfig, &dceConfig, netif_);
   Serial.printf("Modem: esp_modem_new_dev -> %s\n", dce == nullptr ? "NULL" : "ok");
   if (dce == nullptr) {
     return false;
@@ -315,7 +326,26 @@ bool ModemPpp::start(const RouterSettings& settings) {
     return false;
   }
 
+  // Zera antes de discar: um start() depois de uma queda nao pode herdar o "tem IP"
+  // da sessao anterior.
+  gPppHasIp = false;
+
   esp_err_t modeResult = esp_modem_set_mode(dce, ESP_MODEM_MODE_DATA);
   Serial.printf("Modem: set_mode(DATA) -> %s\n", esp_err_to_name(modeResult));
   return modeResult == ESP_OK;
+}
+
+// Polling em vez de semaforo pra seguir o padrao das outras esperas deste arquivo
+// (waitForAtReady, waitForSimReady, waitForNetwork) — e tudo boot sequencial, nada
+// aqui disputa CPU com outra coisa.
+bool ModemPpp::waitForIp(uint32_t timeoutMs) {
+  for (uint32_t waited = 0; waited < timeoutMs; waited += kGotIpPollIntervalMs) {
+    if (gPppHasIp) {
+      return true;
+    }
+    delay(kGotIpPollIntervalMs);
+  }
+  Serial.printf("PPP: operadora nao entregou IP em %us — LCP/IPCP nao fechou\n",
+                timeoutMs / 1000);
+  return false;
 }

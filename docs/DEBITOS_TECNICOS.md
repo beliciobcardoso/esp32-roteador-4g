@@ -80,3 +80,41 @@ para a página web, um buffer em RAM ou telemetria sem reescrever as chamadas.
 
 **Ação:** avaliar uma abstração de log quando houver um segundo consumidor real. Hoje há
 apenas um; criar a abstração agora seria abstração especulativa.
+
+## 9. Cliente que associa antes do PPP subir recebe DNS inútil
+
+**Onde:** [src/infra/nat_bridge.cpp](../src/infra/nat_bridge.cpp), [src/main.cpp](../src/main.cpp)
+
+O DNS da operadora só é conhecido depois do IPCP, então o `NatBridge` reconfigura o
+servidor DHCP do AP **depois** que o AP já está no ar. Um cliente que associe nessa janela
+recebe um lease com DNS `192.168.4.1` — e não há resolvedor escutando ali. Ele roteia por
+NAT, mas não resolve nome nenhum até renovar o lease.
+
+No boot normal isso não aparece: o AP ainda não tem cliente quando o PPP fecha (~17 s).
+O caso real é a reconexão de PPP em campo, com clientes já associados — que é justamente o
+que a Fase 6 vai implementar.
+
+**Ação:** decidir na Fase 6 entre (a) encurtar o lease do DHCP para que a renovação corrija
+sozinha em minutos, (b) subir um forwarder DNS local em 192.168.4.1, o que torna o endereço
+entregue no lease permanentemente válido e elimina a dependência de renovação, ou (c) só
+documentar e exigir reconexão manual do cliente. A (b) é a única que resolve de verdade.
+
+## 10. Credenciais de fábrica em claro, NVS sem criptografia, admin sobre HTTP puro
+
+**Onde:** [include/config.h](../include/config.h), [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp), [sdkconfig.defaults](../sdkconfig.defaults)
+
+Três problemas que se somam, todos aceitáveis em bancada e nenhum aceitável em campo:
+
+- Senha do AP (`roteador4g`) e credenciais de admin (`admin` / `admin1234`) estão em claro
+  num header versionado. São **iguais em toda unidade** que ainda não foi reconfigurada, e
+  públicas para quem tiver o repositório.
+- `CONFIG_NVS_ENCRYPTION` não está habilitado: as senhas ficam legíveis na flash. Quem tiver
+  acesso físico à placa faz um dump e extrai tudo.
+- A página de configuração usa **HTTP Basic Auth sobre HTTP puro**. As credenciais trafegam
+  em base64, protegidas apenas pelo WPA2 do AP — e o WPA2 é PSK compartilhado, então
+  qualquer cliente associado consegue capturá-las.
+
+**Ação:** antes de qualquer unidade sair de bancada — senha de AP derivada por dispositivo
+(ex.: sufixo do MAC), obrigar troca da senha de admin no primeiro acesso, e habilitar
+`CONFIG_NVS_ENCRYPTION`. Detalhes do que está guardado em
+[CONFIGURACAO_NVS.md](CONFIGURACAO_NVS.md).
