@@ -33,10 +33,10 @@ void HttpConfigHandler::handleGetRoot() {
   if (!authenticate(current)) return;
 
   String page = kConfigPageTemplate;
-  page.replace("{{SSID}}", current.wifi_ssid);
-  page.replace("{{APN}}", current.apn);
-  page.replace("{{APN_USER}}", current.apn_user);
-  page.replace("{{ADMIN_USER}}", current.admin_user);
+  page.replace("{{SSID}}", escapeForHtmlAttribute(current.wifi_ssid));
+  page.replace("{{APN}}", escapeForHtmlAttribute(current.apn));
+  page.replace("{{APN_USER}}", escapeForHtmlAttribute(current.apn_user));
+  page.replace("{{ADMIN_USER}}", escapeForHtmlAttribute(current.admin_user));
   server_.send(200, "text/html", page);
 }
 

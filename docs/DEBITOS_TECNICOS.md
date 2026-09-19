@@ -344,9 +344,9 @@ acidente que depende do default para decisão explícita.
   falha (partição cheia, handle inválido) derrubam também os cinco campos não vazios — a
   falha aparece, só não por esse campo. Separar de verdade exigiria reler a chave.
 
-## 17. Valores da configuração vão para o HTML sem escape
+## 17. Valores da configuração vão para o HTML sem escape — RESOLVIDO em 18/09/2026
 
-**Onde:** [src/adapters/http_config_handler.cpp:35-39](../src/adapters/http_config_handler.cpp:35)
+**Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `handleGetRoot()`
 
 `page.replace("{{SSID}}", current.wifi_ssid)` injeta o valor direto dentro de
 `value="..."`. Um `"`, `<` ou `&` em SSID, APN ou usuário admin quebra o atributo e pode
@@ -360,6 +360,20 @@ consequência local** — não é XSS explorável por terceiro, é tiro no próp
 
 **Ação:** escapar os quatro valores interpolados (`&`, `<`, `>`, `"`) antes do `replace`.
 Uma função de escape no `html_page` resolve; é a mesma correção para os quatro campos.
+
+**Resolvido:** `escapeForHtmlAttribute()` em
+[html_page.cpp](../src/adapters/html_page.cpp), aplicada nos quatro `replace`.
+
+Escapa um caractere além dos quatro previstos: `{` vira `&#123;`. Não é escape de HTML — é
+o que impede um valor gravado de forjar um placeholder. Um SSID literal `{{APN}}`
+atravessava o `replace` do SSID intacto e o `replace` seguinte o trocava pelo APN, jogando
+o valor no campo errado. Consequência era cosmética, mas o custo de fechar era uma linha e
+renderiza igual.
+
+**Em aberto:** a função não tem teste. Vive em `adapters/` e depende da `String` do
+Arduino, então está fora do `build_src_filter` do env nativo (débito 19). Testar exigiria
+ou mover o escape para `domain/` — onde ele não pertence, é apresentação — ou abrir o
+filtro para `adapters/`, que arrasta `WebServer.h`.
 
 ## 18. Lógica de bateria mora no `main.cpp`, contra a regra do próprio AGENTS.md
 
@@ -454,6 +468,11 @@ justamente de quem chega sem contexto.
 **Ação:** revisar as referências de linha ao fechar cada fase, junto com a atualização do
 `PLANO_ROTEADOR.md`. Alternativa mais durável: citar símbolo em vez de linha
 (`main.cpp` → `readBatteryVoltage()`), que não envelhece — mas perde o link clicável.
+
+**Parcial, 18/09/2026:** fechar os débitos 15, 16 e 17 deslocou as linhas dos três arquivos
+que eles citavam, exatamente o efeito descrito aqui. As referências dessas entradas passaram
+a citar símbolo (arquivo + nome da função), sem número. O débito continua aberto para as
+entradas 1 e 3, que são as que o texto acima mede.
 
 ## 22. Estado do uplink é exposto pelo supervisor e ninguém consome
 
