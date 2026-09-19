@@ -341,7 +341,7 @@ a conversão não ter camada própria.
 Fazer as duas coisas separadamente significa mexer no mesmo código duas vezes. Extraída
 para `domain/`, a conversão passa a ser testável sem hardware — ver débito 19.
 
-## 19. Nenhum teste automatizado, e nenhum ambiente onde rodar um
+## 19. Nenhum teste automatizado, e nenhum ambiente onde rodar um — RESOLVIDO em 18/09/2026
 
 **Onde:** [platformio.ini](../platformio.ini) — não há env `native`; não há diretório `test/`
 
@@ -358,6 +358,30 @@ driver.
 **Ação:** env `native` no `platformio.ini` com os testes de `validate()` — incluindo os
 limites do débito 15, uma vez decididos. Escopo deliberadamente pequeno: só o que é puro.
 Testar `infra/` exigiria mock de ESP-IDF e não se paga aqui.
+
+**Resolvido:** `[env:native]` no [platformio.ini](../platformio.ini) e 11 testes Unity em
+[test/test_router_settings/test_router_settings.cpp](../test/test_router_settings/test_router_settings.cpp),
+rodando por `pio test -e native`. Cobrem `validate()` inteira — cada código de erro, os dois
+limites de 8 caracteres pelos dois lados, a precedência entre campos inválidos, e o caso de
+`apn_user`/`apn_password` vazios serem aceitos de propósito — mais `to_string()`, que hoje
+tem mensagem própria para todo código do enum.
+
+Duas coisas que o débito não previa, e que quem mexer aqui precisa saber:
+
+- **O domínio não era puro.** [router_settings.h](../src/domain/router_settings.h) incluía
+  `<Arduino.h>` sem condição, então `src/domain/` não compilava no host de jeito nenhum. A
+  regra de dependência do AGENTS.md estava escrita, não verificada. O arquivo ganhou um
+  `#ifdef ARDUINO` que troca `String` por `std::string` fora da placa.
+- **O teste exercita `std::string`, não a `String` do Arduino.** Para `validate()` dá no
+  mesmo: a função só chama `length()`, e nos dois tipos isso conta bytes do buffer. Deixa de
+  dar no mesmo se o domínio crescer e passar a depender de conversão implícita ou de
+  semântica de cópia — aí verde no host para de significar verde na placa.
+
+O `build_src_filter = +<domain/>` é o que sustenta a fronteira: se um arquivo de `domain/`
+voltar a incluir hardware, `pio test -e native` quebra antes de o conceito quebrar calado.
+
+**Em aberto:** `voltageToPercent()` continua sem teste porque continua dentro do `main.cpp`
+(débito 18). Extrair para `domain/` e testar é o mesmo trabalho.
 
 ## 20. Porta serial de um adaptador específico versionada no `platformio.ini`
 
