@@ -2,12 +2,11 @@
 
 #include <esp_netif.h>
 
-// INFRA — liga o NAPT do lwIP entre o SoftAP e o uplink PPP e entrega o DNS da
-// operadora aos clientes do AP pela opcao 6 do DHCP. Sem as duas coisas juntas o
-// cliente associa, pega IP e nao chega a lugar nenhum.
+// INFRA — liga o NAPT do lwIP entre o SoftAP e o uplink PPP. O DNS dos clientes nao passa
+// por aqui: eles recebem o IP do proprio AP na opcao 6 do DHCP e falam com o DnsForwarder.
 class NatBridge {
  public:
-  // `uplink` precisa ja ter IP da operadora: e de la que sai o DNS repassado aos
-  // clientes. Retorna false logando o estagio exato que falhou.
+  // `uplink` precisa ja ter IP da operadora. Retorna false logando o estagio exato que
+  // falhou; uplink sem DNS nao e falha, so limita o forwarder a responder SERVFAIL.
   bool enable(esp_netif_t* uplink);
 };

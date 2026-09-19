@@ -122,7 +122,7 @@ para a página web, um buffer em RAM ou telemetria sem reescrever as chamadas.
 **Ação:** avaliar uma abstração de log quando houver um segundo consumidor real. Hoje há
 apenas um; criar a abstração agora seria abstração especulativa.
 
-## 9. Cliente que associa antes do PPP subir recebe DNS inútil
+## 9. Cliente que associa antes do PPP subir recebe DNS inútil — RESOLVIDO em 19/09/2026
 
 **Onde:** [src/infra/nat_bridge.cpp](../src/infra/nat_bridge.cpp), [src/main.cpp](../src/main.cpp)
 
@@ -139,6 +139,20 @@ que a Fase 6 vai implementar.
 sozinha em minutos, (b) subir um forwarder DNS local em 192.168.4.1, o que torna o endereço
 entregue no lease permanentemente válido e elimina a dependência de renovação, ou (c) só
 documentar e exigir reconexão manual do cliente. A (b) é a única que resolve de verdade.
+
+**Resolvido:** caminho (b) — [src/infra/dns_forwarder.cpp](../src/infra/dns_forwarder.cpp),
+descrito em [PRD 09](prd/09-dns-local.md). A (a) foi medida e descartada: o padrão da IDF é
+`DHCPS_LEASE_TIME_DEF` = 120 minutos (`dhcpserver.h`), T1 ≈ 60 min, então o cliente errado
+fica errado por até uma hora; e encurtar o lease multiplica as renovações, o que agrava o
+débito 12. O forwarder escuta em `192.168.4.1:53` — bind explícito nesse IP, nunca
+`INADDR_ANY`, senão o mesmo socket atenderia a interface PPP e o roteador viraria
+resolvedor aberto para a rede da operadora. O upstream sai de `dns_getserver(0)` lido a
+cada pergunta, então reconexão que troque o servidor da operadora já vale na pergunta
+seguinte. Sem uplink a resposta é SERVFAIL imediato, não silêncio.
+
+**Não coberto:** DNS over TCP. Resposta truncada faz o cliente reperguntar por TCP, e não
+há ninguém escutando em `192.168.4.1:53/tcp`. Não há cache: cada pergunta vira uma pergunta
+ao upstream.
 
 ## 10. Credenciais de fábrica em claro, NVS sem criptografia, admin sobre HTTP puro — PARCIAL em 19/09/2026
 
@@ -210,7 +224,7 @@ novos saem com o IP novo, e as conexões TCP antigas já estão mortas do outro 
 **Ação:** nenhuma por ora. Vira problema se as reconexões forem frequentes o bastante pra
 esgotar a tabela antes do timer limpar. Medir antes de mexer.
 
-## 12. Janela de DHCP fechada a cada reconexão
+## 12. Janela de DHCP fechada a cada reconexão — RESOLVIDO em 19/09/2026
 
 **Onde:** [src/infra/nat_bridge.cpp](../src/infra/nat_bridge.cpp) — `offerDnsToApClients()`
 
@@ -223,6 +237,13 @@ exatamente nessa janela falha e precisa tentar de novo.
 **Ação:** aceito. A janela é de milissegundos e o cliente DHCP retenta sozinho. Some junto
 com o débito 9, se o forwarder de DNS local for implementado — aí o DNS entregue passa a
 ser sempre `192.168.4.1` e não precisa mais mudar entre sessões.
+
+**Resolvido:** foi o que aconteceu. `offerDnsToApClients()` não existe mais, e com ela
+sumiram o `dhcps_stop` e o `dhcps_start` do caminho de reconexão — o débito morreu por
+remoção de código, não por contorno. O `NatBridge` só liga o NAPT e loga o DNS da
+operadora; o valor entregue na opção 6 passa a ser o que o `dhcpserver` já preenchia
+sozinho (o IP do AP), e agora existe resolvedor nesse endereço. Uplink sem DNS também
+deixou de ser fatal: o NAT arma do mesmo jeito e o forwarder responde SERVFAIL.
 
 
 ## 13. Pacotes PPP de entrada descartados sob tráfego (`pppos_input_tcpip failed with -1`)

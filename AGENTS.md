@@ -71,6 +71,14 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   usa `bootloader_random_enable()` e o contrato da IDF manda fechar essa janela antes de
   inicializar RF/ADC/I2S. Justificativa completa em
   [docs/prd/08-segredos-por-unidade.md](docs/prd/08-segredos-por-unidade.md)
+- O DNS dos clientes do AP é resolvido localmente. `DnsForwarder` (`infra/dns_forwarder`)
+  escuta em `192.168.4.1:53` e repassa para o DNS da operadora lido de `dns_getserver(0)`.
+  O `NatBridge` **não mexe mais no DHCP do AP**: a opção 6 já sai com o IP do próprio AP
+  por padrão (`dhcpserver.c`), e com um resolvedor nesse endereço o valor do lease vale
+  para sempre. O bind é explicitamente em `192.168.4.1`, nunca `INADDR_ANY` — com
+  `INADDR_ANY` o socket atenderia a interface PPP e o roteador viraria resolvedor aberto
+  para a rede da operadora. Encurtar o lease foi rejeitado: agravaria a janela de DHCP.
+  Justificativa completa em [docs/prd/09-dns-local.md](docs/prd/09-dns-local.md)
 - Até 15 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — 15 é o teto do
   driver no ESP32 clássico (`ESP_WIFI_MAX_CONN_NUM`), não uma escolha de projeto
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico

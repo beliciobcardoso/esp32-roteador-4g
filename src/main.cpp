@@ -6,6 +6,7 @@
 #include "adapters/nvs_settings_repository.h"
 #include "domain/battery.h"
 #include "infra/battery_adc.h"
+#include "infra/dns_forwarder.h"
 #include "infra/entropy.h"
 #include "infra/link_supervisor.h"
 #include "infra/modem_ppp.h"
@@ -30,6 +31,7 @@ BatteryAdc batteryAdc;
 WifiAp wifiAp;
 ModemPpp modemPpp;
 NatBridge natBridge;
+DnsForwarder dnsForwarder;
 LinkSupervisor linkSupervisor(modemPpp, natBridge);
 
 // Ponte entre o adaptador HTTP e o supervisor: o handler nao conhece o modem, e o
@@ -90,6 +92,14 @@ bool startRouting(const RouterSettings& settings) {
     return false;
   }
   Serial.printf("Roteamento: AP no ar em %s\n", WiFi.softAPIP().toString().c_str());
+
+  // Depois do AP e antes do uplink: e o endereco do AP que o forwarder ocupa, e os clientes
+  // ja recebem esse endereco como DNS no primeiro lease. Falhar aqui nao derruba o
+  // roteamento — quebra a resolucao de nomes, que e grave o bastante para ir pro log e
+  // leve o bastante para nao valer perder a pagina de configuracao junto.
+  if (!dnsForwarder.begin(static_cast<uint32_t>(WiFi.softAPIP()))) {
+    Serial.println("Roteamento: DNS local nao subiu — clientes vao rotear, mas nao resolver");
+  }
 
   if (!linkSupervisor.begin(settings)) {
     Serial.println("Roteamento: parou na supervisao do uplink — AP so pra configuracao");
