@@ -1,28 +1,57 @@
 # Débitos Técnicos
 
-## 1. `VOLTAGE_DIVIDER_RATIO` hardcoded e calibrado por placa
+## 1. `VOLTAGE_DIVIDER_RATIO` hardcoded e calibrado por placa — PARCIAL em 19/09/2026
 
-**Onde:** [src/main.cpp:11](../src/main.cpp:11)
+**Onde:** [include/config.h](../include/config.h) — `BATTERY_VOLTAGE_DIVIDER_RATIO`
+(era `src/main.cpp`, movido em 19/09/2026)
 
 Constante `2.19` calibrada com multímetro numa placa específica (16/09). Resistores do divisor variam por tolerância/placa — ratio não é universal.
 
 **Ação:** mover para `config.h` (já previsto no plano, Fase 1) como default de fábrica, sobrescrevível via NVS/config, em vez de `#define` fixo no firmware.
 
-## 2. Perda de precisão silenciosa em `voltageToPercent`
+**Feito:** o `#define` saiu do `main.cpp` e virou `BATTERY_VOLTAGE_DIVIDER_RATIO` no
+[config.h](../include/config.h), junto dos outros defaults de fábrica e com a calibração
+documentada ali. Recalibrar é trocar um valor num arquivo que já existe para isso.
 
-**Onde:** [src/main.cpp:73](../src/main.cpp:73)
+**Em aberto — a metade que importa:** sobrescrever por configuração. Exige campo em
+`RouterSettings`, `putFloat`/`getFloat` na NVS, campo no formulário e faixa aceitável no
+`validate()`. O que segura não é o trabalho, é o efeito: campo novo obriga subir o schema
+de 2 para 3, e `load()` trata schema menor que o atual como registro ausente — ou seja, a
+placa cai nos defaults e **perde SSID, senha e APN salvos**. A Fase 7 já prevê schema 3
+reescrevendo todos os campos; juntar ali custa um wipe em vez de dois. Fazer antes disso é
+possível, só não é de graça.
+
+## 2. Perda de precisão silenciosa em `voltageToPercent` — RESOLVIDO em 19/09/2026
+
+**Onde:** [src/domain/battery.cpp](../src/domain/battery.cpp) — `voltageToPercent()`
+(era `src/main.cpp`, extraído em 19/09/2026)
 
 `return p2 + frac * (p1 - p2);` retorna `float` em função `int` — trunca sem aviso. Funciona pra exibição de %, mas não está documentado como intencional (podia arredondar com `round()` ou já declarar o intuito no comentário).
 
 **Ação:** decidir explicitamente — arredondar (`round()`) se quiser %, ou mudar assinatura pra `float` se precisão importar em algum consumidor futuro (ex: log/telemetria).
 
+**Resolvido:** arredonda, via `std::lround`. Assinatura fica `int` porque o único consumidor
+exibe percentual inteiro, e o cabeçalho registra a condição de reabrir: se aparecer
+consumidor que precise de resolução abaixo de 1%, o que muda é a assinatura — arredondar
+aqui e deixar o chamador lidar com a perda seria esconder a decisão de novo.
+
+O truncamento errava sempre para baixo, até 1 ponto. Um teste nativo fixa o caso
+(4.1324 V → 93%, truncando daria 92), escolhido longe de .5 para não depender do erro do
+`float`.
+
 ## 3. Sem suavização entre ciclos de leitura de bateria
 
-**Onde:** [src/main.cpp:51-60](../src/main.cpp:51)
+**Onde:** [src/infra/battery_adc.cpp](../src/infra/battery_adc.cpp) — `readVoltage()`
+(era `src/main.cpp`, extraído em 19/09/2026)
 
 Cada `loop()` reamostra do zero (`NUM_SAMPLES` leituras), sem média móvel ou filtro entre ciclos anteriores. Ruído do ADC pode causar variação de % perceptível entre prints consecutivos.
 
 **Ação:** avaliar filtro exponencial (EMA) entre leituras se oscilação incomodar na UI final; por ora é decisão aceita pro protótipo, não bug.
+
+**Nota, 19/09/2026:** segue sendo decisão aceita, não foi mexido. Mudou só o custo de
+mexer: com a leitura em `infra/battery_adc` e a conversão em `domain/battery`, um EMA cabe
+num dos dois (estado da amostragem em infra, ou suavização pura como função de domínio
+testável) sem tocar no `main.cpp`. Antes era editar o mesmo bloco de novo.
 
 ## 4. `loop()` bloqueia `httpConfigHandler.handleClient()` por ~3s por ciclo — RESOLVIDO na Fase 6
 
@@ -267,7 +296,7 @@ com "others: refer to the error code in esp_err.h". Dois desfechos possíveis, c
 severidades muito diferentes:
 
 - **Driver rejeita** → `esp_wifi_set_config` falha → `softAP()` devolve false →
-  `startRouting()` para no SoftAP ([src/main.cpp:120](../src/main.cpp:120)). Como
+  `startRouting()` para no SoftAP ([src/main.cpp](../src/main.cpp)). Como
   SSID/senha só valem após reboot ([http_config_handler.cpp](../src/adapters/http_config_handler.cpp)
   — `handlePostRoot()`),
   o usuário salva, vê "Configuração salva", reinicia e a placa fica sem AP — e sem AP não
@@ -380,9 +409,10 @@ Arduino, então está fora do `build_src_filter` do env nativo (débito 19). Tes
 ou mover o escape para `domain/` — onde ele não pertence, é apresentação — ou abrir o
 filtro para `adapters/`, que arrasta `WebServer.h`.
 
-## 18. Lógica de bateria mora no `main.cpp`, contra a regra do próprio AGENTS.md
+## 18. Lógica de bateria mora no `main.cpp`, contra a regra do próprio AGENTS.md — RESOLVIDO em 19/09/2026
 
-**Onde:** [src/main.cpp:30-88](../src/main.cpp:30)
+**Onde:** [src/main.cpp](../src/main.cpp) — linhas 30-88 à época; o código saiu do arquivo
+em 19/09/2026
 
 O `AGENTS.md` declara para o `main.cpp`: "só orquestração/injeção, zero lógica de negócio".
 São 70 das 198 linhas do arquivo em curva de descarga Li-ion, média de ADC e interpolação
@@ -398,6 +428,24 @@ a conversão não ter camada própria.
 Fazer as duas coisas separadamente significa mexer no mesmo código duas vezes. Extraída
 para `domain/`, a conversão passa a ser testável sem hardware — ver débito 19.
 
+**Resolvido:** a conversão foi para [domain/battery.cpp](../src/domain/battery.cpp)
+(`voltageToPercent()`, com a curva em `constexpr` de namespace anônimo) e a amostragem do
+pino para [infra/battery_adc.cpp](../src/infra/battery_adc.cpp) (`BatteryAdc`). As
+constantes de ADC e o ratio foram para o [config.h](../include/config.h). O `main.cpp` caiu
+de 198 para 123 linhas e ficou com o agendamento por `millis()` e o `Serial.print` — que é
+orquestração, não regra.
+
+Sete testes nativos cobrem a conversão: saturação nas duas pontas, ponto exato da tabela,
+arredondamento (débito 2) e monotonicidade varrendo 2.80–4.40 V de 1 mV em 1 mV — essa
+última pega ponto fora de ordem e buraco entre faixas, que devolveria 0 no meio da curva.
+
+O `esp_log_level_set("gpio", ESP_LOG_WARN)` foi junto, para `BatteryAdc::begin()`. É
+mudança global de nível de log, mas existe só porque `analogRead` loga 20 linhas por
+leitura de bateria — ficando ao lado da causa, sai junto se a leitura sair.
+
+**Em aberto:** só a metade do débito 1 que depende do schema 3 (ver lá). O débito 3 não foi
+mexido, de propósito.
+
 ## 19. Nenhum teste automatizado, e nenhum ambiente onde rodar um — RESOLVIDO em 18/09/2026
 
 **Onde:** [platformio.ini](../platformio.ini) — não há env `native`; não há diretório `test/`
@@ -405,8 +453,8 @@ para `domain/`, a conversão passa a ser testável sem hardware — ver débito 
 O projeto adotou Clean Architecture explicitamente para isolar regra de negócio de
 hardware, e hoje existem duas funções puras que essa escolha tornou testáveis sem placa:
 `validate()` ([router_settings.cpp](../src/domain/router_settings.cpp)) e
-`voltageToPercent()` ([main.cpp:73](../src/main.cpp:73), assim que sair do `main` — débito
-18). Nenhuma das duas tem teste, e não há ambiente configurado para executar um.
+`voltageToPercent()` (ainda dentro do `main.cpp` à época — débito 18). Nenhuma das duas tem
+teste, e não há ambiente configurado para executar um.
 
 O retorno prático disso é concreto: o débito 15 é um caso de limite em `validate()`, e um
 teste de limite o pegaria em segundos, sem hardware e sem depender do comportamento do
@@ -416,10 +464,11 @@ driver.
 limites do débito 15, uma vez decididos. Escopo deliberadamente pequeno: só o que é puro.
 Testar `infra/` exigiria mock de ESP-IDF e não se paga aqui.
 
-**Resolvido:** `[env:native]` no [platformio.ini](../platformio.ini) e 11 testes Unity em
+**Resolvido:** `[env:native]` no [platformio.ini](../platformio.ini) e 15 testes Unity em
 [test/test_router_settings/test_router_settings.cpp](../test/test_router_settings/test_router_settings.cpp),
-rodando por `pio test -e native`. Cobrem `validate()` inteira — cada código de erro, os dois
-limites de 8 caracteres pelos dois lados, a precedência entre campos inválidos, e o caso de
+rodando por `pio test -e native`. Cobrem `validate()` inteira — cada código de erro, os
+limites de comprimento pelos dois lados (8 caracteres de senha, e os máximos de SSID e
+passphrase que vieram com o débito 15), a precedência entre campos inválidos, e o caso de
 `apn_user`/`apn_password` vazios serem aceitos de propósito — mais `to_string()`, que hoje
 tem mensagem própria para todo código do enum.
 
@@ -437,8 +486,10 @@ Duas coisas que o débito não previa, e que quem mexer aqui precisa saber:
 O `build_src_filter = +<domain/>` é o que sustenta a fronteira: se um arquivo de `domain/`
 voltar a incluir hardware, `pio test -e native` quebra antes de o conceito quebrar calado.
 
-**Em aberto:** `voltageToPercent()` continua sem teste porque continua dentro do `main.cpp`
-(débito 18). Extrair para `domain/` e testar é o mesmo trabalho.
+**Fechado em 19/09/2026:** `voltageToPercent()` saiu do `main.cpp` para
+[domain/battery.cpp](../src/domain/battery.cpp) junto com o débito 18 e ganhou sete testes
+nativos. As duas funções puras que o projeto tinha estão cobertas; o env nativo deixou de
+ter ponta solta.
 
 ## 20. Porta serial de um adaptador específico versionada no `platformio.ini`
 
@@ -461,10 +512,12 @@ aparecer a segunda.
 
 Os links com número de linha envelhecem silenciosamente conforme o código anda:
 
-- Débito 1 aponta [src/main.cpp:11](../src/main.cpp:11); `VOLTAGE_DIVIDER_RATIO` está hoje
-  na linha 22.
-- Débito 3 aponta `src/main.cpp:51-60` como a leitura de bateria; essa faixa hoje é o meio
-  da tabela da curva de descarga, e `readBatteryVoltage()` está em 62-71.
+- Débito 1 apontava `src/main.cpp:11` para `VOLTAGE_DIVIDER_RATIO`, que na data em que isto
+  foi escrito já estava na linha 22.
+- Débito 3 apontava `src/main.cpp:51-60` como a leitura de bateria; a faixa já era o meio da
+  tabela da curva de descarga, e `readBatteryVoltage()` estava em 62-71.
+
+(Ambos os trechos saíram do `main.cpp` em 19/09/2026 — ver o registro no fim desta entrada.)
 
 Os dois ainda são encontráveis pelo nome do símbolo, então o custo hoje é pequeno. Mas este
 arquivo é o mecanismo de memória do projeto entre fases, e referência errada gasta confiança
@@ -476,8 +529,25 @@ justamente de quem chega sem contexto.
 
 **Parcial, 18/09/2026:** fechar os débitos 15, 16 e 17 deslocou as linhas dos três arquivos
 que eles citavam, exatamente o efeito descrito aqui. As referências dessas entradas passaram
-a citar símbolo (arquivo + nome da função), sem número. O débito continua aberto para as
-entradas 1 e 3, que são as que o texto acima mede.
+a citar símbolo (arquivo + nome da função), sem número.
+
+**Parcial, 19/09/2026:** as duas referências que o texto acima mede — débitos 1 e 3 —
+deixaram de existir: o código que elas apontavam saiu do `main.cpp` na extração da bateria,
+e as entradas passaram a citar arquivo e símbolo. Pelo critério declarado, este débito
+estaria fechado.
+
+**Não está, e é o próprio ponto:** a mesma extração deslocou outras três referências
+(débitos 18, 19 e o `main.cpp:120` do débito 15), corrigidas na mesma passada. Duas
+revisões seguidas produziram o mesmo defeito — o débito não é sobre as linhas erradas de
+hoje, é sobre o formato que as produz. Sobrou número de linha apontando para código do
+projeto em quatro entradas — 5, 14, 16 e 22 —, nenhuma verificada nesta passada. As citações
+de fonte externa (core Arduino, lwIP, `Preferences`) nos débitos 5, 13, 15 e 16 ficam como
+estão: apontam para versão instalada de dependência, não para código que este repositório
+move.
+
+**Ação revisada:** ou converter as restantes para símbolo de uma vez e proibir número novo,
+ou aceitar o formato e checar tudo ao fechar cada fase. Continuar corrigindo por encontro
+é o que já se mostrou não funcionar.
 
 ## 22. Estado do uplink é exposto pelo supervisor e ninguém consome
 

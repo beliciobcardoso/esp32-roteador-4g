@@ -16,6 +16,19 @@
 // Namespace usado na NVS para as chaves de configuracao do roteador.
 #define SETTINGS_NVS_NAMESPACE "router_cfg"
 
+// --- Bateria ---
+// Ratio do divisor resistivo, calibrado com multimetro em 16/09 numa placa especifica:
+// tensao real 4.16 V, tensao no pino 1.90 V, 4.16 / 1.90 = 2.19. Resistores variam dentro
+// da tolerancia, entao este numero NAO e universal — e default de fabrica, como os de
+// cima, e nao constante de firmware. Sobrescrever por configuracao ainda nao existe: falta
+// campo na NVS, e isso espera o schema 3 da Fase 7 (debito 1). Recalibrou? troca aqui.
+#define BATTERY_VOLTAGE_DIVIDER_RATIO 2.19f
+#define BATTERY_ADC_PIN 35
+#define BATTERY_ADC_MAX 4095.0f
+#define BATTERY_ADC_REF_VOLTAGE 3.3f
+// Leituras por amostragem — media reduz o ruido do ADC do ESP32.
+#define BATTERY_ADC_SAMPLES 20
+
 // Pinagem do modem A7670E na LilyGO T-A7670E R2, conferida contra o utilities.h
 // oficial (Xinyuan-LilyGO/LilyGO-T-A76XX). RX/TX sao do ponto de vista do ESP32
 // (MODEM_RX_PIN = pino que o ESP32 usa pra RECEBER, ligado ao TX do modem).

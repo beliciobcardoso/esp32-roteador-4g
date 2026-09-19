@@ -69,7 +69,7 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
 ## Hardware — cuidados obrigatórios
 
 - `BOARD_POWERON_PIN` (GPIO12) tem que ir `HIGH` no `setup()` — sem isso a placa desliga sozinha rodando só na bateria
-- `VOLTAGE_DIVIDER_RATIO` em `main.cpp` é calibrado por multímetro numa placa específica — não é universal (ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md))
+- `BATTERY_VOLTAGE_DIVIDER_RATIO` em [include/config.h](include/config.h) é calibrado por multímetro numa placa específica — não é universal, e ainda não é sobrescrevível por configuração (débito 1 em [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md))
 - Só um processo por vez na porta serial — upload falha com `Device or resource busy` se o monitor estiver aberto
 - A porta serial reenumera após o reset do upload (`ttyACM0` → `ttyACM1`) — sempre usar o caminho estável `/dev/serial/by-id/...`, nunca o numerado
 - Pulso de PWRKEY do A7670E precisa de 1000 ms (`Ton(pwrkey)`) — 100 ms faz o handshake AT demorar ou falhar
