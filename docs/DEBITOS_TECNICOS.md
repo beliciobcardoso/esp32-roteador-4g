@@ -204,7 +204,7 @@ Se 64 não bastar, as opções são `CONFIG_LWIP_TCPIP_CORE_LOCKING` +
 modelo de concorrência do lwIP) ou `CONFIG_LWIP_IRAM_OPTIMIZATION` (acelera o forward,
 custa IRAM). Ambas caras demais pra especular sem medição.
 
-## 14. Requisição a rota não registrada vira log de erro
+## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp:14-15](../src/adapters/http_config_handler.cpp:14)
 
@@ -220,6 +220,11 @@ essas linhas se misturam com erro de verdade.
 
 **Ação:** `server_.onNotFound(...)` devolvendo 404 limpo, sem vazar detalhe interno. Duas
 linhas. Não entrou na Fase 6 por ser fora do escopo dela.
+
+**Resolvido:** `handleNotFound()` em
+[http_config_handler.cpp](../src/adapters/http_config_handler.cpp) responde `404` com corpo
+fixo — sem eco da URI e sem lista de rotas. Sem Basic Auth de propósito: exigir credencial
+aí faria o navegador abrir o popup de senha por causa de um favicon.
 
 ---
 

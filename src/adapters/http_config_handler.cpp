@@ -13,6 +13,7 @@ HttpConfigHandler::HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSetti
 void HttpConfigHandler::begin() {
   server_.on("/", HTTP_GET, [this]() { handleGetRoot(); });
   server_.on("/", HTTP_POST, [this]() { handlePostRoot(); });
+  server_.onNotFound([this]() { handleNotFound(); });
   server_.begin();
 }
 
@@ -26,6 +27,16 @@ bool HttpConfigHandler::authenticate(const RouterSettings& current) {
   }
   server_.requestAuthentication(BASIC_AUTH, kAuthRealm);
   return false;
+}
+
+// Sonda de portal cativo do Android e /favicon.ico batem aqui o tempo todo. Sem este
+// handler o caminho default do WebServer registra "request handler not found" como erro,
+// e numa depuracao de campo essas linhas se misturam com erro de verdade (debito 14).
+// Corpo fixo e curto: sem eco da URI e sem lista de rotas, nada que descreva o servidor.
+// Sem Basic Auth de proposito — exigir credencial aqui faria o navegador abrir o popup de
+// senha por causa de um favicon.
+void HttpConfigHandler::handleNotFound() {
+  server_.send(404, "text/plain", "nao encontrado");
 }
 
 void HttpConfigHandler::handleGetRoot() {
