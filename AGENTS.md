@@ -100,3 +100,8 @@ Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
 - Toda rota HTTP sensível (config): Basic Auth obrigatório, erro sem vazar detalhe interno
 - Seguir padrão do arquivo existente ao editar, não impor estilo novo
 - Não criar abstração antes de duas ocorrências reais a justificarem
+- Referência de documentação para código **deste** repositório cita arquivo + símbolo
+  (`http_config_handler.cpp` → `begin()`), nunca número de linha — linha envelhece em
+  silêncio a cada refatoração, e este erro já apareceu em duas revisões seguidas (débito 21).
+  Citação de fonte externa (core Arduino, lwIP, ESP-IDF) pode ter linha: aponta para versão
+  instalada de dependência, que não se move sozinha

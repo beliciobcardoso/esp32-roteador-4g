@@ -67,7 +67,7 @@ supervisão do modem.
 
 ## 5. Limite de clientes do AP prometia 20, teto do driver é 15
 
-**Onde:** [src/infra/wifi_ap.cpp:14](../src/infra/wifi_ap.cpp:14)
+**Onde:** [src/infra/wifi_ap.cpp](../src/infra/wifi_ap.cpp) — `kMaxClients`
 
 `kMaxClients` era 20 e o driver cortava em 10, avisando no boot:
 
@@ -235,7 +235,7 @@ custa IRAM). Ambas caras demais pra especular sem medição.
 
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
-**Onde:** [src/adapters/http_config_handler.cpp:14-15](../src/adapters/http_config_handler.cpp:14)
+**Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `begin()`
 
 Só `/` está registrado (GET e POST) e não há `onNotFound`. Qualquer `/favicon.ico` ou sonda
 de portal cativo do Android cai no caminho default do `WebServer`, que loga como erro:
@@ -335,7 +335,7 @@ uma config que o usuário reconhece). Nenhuma placa conhecida está nesse estado
 A função termina em `return true` fixo e não checa nenhum dos oito retornos que a
 `Preferences` oferece. A interface promete o contrário —
 "true se a gravação foi bem-sucedida"
-([settings_repository.h:14](../src/adapters/settings_repository.h:14)) — e o HTTP responde
+(`save()` em [settings_repository.h](../src/adapters/settings_repository.h)) — e o HTTP responde
 "Configuração salva." mesmo sem nada ter sido gravado.
 
 **Confirmado por leitura** (`libraries/Preferences/src/Preferences.cpp`):
@@ -524,7 +524,7 @@ default explícito em vez de única opção. Quem clonar sem criar o override e 
 adaptador ainda vê o upload falhar — a diferença é que o comentário do `platformio.ini`
 agora diz o que fazer, em vez de o arquivo parecer universal.
 
-## 21. Referências de linha deste arquivo saem de sincronia sem aviso
+## 21. Referências de linha deste arquivo saem de sincronia sem aviso — RESOLVIDO em 19/09/2026
 
 **Onde:** este arquivo — débitos 1 e 3
 
@@ -567,6 +567,24 @@ move.
 **Ação revisada:** ou converter as restantes para símbolo de uma vez e proibir número novo,
 ou aceitar o formato e checar tudo ao fechar cada fase. Continuar corrigindo por encontro
 é o que já se mostrou não funcionar.
+
+**Resolvido em 19/09/2026 pelo primeiro caminho.** As três restantes viraram símbolo:
+débito 5 → `kMaxClients`, débito 14 → `begin()`, débito 16 → `save()`. Detalhe que vale
+registrar: as três *estavam certas* no momento da conversão — `wifi_ap.cpp:14` de fato era
+`kMaxClients`. Não foram convertidas por estarem erradas, foram convertidas porque acertar
+hoje não diz nada sobre amanhã, e a única evidência que este débito acumulou é que o formato
+erra sozinho.
+
+A proibição de número novo está em [AGENTS.md](../AGENTS.md), em "Regras de código" — sem
+isso a conversão dura até a próxima entrada escrita no automático. Varredura final:
+`grep -rE '\(\.\./[^)]*:[0-9]+\)' docs AGENTS.md` não devolve nada que aponte para código
+deste repositório. Sobra uma linha em `docs/DEBITOS_TECNICOS.md` com `WebServer.cpp:638`,
+que é log colado do core Arduino, não referência.
+
+Fica fora do fechamento o que este débito nunca cobriu: referências de linha para fonte
+externa (débitos 5, 13, 15 e 16 citam core Arduino, lwIP e `Preferences`) continuam com
+número, porque apontam para versão instalada de dependência — não é código que este
+repositório move.
 
 ## 22. Estado do uplink é exposto pelo supervisor e ninguém consome — RESOLVIDO em 19/09/2026
 
