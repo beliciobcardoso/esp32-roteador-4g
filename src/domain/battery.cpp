@@ -1,5 +1,7 @@
 #include "battery.h"
 
+#include <cmath>
+
 namespace {
 
 struct BatteryPoint {
@@ -33,7 +35,10 @@ int voltageToPercent(float voltage) {
     const int lowerPercent = kCurve[i + 1].percent;
     const float fraction = (voltage - lowerVoltage) / (upperVoltage - lowerVoltage);
 
-    return lowerPercent + fraction * (upperPercent - lowerPercent);
+    // Arredonda de proposito. A versao anterior devolvia `lowerPercent + fraction * delta`
+    // direto numa funcao `int`, truncando sem aviso — perda silenciosa de ate 1 ponto,
+    // sempre pra baixo (debito 2).
+    return static_cast<int>(std::lround(lowerPercent + fraction * (upperPercent - lowerPercent)));
   }
 
   // Inalcancavel: os dois saturadores acima cobrem fora da curva, e a tabela nao tem
