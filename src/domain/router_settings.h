@@ -32,7 +32,9 @@ struct RouterSettings {
 enum class SettingsValidationError {
   None,
   EmptySsid,
+  SsidTooLong,
   WifiPasswordTooShort,
+  WifiPasswordTooLong,
   EmptyApn,
   EmptyAdminUser,
   AdminPasswordTooShort,

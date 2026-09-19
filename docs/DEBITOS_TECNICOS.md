@@ -232,9 +232,9 @@ porque a severidade de alguns depende de teste que ainda não foi feito.
 - **22** — análise do projeto em 18/09/2026, posterior e independente da anterior. Mesma
   data, revisão diferente: não faz parte do lote acima.
 
-## 15. `validate()` não impõe os limites de comprimento do 802.11
+## 15. `validate()` não impõe os limites de comprimento do 802.11 — RESOLVIDO em 18/09/2026
 
-**Onde:** [src/domain/router_settings.cpp:7-14](../src/domain/router_settings.cpp:7)
+**Onde:** [src/domain/router_settings.cpp](../src/domain/router_settings.cpp) — `validate()`
 
 A validação checa vazio e mínimo de 8 caracteres, mas não o **máximo**: SSID pode ter 40
 caracteres e senha de AP pode ter 70, e os dois são persistidos na NVS.
@@ -263,7 +263,8 @@ severidades muito diferentes:
 
 - **Driver rejeita** → `esp_wifi_set_config` falha → `softAP()` devolve false →
   `startRouting()` para no SoftAP ([src/main.cpp:120](../src/main.cpp:120)). Como
-  SSID/senha só valem após reboot ([http_config_handler.cpp:84](../src/adapters/http_config_handler.cpp:84)),
+  SSID/senha só valem após reboot ([http_config_handler.cpp](../src/adapters/http_config_handler.cpp)
+  — `handlePostRoot()`),
   o usuário salva, vê "Configuração salva", reinicia e a placa fica sem AP — e sem AP não
   há página de configuração. Recuperação só por serial ou `erase_flash`.
 - **Driver aceita** → AP sobe com SSID truncado em 32. O usuário se conecta normalmente,
@@ -277,6 +278,21 @@ severidades muito diferentes:
 2. Impor os limites em `validate()` (SSID ≤ 32 bytes, senha de AP entre 8 e 63) com os
    `SettingsValidationError` correspondentes. Vale nos dois desfechos; o que muda é a
    urgência.
+
+**Resolvido:** etapa 2 feita — `kMaxSsidLength = 32` e `kMaxWifiPasswordLength = 63` em
+[router_settings.cpp](../src/domain/router_settings.cpp), com `SsidTooLong` e
+`WifiPasswordTooLong`. Quatro testes nativos fixam as duas fronteiras pelos dois lados
+(32 aceito / 33 recusado, 63 aceito / 64 recusado).
+
+A etapa 1 **não foi feita e deixou de ser pré-requisito**: com o limite imposto antes da
+gravação, o driver nunca recebe a config inconsistente, e a correção era a mesma nos dois
+desfechos. O que o teste de bancada responderia hoje é só curiosidade sobre o blob.
+
+**Em aberto:** `load()` não revalida o que já está na NVS. Um valor acima do limite gravado
+antes desta mudança continua sendo carregado e entregue ao `softAP()` como sempre foi — a
+proteção é só na entrada. Custo de fechar: chamar `validate()` no `load()` e decidir o que
+fazer com um registro reprovado, que não é obviamente "cair nos defaults" (isso apagaria
+uma config que o usuário reconhece). Nenhuma placa conhecida está nesse estado.
 
 ## 16. `NvsSettingsRepository::save()` sempre reporta sucesso
 
