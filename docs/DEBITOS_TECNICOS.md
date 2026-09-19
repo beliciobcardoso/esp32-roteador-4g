@@ -140,7 +140,7 @@ sozinha em minutos, (b) subir um forwarder DNS local em 192.168.4.1, o que torna
 entregue no lease permanentemente válido e elimina a dependência de renovação, ou (c) só
 documentar e exigir reconexão manual do cliente. A (b) é a única que resolve de verdade.
 
-## 10. Credenciais de fábrica em claro, NVS sem criptografia, admin sobre HTTP puro
+## 10. Credenciais de fábrica em claro, NVS sem criptografia, admin sobre HTTP puro — PARCIAL em 19/09/2026
 
 **Onde:** [include/config.h](../include/config.h), [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp), [sdkconfig.defaults](../sdkconfig.defaults)
 
@@ -159,6 +159,41 @@ Três problemas que se somam, todos aceitáveis em bancada e nenhum aceitável e
 (ex.: sufixo do MAC), obrigar troca da senha de admin no primeiro acesso, e habilitar
 `CONFIG_NVS_ENCRYPTION`. Detalhes do que está guardado em
 [CONFIGURACAO_NVS.md](CONFIGURACAO_NVS.md).
+
+**Feito** (ver [PRD 08](prd/08-segredos-por-unidade.md)): não existe mais senha de fábrica.
+`DEFAULT_AP_PASSWORD` e `DEFAULT_ADMIN_PASSWORD` saíram do [config.h](../include/config.h).
+Numa NVS vazia, `ProvisionSettingsUseCase` sorteia as duas senhas no primeiro boot, grava e
+imprime uma única vez no serial. A senha de admin nasce marcada como pendente
+(`admin_password_pending`, chave `admin_pend`), e o `POST /` recusa qualquer gravação que a
+mantenha — trocar a senha de admin é a primeira coisa que a página aceita fazer. O caminho
+de fallback do `LoadSettingsUseCase` (NVS ilegível) passou a devolver senhas vazias, que o
+`validate()` reprova e que impedem o AP de subir: falha visível em vez de placa no ar com a
+senha que está no repositório.
+
+**A sugestão de derivar do MAC foi rejeitada**, e não por gosto. O MAC do SoftAP é o MAC
+base com o último octeto incrementado (`esp_hw_support/mac_addr.c`,
+`case ESP_MAC_WIFI_SOFTAP: mac[5] += 1`), e esse MAC é o BSSID, transmitido em todo beacon.
+Qualquer pessoa no alcance lê o BSSID num scan passivo e calcula a senha: seria trocar uma
+senha pública no GitHub por uma senha pública no ar. Segredo por unidade tem que ser
+sorteado, e o sorteio usa `bootloader_random_enable()` porque acontece antes do rádio subir,
+justo na janela em que `esp_random()` não é confiável.
+
+**Em aberto — os dois que dependem de decisão, não de código:**
+
+- **TLS na página de configuração.** Basic Auth continua sobre HTTP puro, e a PSK do WPA2 é
+  compartilhada: qualquer cliente já associado captura o handshake dos outros e lê o
+  tráfego deles. Fechar isso troca o `WebServer` do Arduino por `esp_https_server`, custa
+  RAM e traz certificado autoassinado. É PRD próprio.
+- **`CONFIG_NVS_ENCRYPTION`.** Não é flag independente: `depends on SECURE_FLASH_ENC_ENABLED`
+  (`components/nvs_flash/Kconfig`, IDF 4.4.7). Ligar exige flash encryption, que **queima
+  eFuse — permanente e por placa**, e em Release mode acaba com a regravação em texto claro.
+  O terreno já está preparado: a partição `nvs_keys` cabe no vão de 56 KB em `0x12000` sem
+  mover `nvs` nem `phy_init`, e o `Preferences` não precisa de mudança nenhuma. O que falta
+  é a decisão de queimar, que não se desfaz.
+
+**Unidade de bancada já gravada continua com `admin1234`** — provisionamento novo só roda em
+NVS vazia, de propósito (subir o schema apagaria a configuração de todo mundo). Para
+reprovisionar, apagar a partição: ver [CONFIGURACAO_NVS.md](CONFIGURACAO_NVS.md).
 
 ## 11. Tabela NAPT não é limpa entre sessões PPP
 
