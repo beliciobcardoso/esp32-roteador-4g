@@ -204,7 +204,7 @@ Se 64 não bastar, as opções são `CONFIG_LWIP_TCPIP_CORE_LOCKING` +
 modelo de concorrência do lwIP) ou `CONFIG_LWIP_IRAM_OPTIMIZATION` (acelera o forward,
 custa IRAM). Ambas caras demais pra especular sem medição.
 
-## 14. Requisição a rota não registrada vira log de erro
+## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp:14-15](../src/adapters/http_config_handler.cpp:14)
 
@@ -221,6 +221,11 @@ essas linhas se misturam com erro de verdade.
 **Ação:** `server_.onNotFound(...)` devolvendo 404 limpo, sem vazar detalhe interno. Duas
 linhas. Não entrou na Fase 6 por ser fora do escopo dela.
 
+**Resolvido:** `handleNotFound()` em
+[http_config_handler.cpp](../src/adapters/http_config_handler.cpp) responde `404` com corpo
+fixo — sem eco da URI e sem lista de rotas. Sem Basic Auth de propósito: exigir credencial
+aí faria o navegador abrir o popup de senha por causa de um favicon.
+
 ---
 
 Daqui pra frente os débitos vêm de revisão de código, não de fase de implementação, e
@@ -232,9 +237,9 @@ porque a severidade de alguns depende de teste que ainda não foi feito.
 - **22** — análise do projeto em 18/09/2026, posterior e independente da anterior. Mesma
   data, revisão diferente: não faz parte do lote acima.
 
-## 15. `validate()` não impõe os limites de comprimento do 802.11
+## 15. `validate()` não impõe os limites de comprimento do 802.11 — RESOLVIDO em 18/09/2026
 
-**Onde:** [src/domain/router_settings.cpp:7-14](../src/domain/router_settings.cpp:7)
+**Onde:** [src/domain/router_settings.cpp](../src/domain/router_settings.cpp) — `validate()`
 
 A validação checa vazio e mínimo de 8 caracteres, mas não o **máximo**: SSID pode ter 40
 caracteres e senha de AP pode ter 70, e os dois são persistidos na NVS.
@@ -263,7 +268,8 @@ severidades muito diferentes:
 
 - **Driver rejeita** → `esp_wifi_set_config` falha → `softAP()` devolve false →
   `startRouting()` para no SoftAP ([src/main.cpp:120](../src/main.cpp:120)). Como
-  SSID/senha só valem após reboot ([http_config_handler.cpp:84](../src/adapters/http_config_handler.cpp:84)),
+  SSID/senha só valem após reboot ([http_config_handler.cpp](../src/adapters/http_config_handler.cpp)
+  — `handlePostRoot()`),
   o usuário salva, vê "Configuração salva", reinicia e a placa fica sem AP — e sem AP não
   há página de configuração. Recuperação só por serial ou `erase_flash`.
 - **Driver aceita** → AP sobe com SSID truncado em 32. O usuário se conecta normalmente,
@@ -278,9 +284,24 @@ severidades muito diferentes:
    `SettingsValidationError` correspondentes. Vale nos dois desfechos; o que muda é a
    urgência.
 
-## 16. `NvsSettingsRepository::save()` sempre reporta sucesso
+**Resolvido:** etapa 2 feita — `kMaxSsidLength = 32` e `kMaxWifiPasswordLength = 63` em
+[router_settings.cpp](../src/domain/router_settings.cpp), com `SsidTooLong` e
+`WifiPasswordTooLong`. Quatro testes nativos fixam as duas fronteiras pelos dois lados
+(32 aceito / 33 recusado, 63 aceito / 64 recusado).
 
-**Onde:** [src/adapters/nvs_settings_repository.cpp:45-61](../src/adapters/nvs_settings_repository.cpp:45)
+A etapa 1 **não foi feita e deixou de ser pré-requisito**: com o limite imposto antes da
+gravação, o driver nunca recebe a config inconsistente, e a correção era a mesma nos dois
+desfechos. O que o teste de bancada responderia hoje é só curiosidade sobre o blob.
+
+**Em aberto:** `load()` não revalida o que já está na NVS. Um valor acima do limite gravado
+antes desta mudança continua sendo carregado e entregue ao `softAP()` como sempre foi — a
+proteção é só na entrada. Custo de fechar: chamar `validate()` no `load()` e decidir o que
+fazer com um registro reprovado, que não é obviamente "cair nos defaults" (isso apagaria
+uma config que o usuário reconhece). Nenhuma placa conhecida está nesse estado.
+
+## 16. `NvsSettingsRepository::save()` sempre reporta sucesso — RESOLVIDO em 18/09/2026
+
+**Onde:** [src/adapters/nvs_settings_repository.cpp](../src/adapters/nvs_settings_repository.cpp) — `save()`
 
 A função termina em `return true` fixo e não checa nenhum dos oito retornos que a
 `Preferences` oferece. A interface promete o contrário —
@@ -298,7 +319,7 @@ A função termina em `return true` fixo e não checa nenhum dos oito retornos q
 **Cuidado na correção:** `putString()` devolve `strlen(value)`, então uma gravação
 bem-sucedida de string vazia também devolve `0`. Como `apn_user` e `apn_password` são
 opcionais e podem ser vazios de propósito
-([router_settings.h:10-14](../src/domain/router_settings.h:10)), testar `> 0` em todos os
+([router_settings.h](../src/domain/router_settings.h) — comentário sobre `apn_user`), testar `> 0` em todos os
 campos criaria falso negativo justamente no caso legítimo. O critério tem que distinguir
 "gravou vazio" de "não gravou".
 
@@ -306,9 +327,31 @@ campos criaria falso negativo justamente no caso legítimo. O critério tem que 
 critério que tolere campo opcional vazio. Vira mais relevante na Fase 7, que sobe o schema
 para 3 e reescreve todos os campos de uma vez.
 
-## 17. Valores da configuração vão para o HTML sem escape
+**Resolvido:** `begin()` propagado nos dois métodos e cada escrita checada em
+[nvs_settings_repository.cpp](../src/adapters/nvs_settings_repository.cpp). O critério dos
+`putString` é `retorno == valor.length()`, não `> 0` — é o que aceita campo opcional vazio
+sem aceitar falha. Para `putInt` e `putBool` o retorno de sucesso é fixo (4 e 1, conferido
+na fonte da `Preferences`), então ali `!= 0` basta. `configured` é a última escrita: se
+algo antes falhou, a flag não é reescrita.
 
-**Onde:** [src/adapters/http_config_handler.cpp:35-39](../src/adapters/http_config_handler.cpp:35)
+O `load()` também passou a checar `begin()`. Ali o comportamento não muda — sem namespace
+gravado, o `getBool` já caía no default `false` e a função já devolvia `false`. Mudou de
+acidente que depende do default para decisão explícita.
+
+**Em aberto, dois pontos que a correção não fecha:**
+
+- **A gravação não é atômica.** A `Preferences` faz `nvs_commit` por chave e não expõe
+  transação, então falha no meio deixa campos novos e antigos misturados. O `save()` agora
+  reporta a falha em vez de esconder; desfazer é outro problema. Fechar exigiria gravar um
+  blob único ou manter dois registros e alternar o ponteiro.
+- **Falha ao gravar campo vazio é indistinguível de sucesso.** `putString` devolve 0 nos
+  dois casos e o critério aprova. Só afeta `apn_user`/`apn_password` vazios, e as causas de
+  falha (partição cheia, handle inválido) derrubam também os cinco campos não vazios — a
+  falha aparece, só não por esse campo. Separar de verdade exigiria reler a chave.
+
+## 17. Valores da configuração vão para o HTML sem escape — RESOLVIDO em 18/09/2026
+
+**Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `handleGetRoot()`
 
 `page.replace("{{SSID}}", current.wifi_ssid)` injeta o valor direto dentro de
 `value="..."`. Um `"`, `<` ou `&` em SSID, APN ou usuário admin quebra o atributo e pode
@@ -322,6 +365,20 @@ consequência local** — não é XSS explorável por terceiro, é tiro no próp
 
 **Ação:** escapar os quatro valores interpolados (`&`, `<`, `>`, `"`) antes do `replace`.
 Uma função de escape no `html_page` resolve; é a mesma correção para os quatro campos.
+
+**Resolvido:** `escapeForHtmlAttribute()` em
+[html_page.cpp](../src/adapters/html_page.cpp), aplicada nos quatro `replace`.
+
+Escapa um caractere além dos quatro previstos: `{` vira `&#123;`. Não é escape de HTML — é
+o que impede um valor gravado de forjar um placeholder. Um SSID literal `{{APN}}`
+atravessava o `replace` do SSID intacto e o `replace` seguinte o trocava pelo APN, jogando
+o valor no campo errado. Consequência era cosmética, mas o custo de fechar era uma linha e
+renderiza igual.
+
+**Em aberto:** a função não tem teste. Vive em `adapters/` e depende da `String` do
+Arduino, então está fora do `build_src_filter` do env nativo (débito 19). Testar exigiria
+ou mover o escape para `domain/` — onde ele não pertence, é apresentação — ou abrir o
+filtro para `adapters/`, que arrasta `WebServer.h`.
 
 ## 18. Lógica de bateria mora no `main.cpp`, contra a regra do próprio AGENTS.md
 
@@ -341,7 +398,7 @@ a conversão não ter camada própria.
 Fazer as duas coisas separadamente significa mexer no mesmo código duas vezes. Extraída
 para `domain/`, a conversão passa a ser testável sem hardware — ver débito 19.
 
-## 19. Nenhum teste automatizado, e nenhum ambiente onde rodar um
+## 19. Nenhum teste automatizado, e nenhum ambiente onde rodar um — RESOLVIDO em 18/09/2026
 
 **Onde:** [platformio.ini](../platformio.ini) — não há env `native`; não há diretório `test/`
 
@@ -358,6 +415,30 @@ driver.
 **Ação:** env `native` no `platformio.ini` com os testes de `validate()` — incluindo os
 limites do débito 15, uma vez decididos. Escopo deliberadamente pequeno: só o que é puro.
 Testar `infra/` exigiria mock de ESP-IDF e não se paga aqui.
+
+**Resolvido:** `[env:native]` no [platformio.ini](../platformio.ini) e 11 testes Unity em
+[test/test_router_settings/test_router_settings.cpp](../test/test_router_settings/test_router_settings.cpp),
+rodando por `pio test -e native`. Cobrem `validate()` inteira — cada código de erro, os dois
+limites de 8 caracteres pelos dois lados, a precedência entre campos inválidos, e o caso de
+`apn_user`/`apn_password` vazios serem aceitos de propósito — mais `to_string()`, que hoje
+tem mensagem própria para todo código do enum.
+
+Duas coisas que o débito não previa, e que quem mexer aqui precisa saber:
+
+- **O domínio não era puro.** [router_settings.h](../src/domain/router_settings.h) incluía
+  `<Arduino.h>` sem condição, então `src/domain/` não compilava no host de jeito nenhum. A
+  regra de dependência do AGENTS.md estava escrita, não verificada. O arquivo ganhou um
+  `#ifdef ARDUINO` que troca `String` por `std::string` fora da placa.
+- **O teste exercita `std::string`, não a `String` do Arduino.** Para `validate()` dá no
+  mesmo: a função só chama `length()`, e nos dois tipos isso conta bytes do buffer. Deixa de
+  dar no mesmo se o domínio crescer e passar a depender de conversão implícita ou de
+  semântica de cópia — aí verde no host para de significar verde na placa.
+
+O `build_src_filter = +<domain/>` é o que sustenta a fronteira: se um arquivo de `domain/`
+voltar a incluir hardware, `pio test -e native` quebra antes de o conceito quebrar calado.
+
+**Em aberto:** `voltageToPercent()` continua sem teste porque continua dentro do `main.cpp`
+(débito 18). Extrair para `domain/` e testar é o mesmo trabalho.
 
 ## 20. Porta serial de um adaptador específico versionada no `platformio.ini`
 
@@ -392,6 +473,11 @@ justamente de quem chega sem contexto.
 **Ação:** revisar as referências de linha ao fechar cada fase, junto com a atualização do
 `PLANO_ROTEADOR.md`. Alternativa mais durável: citar símbolo em vez de linha
 (`main.cpp` → `readBatteryVoltage()`), que não envelhece — mas perde o link clicável.
+
+**Parcial, 18/09/2026:** fechar os débitos 15, 16 e 17 deslocou as linhas dos três arquivos
+que eles citavam, exatamente o efeito descrito aqui. As referências dessas entradas passaram
+a citar símbolo (arquivo + nome da função), sem número. O débito continua aberto para as
+entradas 1 e 3, que são as que o texto acima mede.
 
 ## 22. Estado do uplink é exposto pelo supervisor e ninguém consome
 

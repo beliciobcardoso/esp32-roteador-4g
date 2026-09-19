@@ -1,12 +1,23 @@
 #include "router_settings.h"
 
 namespace {
-const int kMinPasswordLength = 8;
+const size_t kMinPasswordLength = 8;
+// Limites do 802.11, nao escolha nossa. O core Arduino nao os impoe: softAP() so rejeita
+// SSID vazio e senha de 1 a 7; acima do maximo ele copia 32/64 bytes para o
+// wifi_ap_config_t e manda ssid_len com o comprimento inteiro, config internamente
+// inconsistente entregue a um driver que e blob. Barrar antes de gravar na NVS e o que
+// impede o caso ruim: SSID invalido persistido, placa reiniciada, AP nao sobe — e sem AP
+// nao ha pagina de configuracao para desfazer (debito 15).
+const size_t kMaxSsidLength = 32;
+// 63 e o maximo da passphrase WPA2; o 64o byte do buffer e o terminador.
+const size_t kMaxWifiPasswordLength = 63;
 }
 
 SettingsValidationError validate(const RouterSettings& settings) {
   if (settings.wifi_ssid.length() == 0) return SettingsValidationError::EmptySsid;
+  if (settings.wifi_ssid.length() > kMaxSsidLength) return SettingsValidationError::SsidTooLong;
   if (settings.wifi_password.length() < kMinPasswordLength) return SettingsValidationError::WifiPasswordTooShort;
+  if (settings.wifi_password.length() > kMaxWifiPasswordLength) return SettingsValidationError::WifiPasswordTooLong;
   if (settings.apn.length() == 0) return SettingsValidationError::EmptyApn;
   if (settings.admin_user.length() == 0) return SettingsValidationError::EmptyAdminUser;
   if (settings.admin_password.length() < kMinPasswordLength) return SettingsValidationError::AdminPasswordTooShort;
@@ -17,7 +28,9 @@ const char* to_string(SettingsValidationError error) {
   switch (error) {
     case SettingsValidationError::None: return "ok";
     case SettingsValidationError::EmptySsid: return "SSID nao pode ser vazio";
+    case SettingsValidationError::SsidTooLong: return "SSID nao pode passar de 32 caracteres";
     case SettingsValidationError::WifiPasswordTooShort: return "senha WiFi precisa ter no minimo 8 caracteres";
+    case SettingsValidationError::WifiPasswordTooLong: return "senha WiFi nao pode passar de 63 caracteres";
     case SettingsValidationError::EmptyApn: return "APN nao pode ser vazio";
     case SettingsValidationError::EmptyAdminUser: return "usuario admin nao pode ser vazio";
     case SettingsValidationError::AdminPasswordTooShort: return "senha admin precisa ter no minimo 8 caracteres";

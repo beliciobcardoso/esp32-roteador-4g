@@ -26,6 +26,7 @@ class HttpConfigHandler {
  private:
   void handleGetRoot();
   void handlePostRoot();
+  void handleNotFound();
   bool authenticate(const RouterSettings& current);
 
   LoadSettingsUseCase& loadUseCase_;

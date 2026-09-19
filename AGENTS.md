@@ -14,7 +14,12 @@ Firmware roteador 4G — LilyGO T-A7670E R2 (ESP32-WROVER-E + modem A7670E).
 pio run                    # build
 pio run --target upload    # flash (fecha o monitor serial antes)
 pio device monitor         # monitor serial
+pio test -e native         # testes das regras puras, no host (sem placa)
 ```
+
+`pio test -e native` compila só `src/domain/` (ver `build_src_filter` no `platformio.ini`).
+Se um arquivo de `domain/` passar a incluir `Arduino.h` ou `esp_*.h` direto, esse comando
+quebra — é de propósito, é o que impede a regra de dependência de virar só comentário.
 
 Se `sdkconfig.defaults` mudar e não refletir:
 ```bash
