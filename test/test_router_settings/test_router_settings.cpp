@@ -141,6 +141,7 @@ void test_every_error_code_has_its_own_message() {
       SettingsValidationError::EmptyApn,
       SettingsValidationError::EmptyAdminUser,
       SettingsValidationError::AdminPasswordTooShort,
+      SettingsValidationError::AdminPasswordMustChange,
   };
 
   for (SettingsValidationError error : all) {
@@ -149,6 +150,42 @@ void test_every_error_code_has_its_own_message() {
     TEST_ASSERT_TRUE_MESSAGE(std::strcmp(message, "erro desconhecido") != 0,
                              "codigo do enum sem mensagem propria em to_string()");
   }
+}
+
+// A pendencia de troca nao passa por validate(): validate() ve uma configuracao sozinha e
+// esta regra precisa das duas. Os testes abaixo cobrem a funcao que faz a comparacao.
+
+void test_pending_admin_password_blocks_a_save_that_keeps_it() {
+  RouterSettings current = validSettings();
+  current.admin_password = "XQKM479BTWPD";
+  current.admin_password_pending = true;
+
+  RouterSettings updated = current;
+  updated.wifi_ssid = "outro-ssid";
+  updated.admin_password_pending = false;
+
+  TEST_ASSERT_TRUE(adminPasswordChangeStillRequired(current, updated));
+}
+
+void test_changing_the_admin_password_settles_the_pendency() {
+  RouterSettings current = validSettings();
+  current.admin_password = "XQKM479BTWPD";
+  current.admin_password_pending = true;
+
+  RouterSettings updated = current;
+  updated.admin_password = "senha-escolhida";
+
+  TEST_ASSERT_FALSE(adminPasswordChangeStillRequired(current, updated));
+}
+
+// Sem pendencia a regra some: quem ja trocou pode salvar o SSID sem redigitar a senha, que
+// e justamente o que o campo em branco do formulario existe para permitir.
+void test_without_pendency_keeping_the_same_password_is_allowed() {
+  RouterSettings current = validSettings();
+  RouterSettings updated = current;
+  updated.wifi_ssid = "outro-ssid";
+
+  TEST_ASSERT_FALSE(adminPasswordChangeStillRequired(current, updated));
 }
 
 int main(int, char**) {
@@ -168,5 +205,8 @@ int main(int, char**) {
   RUN_TEST(test_empty_apn_credentials_are_accepted);
   RUN_TEST(test_ssid_error_wins_over_later_fields);
   RUN_TEST(test_every_error_code_has_its_own_message);
+  RUN_TEST(test_pending_admin_password_blocks_a_save_that_keeps_it);
+  RUN_TEST(test_changing_the_admin_password_settles_the_pendency);
+  RUN_TEST(test_without_pendency_keeping_the_same_password_is_allowed);
   return UNITY_END();
 }

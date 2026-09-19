@@ -18,6 +18,12 @@ const char* kKeySchema = "schema";
 const int kCurrentSchema = 2;
 const char* kKeyAdminUser = "admin_user";
 const char* kKeyAdminPass = "admin_pass";
+// Chave nova sem subir o schema, de proposito. O load() trata `schema < kCurrentSchema`
+// como registro ausente, entao subir para 3 apagaria SSID, senha e APN de toda unidade ja
+// configurada — migracao destrutiva por causa de um booleano nao se paga. Ler com default
+// e compativel por construcao: registro do schema 2 nao tem a chave, cai no false e segue
+// com a senha de admin que a pessoa escolheu.
+const char* kKeyAdminPending = "admin_pend";
 
 // putString devolve strlen(value) quando gravou e 0 quando falhou (erro no nvs_set_str ou
 // no nvs_commit — particao cheia cai aqui). Comparar com o comprimento esperado e o que
@@ -52,6 +58,7 @@ bool NvsSettingsRepository::load(RouterSettings& out) {
   out.apn_password = prefs.getString(kKeyApnPass, "");
   out.admin_user = prefs.getString(kKeyAdminUser, "");
   out.admin_password = prefs.getString(kKeyAdminPass, "");
+  out.admin_password_pending = prefs.getBool(kKeyAdminPending, false);
 
   prefs.end();
   return true;
@@ -70,6 +77,10 @@ bool NvsSettingsRepository::save(const RouterSettings& settings) {
             wrote(prefs.putString(kKeyApnPass, settings.apn_password), settings.apn_password) &&
             wrote(prefs.putString(kKeyAdminUser, settings.admin_user), settings.admin_user) &&
             wrote(prefs.putString(kKeyAdminPass, settings.admin_password), settings.admin_password);
+
+  // putBool devolve 1 quando gravou, para true e para false (putUChar no core Arduino),
+  // entao 0 aqui e falha e nao "gravou false".
+  ok = ok && prefs.putBool(kKeyAdminPending, settings.admin_password_pending) != 0;
 
   // putInt devolve 4 e putBool devolve 1 quando gravam — valores fixos, entao aqui 0 so
   // pode ser falha e nao ha a ambiguidade do campo vazio.

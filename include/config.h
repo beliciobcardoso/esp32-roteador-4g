@@ -2,7 +2,11 @@
 
 // Defaults de fabrica — usados no primeiro boot, quando a NVS ainda nao tem config salva.
 #define DEFAULT_AP_SSID "esp32-roteador-4g"
-#define DEFAULT_AP_PASSWORD "roteador4g"
+// Nao ha DEFAULT_AP_PASSWORD nem DEFAULT_ADMIN_PASSWORD, e a ausencia e a correcao: as
+// duas eram iguais em toda unidade e publicas para quem tem o repositorio. Agora sao
+// sorteadas por placa no primeiro boot (usecases/provision_settings) e impressas uma vez
+// no serial. Consequencia: placa gravada sem o monitor aberto nao mostra a senha, e a
+// saida e apagar a NVS e reprovisionar (debito 10, PRD 08).
 // APN da Vivo (MCC 724 / MNC 11), conferido nas definicoes do proprio chip no celular.
 // "internet" nao existe nessa rede: em LTE o attach carrega um PDN Connectivity Request
 // junto, entao APN desconhecido faz a operadora recusar o attach inteiro (EMM cause #27)
@@ -11,7 +15,6 @@
 #define DEFAULT_APN_USER "vivo"
 #define DEFAULT_APN_PASSWORD "vivo"
 #define DEFAULT_ADMIN_USER "admin"
-#define DEFAULT_ADMIN_PASSWORD "admin1234"
 
 // Namespace usado na NVS para as chaves de configuracao do roteador.
 #define SETTINGS_NVS_NAMESPACE "router_cfg"

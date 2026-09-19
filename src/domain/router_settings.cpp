@@ -34,6 +34,12 @@ const char* to_string(SettingsValidationError error) {
     case SettingsValidationError::EmptyApn: return "APN nao pode ser vazio";
     case SettingsValidationError::EmptyAdminUser: return "usuario admin nao pode ser vazio";
     case SettingsValidationError::AdminPasswordTooShort: return "senha admin precisa ter no minimo 8 caracteres";
+    case SettingsValidationError::AdminPasswordMustChange: return "troque a senha de admin sorteada no primeiro boot antes de salvar qualquer configuracao";
   }
   return "erro desconhecido";
+}
+
+bool adminPasswordChangeStillRequired(const RouterSettings& current,
+                                      const RouterSettings& updated) {
+  return current.admin_password_pending && updated.admin_password == current.admin_password;
 }

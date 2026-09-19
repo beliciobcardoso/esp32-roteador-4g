@@ -6,11 +6,13 @@
 #include "adapters/nvs_settings_repository.h"
 #include "domain/battery.h"
 #include "infra/battery_adc.h"
+#include "infra/entropy.h"
 #include "infra/link_supervisor.h"
 #include "infra/modem_ppp.h"
 #include "infra/nat_bridge.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
+#include "usecases/provision_settings.h"
 #include "usecases/save_settings.h"
 
 #define TEST_LED_PIN 32 // GPIO32 para testar led externo
@@ -19,6 +21,7 @@
 // chamadas de loop(), e o modem/AP guardam os handles de esp_netif que o NAT usa e
 // que a reconexao automatica (Fase 6) vai precisar.
 NvsSettingsRepository settingsRepository;
+ProvisionSettingsUseCase provisionSettingsUseCase(settingsRepository, &fillRandomBytes);
 LoadSettingsUseCase loadSettingsUseCase(settingsRepository);
 SaveSettingsUseCase saveSettingsUseCase(settingsRepository);
 HttpConfigHandler httpConfigHandler(loadSettingsUseCase, saveSettingsUseCase);
@@ -47,10 +50,40 @@ UplinkStatus currentUplinkStatus() {
 //
 // O AP fica no ar mesmo se o 4G nunca conectar — e por ele que se chega na pagina de
 // configuracao pra corrigir o APN, entao derrubar tudo deixaria a placa inacessivel.
-bool startRouting() {
-  RouterSettings settings = loadSettingsUseCase.execute();
+// Unico momento em que as credenciais sorteadas podem ser lidas. Quem gravou a placa sem o
+// monitor serial aberto perde este bloco, e a saida e apagar a NVS e reprovisionar — e o
+// preco de nao existir senha padrao. Em campo, e aqui que se gera a etiqueta da unidade.
+void reportProvisioning(const ProvisionResult& result) {
+  if (!result.provisioned) return;
+
+  Serial.println("=== Provisionamento (primeiro boot) ===");
+  Serial.printf("AP    \"%s\"  senha: %s\n", result.settings.wifi_ssid.c_str(),
+                result.settings.wifi_password.c_str());
+  Serial.printf("Admin \"%s\"  senha: %s (troca obrigatoria no primeiro acesso)\n",
+                result.settings.admin_user.c_str(), result.settings.admin_password.c_str());
+
+  if (!result.persisted) {
+    // Grave: o AP sobe com esta senha, mas o proximo boot sorteia outra. Quem anotar a
+    // senha agora perde o acesso no reset seguinte sem nenhum sinal de que algo falhou.
+    Serial.println("ATENCAO: o sorteio NAO foi gravado na NVS — estas senhas valem so ate o");
+    Serial.println("proximo boot, que vai sortear outras. Verificar a particao nvs.");
+  }
+  Serial.println("=======================================");
+}
+
+bool startRouting(const RouterSettings& settings) {
   Serial.printf("Roteamento: SSID \"%s\" | APN \"%s\"\n",
                 settings.wifi_ssid.c_str(), settings.apn.c_str());
+
+  // Sem AP nao ha pagina de configuracao para desfazer nada, entao configuracao invalida
+  // para aqui em vez de virar softAP em estado indefinido. Acontece com NVS ilegivel: o
+  // fallback do LoadSettingsUseCase devolve senhas vazias de proposito.
+  SettingsValidationError invalid = validate(settings);
+  if (invalid != SettingsValidationError::None) {
+    Serial.printf("Roteamento: configuracao invalida (%s) — AP nao vai subir\n",
+                  to_string(invalid));
+    return false;
+  }
 
   if (!wifiAp.start(settings)) {
     Serial.println("Roteamento: parou no SoftAP — nem o AP nem a config HTTP vao responder");
@@ -74,9 +107,16 @@ void setup() {
 
   delay(100); // pequena margem para o circuito de power estabilizar
   Serial.begin(115200);
+
+  // Antes do batteryAdc.begin() e antes de qualquer radio, e a ordem nao e arbitraria: o
+  // sorteio usa o SAR ADC como fonte de entropia (infra/entropy.cpp) e o contrato da IDF
+  // exige fechar essa janela antes de inicializar ADC ou RF.
+  ProvisionResult provision = provisionSettingsUseCase.execute();
+  reportProvisioning(provision);
+
   batteryAdc.begin();
 
-  startRouting();
+  startRouting(provision.settings);
   httpConfigHandler.onUplinkSettingsChanged(&onUplinkSettingsChanged);
   httpConfigHandler.onUplinkStatusRequested(&currentUplinkStatus);
   httpConfigHandler.begin();

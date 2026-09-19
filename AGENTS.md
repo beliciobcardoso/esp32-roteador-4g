@@ -63,6 +63,14 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   adaptador. A frase decide o que a pessoa faz (esperar resolve ou não), então é regra e
   tem teste nativo. A página não se atualiza sozinha: recarregar é o refresh (débito 22)
 - Persistência: NVS sem criptografia — aceitável em bancada, bloqueante para campo (débito 10)
+- Não existe senha de fábrica. Senha de AP e senha de admin são **sorteadas por unidade no
+  primeiro boot** com NVS vazia, impressas uma única vez no serial, e a de admin nasce com
+  troca obrigatória (`admin_password_pending`). Derivar a senha do MAC foi **rejeitado**: o
+  MAC do SoftAP é o BSSID, que vai em todo beacon — trocaria senha pública no GitHub por
+  senha pública no ar. O sorteio roda no topo do `setup()`, antes do ADC e do rádio, porque
+  usa `bootloader_random_enable()` e o contrato da IDF manda fechar essa janela antes de
+  inicializar RF/ADC/I2S. Justificativa completa em
+  [docs/prd/08-segredos-por-unidade.md](docs/prd/08-segredos-por-unidade.md)
 - Até 15 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — 15 é o teto do
   driver no ESP32 clássico (`ESP_WIFI_MAX_CONN_NUM`), não uma escolha de projeto
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico
@@ -96,7 +104,12 @@ Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
 
 ## Regras de código
 
-- Migration destrutiva/irreversível: sinalizar antes (não aplicável ainda — sem NVS implementado)
+- Migration destrutiva/irreversível: sinalizar antes. Na prática isto quer dizer **não subir
+  `kCurrentSchema` por causa de campo novo**: `load()` trata schema menor que o atual como
+  registro ausente, então o bump apaga SSID, senha e APN de toda unidade já configurada.
+  Chave nova entra lida com default (foi assim com `admin_pend`, débito 10)
+- Nenhuma senha em código versionado — nem como default de fábrica. Segredo por unidade é
+  sorteado no dispositivo (`domain/secret.h` + `infra/entropy.h`)
 - Toda rota HTTP sensível (config): Basic Auth obrigatório, erro sem vazar detalhe interno
 - Seguir padrão do arquivo existente ao editar, não impor estilo novo
 - Não criar abstração antes de duas ocorrências reais a justificarem
