@@ -59,6 +59,9 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   cobertura) reiniciaria a placa a cada ~12 min para sempre, derrubando quem está no AP.
   Justificativa completa em [docs/prd/06-integracao-testes-carga.md](docs/prd/06-integracao-testes-carga.md)
 - Config web: HTTP Basic Auth, IP fixo (sem portal cativo)
+- O `GET /` mostra o estado do uplink 4G, e o texto mora em `domain/uplink_status` — não no
+  adaptador. A frase decide o que a pessoa faz (esperar resolve ou não), então é regra e
+  tem teste nativo. A página não se atualiza sozinha: recarregar é o refresh (débito 22)
 - Persistência: NVS sem criptografia — aceitável em bancada, bloqueante para campo (débito 10)
 - Até 15 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — 15 é o teto do
   driver no ESP32 clássico (`ESP_WIFI_MAX_CONN_NUM`), não uma escolha de projeto

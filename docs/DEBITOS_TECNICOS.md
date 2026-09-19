@@ -540,7 +540,8 @@ estaria fechado.
 (débitos 18, 19 e o `main.cpp:120` do débito 15), corrigidas na mesma passada. Duas
 revisões seguidas produziram o mesmo defeito — o débito não é sobre as linhas erradas de
 hoje, é sobre o formato que as produz. Sobrou número de linha apontando para código do
-projeto em quatro entradas — 5, 14, 16 e 22 —, nenhuma verificada nesta passada. As citações
+projeto em três entradas — 5, 14 e 16 —, nenhuma verificada nesta passada; a 22 saiu ao ser
+fechada em 19/09/2026, de novo pelo mesmo efeito. As citações
 de fonte externa (core Arduino, lwIP, `Preferences`) nos débitos 5, 13, 15 e 16 ficam como
 estão: apontam para versão instalada de dependência, não para código que este repositório
 move.
@@ -549,16 +550,16 @@ move.
 ou aceitar o formato e checar tudo ao fechar cada fase. Continuar corrigindo por encontro
 é o que já se mostrou não funcionar.
 
-## 22. Estado do uplink é exposto pelo supervisor e ninguém consome
+## 22. Estado do uplink é exposto pelo supervisor e ninguém consome — RESOLVIDO em 19/09/2026
 
-**Onde:** [src/infra/link_supervisor.h:38-41](../src/infra/link_supervisor.h:38) —
-`state()` e `consecutiveFailures()`
+**Onde:** [src/infra/link_supervisor.h](../src/infra/link_supervisor.h) — `state()` e
+`consecutiveFailures()` (substituídos por `status()` em 19/09/2026)
 
 Os dois acessores públicos não têm chamador fora da própria classe. Confirmado por busca em
 `src/` e `include/`: as únicas referências a `linkSupervisor` no `main.cpp` são `begin()` e
 `applySettings()`.
 
-O comentário em [link_supervisor.h:56-58](../src/infra/link_supervisor.h:56) afirma o
+O comentário ao lado de `state_`/`consecutiveFailures_` afirma o
 contrário — "Lida pela task do loop() via state()/consecutiveFailures()" — e é essa leitura
 cruzada que justifica o `volatile` nos dois membros. A justificativa está correta como
 raciocínio e descreve um consumidor que não existe. Quem chegar aqui vai procurar a leitura
@@ -594,3 +595,51 @@ justificativa registrada e precisa de outra.
 
 Relacionado: o PRD 07 cita "histórico de quedas do uplink" como consumidor do relógio. Um
 histórico pressupõe que o estado corrente já apareça em algum lugar; esta é a peça anterior.
+
+**Resolvido:** o `GET /` passou a mostrar um bloco "Uplink 4G" acima do formulário, e o
+comentário do header virou verdade — o `volatile` tem consumidor real agora.
+
+O texto é regra, não formatação, então mora no domínio:
+[domain/uplink_status.h](../src/domain/uplink_status.h) define `UplinkState` e
+`UplinkStatus`, e `describeUplinkStatus()` traduz o estado na frase que responde a única
+pergunta de quem está sem internet — **esperar resolve?**. Nove testes nativos amarram essa
+distinção, não a redação.
+
+O terceiro estado, que o débito apontava como o mais útil e o único sem acessor nenhum,
+agora sai: `status()` calcula `reboot_budget_exhausted` lendo `gRebootsWithoutUplink`, que
+virou `volatile` pela mesma análise que já justificava o `volatile` nos outros dois campos.
+A condição não é só "acabaram os reinícios" — é isso **e** falhas suficientes para
+justificar mais um. Sem a segunda metade, uma queda nova depois de dois reinícios gastos
+cairia na mensagem de causa externa logo na primeira falha, antes das dez tentativas que
+costumam resolver.
+
+Um quarto caso apareceu ao montar isso, e não estava no débito: depois de um reinício
+disparado pelo próprio supervisor, `consecutiveFailures_` volta a zero — é membro da
+classe e não atravessa o `esp_restart()`, enquanto o contador de reinícios atravessa. A
+página diria "conectando pela primeira vez" logo depois de a placa ter reiniciado por falta
+de uplink. Mesmo defeito que o débito descreve no caso do orçamento esgotado: sugerir
+progresso que não existe. `UplinkStatus` ganhou `rebooted_for_uplink` e um teste.
+
+Os dois acessores mortos foram removidos em vez de ganharem um chamador cada. Quem lê a
+página quer a situação inteira; devolver as partes soltas foi o que produziu dois acessores
+sem consumidor. Ficou um: `status()`.
+
+O `#ifdef ARDUINO` que troca `String` por `std::string` saiu do `router_settings.h` para
+[domain/string_type.h](../src/domain/string_type.h) — a segunda entidade a precisar dele
+era a ocorrência que justificava extrair. Foi junto um `numberToString()`, porque
+`String += int` existe no Arduino e não em `std::string`: escrever direto compilaria na
+placa e quebraria no host, que é o tipo exato de divergência que o seam existe para pegar.
+
+**Em aberto, registrado de propósito:**
+
+- `status()` **não é instantâneo atômico.** Os três campos são lidos um a um e a task do
+  supervisor pode avançar no meio. Aceito: alimenta um texto que o navegador já lê com
+  atraso, e o pior caso é uma contagem de falhas um ciclo velha. Deixa de ser aceitável se
+  alguém decidir algo com base nesse retorno.
+- **A página não se atualiza sozinha.** Sem `<meta refresh>` nem polling: quem quiser o
+  estado novo recarrega. Um refresh automático a cada N segundos custa uma linha, e custa
+  também um `GET /` autenticado por cliente por N segundos num servidor single-threaded
+  que divide o `loop()` com a leitura de bateria.
+- **`escapeForHtmlAttribute` é aplicado a um texto que hoje não precisa** — são literais
+  nossos e um número. Fica no caminho para o dia em que a mensagem incluir um valor
+  gravado.
