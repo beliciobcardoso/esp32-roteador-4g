@@ -150,6 +150,14 @@ resolvedor aberto para a rede da operadora. O upstream sai de `dns_getserver(0)`
 cada pergunta, então reconexão que troque o servidor da operadora já vale na pergunta
 seguinte. Sem uplink a resposta é SERVFAIL imediato, não silêncio.
 
+**Validado em hardware (19/09/2026):** celular associado ao AP **antes** do IPCP — o AP sobe
+em ~1,2 s e o uplink fechou em 15,3 s, então a janela do débito era de 14 s — recebeu
+`192.168.4.1` no lease e resolveu nome assim que o `Uplink: online` apareceu, sem renovar o
+lease e sem reconectar. Era exatamente o que não acontecia antes. O forwarder subiu em
+silêncio, como esperado: ele só loga quando falha, e nenhuma linha `DNS:` saiu no boot.
+
+**Não validado em hardware ainda:** o SERVFAIL sem uplink e a porta 53 fechada do lado PPP.
+
 **Não coberto:** DNS over TCP. Resposta truncada faz o cliente reperguntar por TCP, e não
 há ninguém escutando em `192.168.4.1:53/tcp`. Não há cache: cada pergunta vira uma pergunta
 ao upstream.

@@ -90,11 +90,22 @@ ponteiro de compressão na seção de pergunta, ambos recusados.
 
 ## Critérios de aceite
 
-- [ ] Cliente que associa antes do PPP subir resolve nomes assim que o uplink conecta, sem
-      renovar o lease
-- [ ] Reconexão PPP não derruba o DHCP do AP (nenhum `dhcps_stop` no caminho)
+- [x] Cliente que associa antes do PPP subir resolve nomes assim que o uplink conecta, sem
+      renovar o lease — validado em hardware em 19/09/2026
+- [x] Reconexão PPP não derruba o DHCP do AP (nenhum `dhcps_stop` no caminho) — verificado
+      por inspeção: não existe mais nenhuma chamada a `dhcps_*` em `src/`
 - [ ] Cliente associado durante uma reconexão pega endereço normalmente
 - [ ] Sem uplink, `nslookup` contra `192.168.4.1` devolve SERVFAIL rápido, não timeout
 - [ ] Da rede da operadora, a porta 53 do endereço PPP não responde
-- [ ] `pio test -e native` cobre datagrama truncado, ponteiro de compressão e estouro do
-      buffer de saída
+- [x] `pio test -e native` cobre datagrama truncado, ponteiro de compressão e estouro do
+      buffer de saída — 11 testes em `test/test_dns_message/`
+
+## Validação em hardware — 19/09/2026
+
+O AP sobe em ~1,2 s e o uplink fechou em 15,3 s, então a janela do débito 9 era de 14 s.
+Celular associado dentro dela recebeu `192.168.4.1` no lease e resolveu nome assim que o
+`Uplink: online` apareceu — sem renovar o lease e sem reconectar, que é exatamente o que
+não acontecia antes. O forwarder subiu em silêncio, como projetado: ele só escreve no log
+quando falha, e nenhuma linha `DNS:` saiu no boot.
+
+Os três critérios restantes continuam sem teste de bancada.

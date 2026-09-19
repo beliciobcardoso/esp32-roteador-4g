@@ -108,13 +108,16 @@ Usuário abre 192.168.4.1
 - Percalços e diagnósticos descartados: [DEPURACAO_FASE_4_MODEM_PPP.md](DEPURACAO_FASE_4_MODEM_PPP.md)
 
 ### Fase 5 — NAT / roteamento — ✅ concluída
-- `infra/nat_bridge`: habilita NAPT na interface **AP** (não na PPP — ver PRD 05) e
-  entrega o DNS da operadora aos clientes pela opção 6 do DHCP
+- `infra/nat_bridge`: habilita NAPT na interface **AP** (não na PPP — ver PRD 05)
+  - Entregava também o DNS da operadora pela opção 6 do DHCP; desde 19/09/2026 não mexe
+    mais no DHCP — quem resolve é o `infra/dns_forwarder` em `192.168.4.1:53` (PRD 09)
 - Orquestração (settings → AP → modem → espera IP → NAT) ficou em `main.cpp`, não em
   `usecases/start_routing` — decisão registrada no PRD 05
 - Validado em hardware: celular conectado no AP navegou pelo 4G
-- ⚠️ Cliente que associa antes do PPP subir recebe DNS `192.168.4.1` e só resolve nome
-  depois de renovar o lease (débito 9)
+- ~~⚠️ Cliente que associa antes do PPP subir recebe DNS `192.168.4.1` e só resolve nome
+  depois de renovar o lease (débito 9)~~ — resolvido em 19/09/2026 pelo DNS local
+  ([prd/09-dns-local.md](prd/09-dns-local.md)) e validado em hardware: agora existe
+  resolvedor nesse endereço, então o valor do lease nasce certo
 
 ### Fase 6 — Integração e reconexão automática — ✅ concluída
 - `loop()` non-blocking: blink e leitura de bateria passam a ser agendados por `millis()`
