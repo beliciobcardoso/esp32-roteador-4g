@@ -9,9 +9,6 @@ namespace {
 // por aqui evita ter que propagar o ponteiro desde o WifiAp, que nao o expoe.
 constexpr const char* kApNetifKey = "WIFI_AP_DEF";
 
-// Valor da opcao 6 do DHCP no esp_netif: 1 liga OFFER_DNS, 0 desliga.
-constexpr uint8_t kDhcpsOfferDns = 1;
-
 // Roda no contexto da tarefa TCP/IP (via esp_netif_tcpip_exec). ip_napt_enable
 // percorre netif_list e escreve em netif->napt — estrutura que so a tarefa lwIP
 // pode tocar com seguranca.
@@ -36,47 +33,6 @@ bool enableNaptOnAp(const esp_netif_ip_info_t& apIp) {
   return true;
 }
 
-// Sem isso o dhcpserver ainda emite a opcao 6, mas preenchida com o IP do proprio AP
-// (dhcpserver.c:383-395) — e nao existe resolvedor escutando em 192.168.4.1. O cliente
-// pegaria IP, rotearia por NAT e mesmo assim nao resolveria nome nenhum.
-// A ordem importa: esp_netif_dhcps_option recusa com ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED
-// enquanto o servidor estiver de pe (esp_netif_lwip.c:1929), entao para, reconfigura e sobe.
-bool offerDnsToApClients(esp_netif_t* apNetif, const esp_netif_dns_info_t& dns) {
-  esp_err_t stopResult = esp_netif_dhcps_stop(apNetif);
-  if (stopResult != ESP_OK && stopResult != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
-    Serial.printf("NAT: nao consegui parar o DHCP do AP [%s]\n", esp_err_to_name(stopResult));
-    return false;
-  }
-
-  // Num netif com flag DHCP_SERVER, esp_netif_set_dns_info cai em dhcps_dns_setserver()
-  // (esp_netif_lwip.c:1585) — e o servidor DHCP que guarda o endereco, nao o resolvedor
-  // local. So o tipo MAIN e propagado; DNS secundario nao tem representacao no dhcpserver.
-  esp_netif_dns_info_t mutableDns = dns;
-  esp_err_t dnsResult = esp_netif_set_dns_info(apNetif, ESP_NETIF_DNS_MAIN, &mutableDns);
-  if (dnsResult != ESP_OK) {
-    Serial.printf("NAT: nao consegui gravar o DNS no DHCP do AP [%s]\n", esp_err_to_name(dnsResult));
-    return false;
-  }
-
-  uint8_t offerDns = kDhcpsOfferDns;
-  esp_err_t optionResult = esp_netif_dhcps_option(apNetif, ESP_NETIF_OP_SET,
-                                                  ESP_NETIF_DOMAIN_NAME_SERVER,
-                                                  &offerDns, sizeof(offerDns));
-  if (optionResult != ESP_OK) {
-    Serial.printf("NAT: nao consegui ligar a opcao 6 do DHCP [%s]\n", esp_err_to_name(optionResult));
-    return false;
-  }
-
-  esp_err_t startResult = esp_netif_dhcps_start(apNetif);
-  if (startResult != ESP_OK) {
-    // Estado ruim de verdade: o AP fica no ar sem distribuir endereco nenhum.
-    Serial.printf("NAT: DHCP do AP nao voltou a subir [%s]\n", esp_err_to_name(startResult));
-    return false;
-  }
-
-  return true;
-}
-
 }  // namespace
 
 bool NatBridge::enable(esp_netif_t* uplink) {
@@ -91,16 +47,6 @@ bool NatBridge::enable(esp_netif_t* uplink) {
     return false;
   }
 
-  // O PPP e point-to-point, entao esp_netif_get_dns_info nem consulta o netif: le o
-  // dns_getserver() global do lwIP, que o proprio PPP preencheu no IPCP. Devolve
-  // ESP_ERR_ESP_NETIF_DNS_NOT_CONFIGURED se a operadora nao mandou nada.
-  esp_netif_dns_info_t dns = {};
-  esp_err_t dnsResult = esp_netif_get_dns_info(uplink, ESP_NETIF_DNS_MAIN, &dns);
-  if (dnsResult != ESP_OK) {
-    Serial.printf("NAT: a operadora nao informou DNS [%s]\n", esp_err_to_name(dnsResult));
-    return false;
-  }
-
   esp_netif_ip_info_t apIp = {};
   esp_err_t ipResult = esp_netif_get_ip_info(apNetif, &apIp);
   if (ipResult != ESP_OK) {
@@ -108,19 +54,32 @@ bool NatBridge::enable(esp_netif_t* uplink) {
     return false;
   }
 
-  if (!offerDnsToApClients(apNetif, dns)) {
+  if (!enableNaptOnAp(apIp)) {
     return false;
   }
 
-  if (!enableNaptOnAp(apIp)) {
-    return false;
+  // Aqui nao se mexe mais no DHCP do AP. O que os clientes recebem na opcao 6 e o IP do
+  // proprio AP — o dhcpserver preenche assim quando a opcao nao esta configurada
+  // (dhcpserver.c:383-395) — e quem responde nesse endereco e o DnsForwarder, que le o
+  // DNS da operadora direto do global do lwIP a cada pergunta. Enquanto o DHCP do AP era
+  // reconfigurado a cada sessao PPP, todo cliente associado durante a janela de
+  // dhcps_stop/start ficava sem endereco, e quem ja tinha lease seguia apontando para um
+  // DNS que podia ter mudado ate renovar (debitos 9 e 12).
+  esp_netif_dns_info_t dns = {};
+  esp_err_t dnsResult = esp_netif_get_dns_info(uplink, ESP_NETIF_DNS_MAIN, &dns);
+  if (dnsResult != ESP_OK) {
+    // Nao e mais fatal: o NAT roteia IP do mesmo jeito, e o forwarder responde SERVFAIL
+    // enquanto nao houver DNS — falha explicita em vez de sessao que parece ok e nao e.
+    Serial.printf("NAT: ativo | AP " IPSTR " -> PPP | a operadora nao informou DNS [%s]\n",
+                  IP2STR(&apIp.ip), esp_err_to_name(dnsResult));
+    return true;
   }
 
   // A rota default nao precisa de chamada nenhuma: o PPP tem route_prio 20 contra 10
   // do SoftAP (esp_netif_defaults.h), e o esp_netif_update_default_netif() promove o
   // PPP a interface default sozinho quando o GOT_IP chega. esp_netif_set_default_netif()
   // e static em esp_netif_lwip.c:202 — nem da pra chamar de fora.
-  Serial.printf("NAT: ativo | AP " IPSTR " -> PPP | DNS entregue aos clientes: " IPSTR "\n",
+  Serial.printf("NAT: ativo | AP " IPSTR " -> PPP | DNS da operadora: " IPSTR "\n",
                 IP2STR(&apIp.ip), IP2STR(&dns.ip.u_addr.ip4));
   return true;
 }
