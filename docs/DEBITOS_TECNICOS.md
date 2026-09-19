@@ -491,7 +491,7 @@ voltar a incluir hardware, `pio test -e native` quebra antes de o conceito quebr
 nativos. As duas funções puras que o projeto tinha estão cobertas; o env nativo deixou de
 ter ponta solta.
 
-## 20. Porta serial de um adaptador específico versionada no `platformio.ini`
+## 20. Porta serial de um adaptador específico versionada no `platformio.ini` — RESOLVIDO em 19/09/2026
 
 **Onde:** [platformio.ini](../platformio.ini) — `upload_port` e `monitor_port`
 
@@ -505,6 +505,24 @@ git para conseguir gravar, e essa edição depois aparece como sujeira em todo `
 para um `platformio_override.ini` ignorado pelo git. Enquanto houver uma placa e uma
 máquina, é atrito zero — o débito existe para não custar uma hora de confusão quando
 aparecer a segunda.
+
+**Resolvido:** das duas opções, a de `sysenv` não serve — só resolve metade. `upload_port`
+tem `sysenvvar="PLATFORMIO_UPLOAD_PORT"` na tabela de opções do PlatformIO 6.2
+(`platformio/project/options.py`), e `monitor_port` não tem nenhum. Conferido na prática:
+com as duas variáveis exportadas, `pio project config` mostra o `upload_port` da variável e
+o `monitor_port` do arquivo. Quem usasse a variável gravaria na placa certa e abriria o
+monitor na errada — pior que o problema original, porque falha em silêncio.
+
+O escolhido foi o `platformio_override.ini`, ignorado pelo git e carregado por
+`extra_configs` no `[platformio]`. O `extra_configs` resolve o valor com `glob.glob()`
+(`platformio/project/config.py`), e glob de caminho literal inexistente devolve lista vazia
+sem erro — por isso o arquivo é opcional e o clone limpo continua funcionando com o padrão
+versionado. Segunda máquina copia as duas linhas para lá e nunca mais suja o `git status`.
+
+Não fecha: o valor versionado continua sendo o serial de um adaptador específico, agora como
+default explícito em vez de única opção. Quem clonar sem criar o override e tiver outro
+adaptador ainda vê o upload falhar — a diferença é que o comentário do `platformio.ini`
+agora diz o que fazer, em vez de o arquivo parecer universal.
 
 ## 21. Referências de linha deste arquivo saem de sincronia sem aviso
 
