@@ -1,23 +1,100 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Config Roteador 4G</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #0056b3;
+        }
+
+        nav {
+            margin-bottom: 20px;
+        }
+
+        nav a {
+            text-decoration: none;
+            color: #007BFF;
+            background-color: #0056b3;
+            padding: 5px 10px;
+            margin-right: 10px;
+        }
+
+        nav a:hover {
+            text-decoration: underline;
+        }
+
+        form {
+            max-width: 400px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            margin-top: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 10px 15px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
 </head>
+
 <body>
-      <h1>Configuracao do Roteador 4G</h1>
-  <h2>Uplink 4G</h2>
-  <p>{{UPLINK_STATUS}}</p>
-  <form method="POST" action="/">
-    <label>SSID WiFi: <input type="text" name="wifi_ssid" value="{{SSID}}"></label><br>
-    <label>Senha WiFi: <input type="password" name="wifi_password" placeholder="deixe em branco para manter"></label><br>
-    <label>APN: <input type="text" name="apn" value="{{APN}}"></label><br>
-<label>Usuario APN: <input type="text" name="apn_user" value="{{APN_USER}}"></label><br>
-<label>Senha APN: <input type="password" name="apn_password" placeholder="deixe em branco para manter"></label><br>
-    <label>Usuario admin: <input type="text" name="admin_user" value="{{ADMIN_USER}}"></label><br>
-    <label>Senha admin: <input type="password" name="admin_password" placeholder="deixe em branco para manter"></label><br>
-    <button type="submit">Salvar</button>
-  </form>
+    <nav>
+        <a href="/">Home</a> |
+        <a href="/status">Status</a> |
+        <a href="/config">Configuração</a>
+    </nav>
+    <div id="home">
+        <h1>Bem-vindo ao Roteador 4G</h1>
+        <p>Use o menu acima para navegar entre as páginas de status e configuração.</p>
+    </div>
+    <div id="status">
+        <h1>Status do Roteador 4G</h1>
+        <p>Uplink 4G: {{UPLINK_STATUS}}</p>
+        <p>SSID WiFi: {{SSID}}</p>
+        <p>APN: {{APN}}</p>
+        <p>Usuario APN: {{APN_USER}}</p>
+        <p>Usuario admin: {{ADMIN_USER}}</p>
+    </div>
+    <div id="config">
+    <h1>Configuracao do Roteador 4G</h1>
+    <h2>Uplink 4G</h2>
+    <p>{{UPLINK_STATUS}}</p>
+    <form method="POST" action="/">
+        <label>SSID WiFi: <input type="text" name="wifi_ssid" value="{{SSID}}"></label><br>
+        <label>Senha WiFi: <input type="password" name="wifi_password"
+                placeholder="deixe em branco para manter"></label><br>
+        <label>APN: <input type="text" name="apn" value="{{APN}}"></label><br>
+        <label>Usuario APN: <input type="text" name="apn_user" value="{{APN_USER}}"></label><br>
+        <label>Senha APN: <input type="password" name="apn_password"
+                placeholder="deixe em branco para manter"></label><br>
+        <label>Usuario admin: <input type="text" name="admin_user" value="{{ADMIN_USER}}"></label><br>
+        <label>Senha admin: <input type="password" name="admin_password"
+                placeholder="deixe em branco para manter"></label><br>
+        <button type="submit">Salvar</button>
+    </form>
+    </div>
 </body>
+
 </html>

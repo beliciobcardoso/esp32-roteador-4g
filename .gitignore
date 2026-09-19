@@ -12,3 +12,7 @@ managed_components/
 
 # Índice da ferramenta Serena (agente), não é artefato do projeto.
 .serena/
+
+# Configuracao local de maquina/placa (porta serial, etc). Carregado pelo extra_configs
+# do platformio.ini quando existe; o padrao versionado vale quando nao existe.
+platformio_override.ini
