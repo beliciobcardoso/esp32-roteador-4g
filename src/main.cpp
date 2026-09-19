@@ -59,7 +59,7 @@ void reportProvisioning(const ProvisionResult& result) {
   Serial.println("=== Provisionamento (primeiro boot) ===");
   Serial.printf("AP    \"%s\"  senha: %s\n", result.settings.wifi_ssid.c_str(),
                 result.settings.wifi_password.c_str());
-  Serial.printf("Admin \"%s\"  senha: %s\n",
+  Serial.printf("Admin \"%s\"  senha: %s (troca obrigatoria no primeiro acesso)\n",
                 result.settings.admin_user.c_str(), result.settings.admin_password.c_str());
 
   if (!result.persisted) {

@@ -59,6 +59,18 @@ String HttpConfigHandler::uplinkStatusText() const {
   return describeUplinkStatus(uplinkStatus_());
 }
 
+// Aviso da troca obrigatoria. Devolve string vazia quando nao ha pendencia — a alternativa
+// (esconder por CSS) deixaria o texto no fonte da pagina de quem ja trocou.
+//
+// A mensagem sai do to_string() do dominio, a mesma que o POST recusado devolve: duas
+// fontes de texto para a mesma regra divergem na primeira vez que uma delas e editada.
+String HttpConfigHandler::adminNoticeHtml(const RouterSettings& current) const {
+  if (!current.admin_password_pending) return "";
+  return String("<p class=\"alert\">") +
+         escapeForHtmlAttribute(to_string(SettingsValidationError::AdminPasswordMustChange)) +
+         "</p>";
+}
+
 void HttpConfigHandler::handleGetRoot() {
   RouterSettings current = loadUseCase_.execute();
   if (!authenticate(current)) return;
@@ -72,6 +84,7 @@ void HttpConfigHandler::handleGetRoot() {
   // pelo escape mesmo assim: no dia em que a mensagem incluir um valor gravado — APN, por
   // exemplo — a defesa ja esta no caminho, em vez de depender de alguem lembrar dela.
   page.replace("{{UPLINK_STATUS}}", escapeForHtmlAttribute(uplinkStatusText()));
+  page.replace("{{ADMIN_NOTICE}}", adminNoticeHtml(current));
   server_.send(200, "text/html", page);
 }
 
@@ -92,6 +105,15 @@ void HttpConfigHandler::handlePostRoot() {
   updated.admin_user = server_.arg("admin_user");
   String newAdminPassword = server_.arg("admin_password");
   updated.admin_password = newAdminPassword.length() > 0 ? newAdminPassword : current.admin_password;
+
+  // A pendencia cai sozinha quando a senha muda, e sobrevive a qualquer outra gravacao.
+  // Checar aqui em vez de dentro do validate() porque a regra compara duas configuracoes e
+  // o validate() ve uma sozinha.
+  updated.admin_password_pending = adminPasswordChangeStillRequired(current, updated);
+  if (updated.admin_password_pending) {
+    server_.send(400, "text/plain", to_string(SettingsValidationError::AdminPasswordMustChange));
+    return;
+  }
 
   SaveSettingsResult result = saveUseCase_.execute(updated);
   if (!result.success) {

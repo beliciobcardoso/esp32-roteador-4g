@@ -25,11 +25,15 @@ ProvisionResult ProvisionSettingsUseCase::execute() {
   result.settings.apn_password = DEFAULT_APN_PASSWORD;
   result.settings.admin_user = DEFAULT_ADMIN_USER;
   result.settings.admin_password = secretFromBytes(bytes + kSecretLength, kSecretLength);
+  // A senha sorteada vale para um acesso: sai impressa no serial, e a primeira gravacao
+  // pela pagina obriga a troca.
+  result.settings.admin_password_pending = true;
   result.provisioned = true;
 
   // Valida antes de gravar pelo mesmo motivo do SaveSettingsUseCase: defaults de fabrica
   // invalidos (APN vazio, por exemplo) persistidos deixam a placa subindo sem AP, e sem AP
-  // nao ha pagina para desfazer.
+  // nao ha pagina para desfazer. Este caminho nao passa pelo SaveSettingsUseCase porque e
+  // o unico que grava a pendencia da senha de admin, que aquele caso de uso nao conhece.
   if (validate(result.settings) != SettingsValidationError::None) {
     return result;
   }

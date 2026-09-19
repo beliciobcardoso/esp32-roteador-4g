@@ -34,6 +34,7 @@ class HttpConfigHandler {
   void handlePostRoot();
   void handleNotFound();
   String uplinkStatusText() const;
+  String adminNoticeHtml(const RouterSettings& current) const;
   bool authenticate(const RouterSettings& current);
 
   LoadSettingsUseCase& loadUseCase_;
