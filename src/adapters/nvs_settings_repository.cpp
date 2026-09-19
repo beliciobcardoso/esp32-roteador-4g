@@ -18,11 +18,26 @@ const char* kKeySchema = "schema";
 const int kCurrentSchema = 2;
 const char* kKeyAdminUser = "admin_user";
 const char* kKeyAdminPass = "admin_pass";
+
+// putString devolve strlen(value) quando gravou e 0 quando falhou (erro no nvs_set_str ou
+// no nvs_commit — particao cheia cai aqui). Comparar com o comprimento esperado e o que
+// separa "gravou vazio" de "nao gravou": apn_user e apn_password sao opcionais e vazios de
+// proposito, entao um criterio `> 0` reprovaria justamente o caso legitimo.
+//
+// Ponto cego que sobra: falha ao gravar campo vazio tambem devolve 0, e 0 == 0 passa por
+// sucesso. Separar os dois exigiria reler a chave. Na pratica nao esconde nada: as causas
+// de falha derrubam o handle inteiro, e os outros cinco campos nao sao vazios.
+bool wrote(size_t written, const String& value) {
+  return written == value.length();
+}
 }  // namespace
 
 bool NvsSettingsRepository::load(RouterSettings& out) {
   Preferences prefs;
-  prefs.begin(SETTINGS_NVS_NAMESPACE, /*readOnly=*/true);
+  // Sem namespace gravado ainda, nvs_open em modo leitura falha e begin() devolve false.
+  // Antes isso caia no getBool com default false e dava no mesmo por acidente; explicito
+  // porque o acidente depende do default e some se alguem mexer nele.
+  if (!prefs.begin(SETTINGS_NVS_NAMESPACE, /*readOnly=*/true)) return false;
 
   bool configured = prefs.getBool(kKeyConfigured, false);
   if (!configured || prefs.getInt(kKeySchema, 1) < kCurrentSchema) {
@@ -44,18 +59,27 @@ bool NvsSettingsRepository::load(RouterSettings& out) {
 
 bool NvsSettingsRepository::save(const RouterSettings& settings) {
   Preferences prefs;
-  prefs.begin(SETTINGS_NVS_NAMESPACE, /*readOnly=*/false);
+  if (!prefs.begin(SETTINGS_NVS_NAMESPACE, /*readOnly=*/false)) return false;
 
-  prefs.putString(kKeySsid, settings.wifi_ssid);
-  prefs.putString(kKeyWifiPass, settings.wifi_password);
-  prefs.putString(kKeyApn, settings.apn);
-  prefs.putString(kKeyApnUser, settings.apn_user);
-  prefs.putString(kKeyApnPass, settings.apn_password);
-  prefs.putString(kKeyAdminUser, settings.admin_user);
-  prefs.putString(kKeyAdminPass, settings.admin_password);
-  prefs.putInt(kKeySchema, kCurrentSchema);
-  prefs.putBool(kKeyConfigured, true);
+  // Curto-circuito de proposito: se uma chave falhou, insistir nas seguintes nao ajuda —
+  // a causa (particao cheia, handle invalido) vale para todas.
+  bool ok = wrote(prefs.putString(kKeySsid, settings.wifi_ssid), settings.wifi_ssid) &&
+            wrote(prefs.putString(kKeyWifiPass, settings.wifi_password), settings.wifi_password) &&
+            wrote(prefs.putString(kKeyApn, settings.apn), settings.apn) &&
+            wrote(prefs.putString(kKeyApnUser, settings.apn_user), settings.apn_user) &&
+            wrote(prefs.putString(kKeyApnPass, settings.apn_password), settings.apn_password) &&
+            wrote(prefs.putString(kKeyAdminUser, settings.admin_user), settings.admin_user) &&
+            wrote(prefs.putString(kKeyAdminPass, settings.admin_password), settings.admin_password);
+
+  // putInt devolve 4 e putBool devolve 1 quando gravam — valores fixos, entao aqui 0 so
+  // pode ser falha e nao ha a ambiguidade do campo vazio.
+  ok = ok && prefs.putInt(kKeySchema, kCurrentSchema) != 0;
+  // `configured` por ultimo: se algo acima falhou, a flag nao e reescrita. Nao torna a
+  // gravacao atomica — a Preferences faz nvs_commit por chave e nao oferece transacao,
+  // entao uma falha no meio deixa campos novos e antigos misturados. O que este ultimo
+  // passo garante e que a falha seja reportada, nao escondida atras de um "salvo".
+  ok = ok && prefs.putBool(kKeyConfigured, true) != 0;
 
   prefs.end();
-  return true;
+  return ok;
 }

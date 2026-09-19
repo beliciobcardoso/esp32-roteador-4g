@@ -294,9 +294,9 @@ proteção é só na entrada. Custo de fechar: chamar `validate()` no `load()` e
 fazer com um registro reprovado, que não é obviamente "cair nos defaults" (isso apagaria
 uma config que o usuário reconhece). Nenhuma placa conhecida está nesse estado.
 
-## 16. `NvsSettingsRepository::save()` sempre reporta sucesso
+## 16. `NvsSettingsRepository::save()` sempre reporta sucesso — RESOLVIDO em 18/09/2026
 
-**Onde:** [src/adapters/nvs_settings_repository.cpp:45-61](../src/adapters/nvs_settings_repository.cpp:45)
+**Onde:** [src/adapters/nvs_settings_repository.cpp](../src/adapters/nvs_settings_repository.cpp) — `save()`
 
 A função termina em `return true` fixo e não checa nenhum dos oito retornos que a
 `Preferences` oferece. A interface promete o contrário —
@@ -314,13 +314,35 @@ A função termina em `return true` fixo e não checa nenhum dos oito retornos q
 **Cuidado na correção:** `putString()` devolve `strlen(value)`, então uma gravação
 bem-sucedida de string vazia também devolve `0`. Como `apn_user` e `apn_password` são
 opcionais e podem ser vazios de propósito
-([router_settings.h:10-14](../src/domain/router_settings.h:10)), testar `> 0` em todos os
+([router_settings.h](../src/domain/router_settings.h) — comentário sobre `apn_user`), testar `> 0` em todos os
 campos criaria falso negativo justamente no caso legítimo. O critério tem que distinguir
 "gravou vazio" de "não gravou".
 
 **Ação:** propagar o retorno do `begin()` e checar os `putString`/`putInt`/`putBool` com um
 critério que tolere campo opcional vazio. Vira mais relevante na Fase 7, que sobe o schema
 para 3 e reescreve todos os campos de uma vez.
+
+**Resolvido:** `begin()` propagado nos dois métodos e cada escrita checada em
+[nvs_settings_repository.cpp](../src/adapters/nvs_settings_repository.cpp). O critério dos
+`putString` é `retorno == valor.length()`, não `> 0` — é o que aceita campo opcional vazio
+sem aceitar falha. Para `putInt` e `putBool` o retorno de sucesso é fixo (4 e 1, conferido
+na fonte da `Preferences`), então ali `!= 0` basta. `configured` é a última escrita: se
+algo antes falhou, a flag não é reescrita.
+
+O `load()` também passou a checar `begin()`. Ali o comportamento não muda — sem namespace
+gravado, o `getBool` já caía no default `false` e a função já devolvia `false`. Mudou de
+acidente que depende do default para decisão explícita.
+
+**Em aberto, dois pontos que a correção não fecha:**
+
+- **A gravação não é atômica.** A `Preferences` faz `nvs_commit` por chave e não expõe
+  transação, então falha no meio deixa campos novos e antigos misturados. O `save()` agora
+  reporta a falha em vez de esconder; desfazer é outro problema. Fechar exigiria gravar um
+  blob único ou manter dois registros e alternar o ponteiro.
+- **Falha ao gravar campo vazio é indistinguível de sucesso.** `putString` devolve 0 nos
+  dois casos e o critério aprova. Só afeta `apn_user`/`apn_password` vazios, e as causas de
+  falha (partição cheia, handle inválido) derrubam também os cinco campos não vazios — a
+  falha aparece, só não por esse campo. Separar de verdade exigiria reler a chave.
 
 ## 17. Valores da configuração vão para o HTML sem escape
 
