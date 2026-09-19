@@ -35,6 +35,12 @@ void onUplinkSettingsChanged(const RouterSettings& updated) {
   linkSupervisor.applySettings(updated);
 }
 
+// Mesma ponte, no sentido contrario: a pagina pergunta como esta o 4G sem conhecer quem
+// responde. Chamada da task do loop(), enquanto o supervisor roda na dele.
+UplinkStatus currentUplinkStatus() {
+  return linkSupervisor.status();
+}
+
 // Sobe o roteador na ordem que as dependencias exigem: config -> AP -> supervisao do
 // uplink. O AP e sincrono porque a pagina de configuracao depende dele; o 4G fica com o
 // supervisor, que conecta em background e reconecta sozinho depois.
@@ -72,6 +78,7 @@ void setup() {
 
   startRouting();
   httpConfigHandler.onUplinkSettingsChanged(&onUplinkSettingsChanged);
+  httpConfigHandler.onUplinkStatusRequested(&currentUplinkStatus);
   httpConfigHandler.begin();
 }
 

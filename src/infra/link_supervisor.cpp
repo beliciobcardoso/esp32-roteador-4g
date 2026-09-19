@@ -45,7 +45,11 @@ constexpr uint32_t kMaxRebootsWithoutUplink = 2;
 // como o contador atravessa o reboot que ele mesmo dispara. Depois de um power-on de
 // verdade o conteudo e lixo — quem separa os dois casos e o esp_reset_reason() no begin(),
 // e nao um magic word, que custaria o mesmo trabalho para ainda errar 1 em 2^32.
-RTC_NOINIT_ATTR uint32_t gRebootsWithoutUplink;
+//
+// volatile pela mesma razao que state_ e consecutiveFailures_: escrita so pela task do
+// supervisor, lida tambem pela task do loop() em status(). Palavra alinhada, sem
+// leitura-modificacao-escrita cruzada entre as duas.
+RTC_NOINIT_ATTR volatile uint32_t gRebootsWithoutUplink;
 
 uint32_t backoffForFailure(uint32_t failureCount) {
   int index = static_cast<int>(failureCount) - 1;
@@ -61,6 +65,20 @@ uint32_t backoffForFailure(uint32_t failureCount) {
 }  // namespace
 
 LinkSupervisor::LinkSupervisor(ModemPpp& modem, NatBridge& nat) : modem_(modem), nat_(nat) {}
+
+UplinkStatus LinkSupervisor::status() const {
+  UplinkStatus current;
+  current.state = state_;
+  current.consecutive_failures = consecutiveFailures_;
+  current.rebooted_for_uplink = gRebootsWithoutUplink > 0;
+  // Esgotado significa que os reinicios acabaram E que o numero de falhas ja justificaria
+  // mais um. Sem a segunda metade, uma queda nova depois de dois reinicios gastos cairia
+  // direto na mensagem de causa externa na primeira falha, antes de a placa ter tentado
+  // as dez vezes que costumam resolver.
+  current.reboot_budget_exhausted = gRebootsWithoutUplink >= kMaxRebootsWithoutUplink &&
+                                    consecutiveFailures_ >= kMaxFailuresBeforeReboot;
+  return current;
+}
 
 bool LinkSupervisor::begin(const RouterSettings& settings) {
   // Reset por software e o unico que preserva a RTC RAM com significado aqui: foi o
@@ -158,7 +176,7 @@ void LinkSupervisor::run() {
   for (;;) {
     bool changed = refreshSettings();
 
-    if (state_ == State::Online) {
+    if (state_ == UplinkState::Online) {
       if (changed) {
         Serial.println("Uplink: configuracao nova — reconectando");
       } else if (!modem_.hasIp()) {
@@ -167,7 +185,7 @@ void LinkSupervisor::run() {
         vTaskDelay(pdMS_TO_TICKS(kOnlinePollMs));
         continue;
       }
-      state_ = State::Connecting;
+      state_ = UplinkState::Connecting;
     }
 
     if (connectOnce(activeSettings_)) {
@@ -176,7 +194,7 @@ void LinkSupervisor::run() {
       // evita que quedas separadas por dias de funcionamento normal somem no mesmo
       // orcamento e acabem suprimindo um reboot que teria resolvido.
       gRebootsWithoutUplink = 0;
-      state_ = State::Online;
+      state_ = UplinkState::Online;
       Serial.println("Uplink: online — clientes do AP saem pelo 4G");
       continue;
     }
@@ -215,10 +233,10 @@ void LinkSupervisor::run() {
                     backoffMs / 1000);
     }
 
-    state_ = State::Backoff;
+    state_ = UplinkState::Backoff;
     if (waitInterruptible(backoffMs)) {
       Serial.println("Uplink: configuracao nova durante o backoff — tentando ja");
     }
-    state_ = State::Connecting;
+    state_ = UplinkState::Connecting;
   }
 }

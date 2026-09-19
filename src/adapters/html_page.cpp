@@ -5,6 +5,8 @@ const char kConfigPageTemplate[] = R"HTML(<!DOCTYPE html>
 <head><meta charset="utf-8"><title>Config Roteador 4G</title></head>
 <body>
   <h1>Configuracao do Roteador 4G</h1>
+  <h2>Uplink 4G</h2>
+  <p>{{UPLINK_STATUS}}</p>
   <form method="POST" action="/">
     <label>SSID WiFi: <input type="text" name="wifi_ssid" value="{{SSID}}"></label><br>
     <label>Senha WiFi: <input type="password" name="wifi_password" placeholder="deixe em branco para manter"></label><br>
