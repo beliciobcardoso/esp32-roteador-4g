@@ -22,6 +22,16 @@ void HttpConfigHandler::handleClient() {
 }
 
 bool HttpConfigHandler::authenticate(const RouterSettings& current) {
+  // Credencial vazia nunca autentica. Nao e paranoia: o fallback do LoadSettingsUseCase
+  // devolve senha vazia quando a NVS fica ilegivel, e sem esta guarda o authenticate()
+  // compararia contra "" e deixaria entrar quem mandasse "admin:" sem senha. No boot isso
+  // nao chega a acontecer porque o AP nem sobe, mas uma falha de leitura com o AP ja no ar
+  // chegaria — e ai o erro de armazenamento viraria porta aberta.
+  if (current.admin_user.length() == 0 || current.admin_password.length() == 0) {
+    server_.requestAuthentication(BASIC_AUTH, kAuthRealm);
+    return false;
+  }
+
   if (server_.authenticate(current.admin_user.c_str(), current.admin_password.c_str())) {
     return true;
   }
