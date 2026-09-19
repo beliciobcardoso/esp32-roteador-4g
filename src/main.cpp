@@ -12,20 +12,7 @@
 #include "usecases/load_settings.h"
 #include "usecases/save_settings.h"
 
-#define BATTERY_PIN 35
 #define TEST_LED_PIN 32 // GPIO32 para testar led externo
-
-// Ratio calibrado com multimetro em 16/09:
-// Tensao real bateria: 4.16V | Tensao no pino (calculada): 1.90V
-// ratio = 4.16 / 1.90 = 2.19
-// Se recalibrar depois, so trocar esta constante.
-#define VOLTAGE_DIVIDER_RATIO 2.19
-
-#define ADC_MAX 4095.0
-#define ADC_REF_VOLTAGE 3.3
-
-// Quantidade de leituras para media - reduz ruido do ADC do ESP32
-#define NUM_SAMPLES 20
 
 // Curva de descarga Li-ion 1S (nao-linear).
 struct BatteryPoint {
@@ -61,13 +48,13 @@ const int curveSize = sizeof(curve) / sizeof(curve[0]);
 
 float readBatteryVoltage() {
   long sum = 0;
-  for (int i = 0; i < NUM_SAMPLES; i++) {
-    sum += analogRead(BATTERY_PIN);
+  for (int i = 0; i < BATTERY_ADC_SAMPLES; i++) {
+    sum += analogRead(BATTERY_ADC_PIN);
     delay(5);
   }
-  float avgRaw = sum / (float)NUM_SAMPLES;
-  float pinVoltage = (avgRaw / ADC_MAX) * ADC_REF_VOLTAGE;
-  return pinVoltage * VOLTAGE_DIVIDER_RATIO;
+  float avgRaw = sum / (float)BATTERY_ADC_SAMPLES;
+  float pinVoltage = (avgRaw / BATTERY_ADC_MAX) * BATTERY_ADC_REF_VOLTAGE;
+  return pinVoltage * BATTERY_VOLTAGE_DIVIDER_RATIO;
 }
 
 int voltageToPercent(float voltage) {
@@ -178,7 +165,7 @@ void reportBattery(unsigned long now) {
   }
   lastBatteryReportMs = now;
 
-  // Ainda bloqueia ~100ms (NUM_SAMPLES x delay(5)). Mantido: a media e o que tira o ruido
+  // Ainda bloqueia ~100ms (BATTERY_ADC_SAMPLES x delay(5)). Mantido: a media e o que tira o ruido
   // do ADC, e 100ms a cada 3s nao atrapalha nem o HTTP nem a supervisao do modem.
   float batteryVoltage = readBatteryVoltage();
   int percent = voltageToPercent(batteryVoltage);
