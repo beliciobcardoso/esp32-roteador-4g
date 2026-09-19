@@ -39,6 +39,16 @@ void HttpConfigHandler::handleNotFound() {
   server_.send(404, "text/plain", "nao encontrado");
 }
 
+// Texto do bloco de status. Sem provider registrado a pagina diz isso em vez de omitir o
+// bloco: um bloco ausente parece pagina antiga, e a frase aponta para o defeito de
+// montagem em vez de deixar quem le achando que o 4G esta bem.
+String HttpConfigHandler::uplinkStatusText() const {
+  if (uplinkStatus_ == nullptr) {
+    return "Estado do uplink indisponivel: nenhuma fonte de status foi registrada.";
+  }
+  return describeUplinkStatus(uplinkStatus_());
+}
+
 void HttpConfigHandler::handleGetRoot() {
   RouterSettings current = loadUseCase_.execute();
   if (!authenticate(current)) return;
@@ -48,6 +58,10 @@ void HttpConfigHandler::handleGetRoot() {
   page.replace("{{APN}}", escapeForHtmlAttribute(current.apn));
   page.replace("{{APN_USER}}", escapeForHtmlAttribute(current.apn_user));
   page.replace("{{ADMIN_USER}}", escapeForHtmlAttribute(current.admin_user));
+  // O status sai de literais nossos e de um numero, entao nao ha o que escapar hoje. Passa
+  // pelo escape mesmo assim: no dia em que a mensagem incluir um valor gravado — APN, por
+  // exemplo — a defesa ja esta no caminho, em vez de depender de alguem lembrar dela.
+  page.replace("{{UPLINK_STATUS}}", escapeForHtmlAttribute(uplinkStatusText()));
   server_.send(200, "text/html", page);
 }
 

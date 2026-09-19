@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "../domain/router_settings.h"
+#include "../domain/uplink_status.h"
 #include "modem_ppp.h"
 #include "nat_bridge.h"
 
@@ -19,12 +20,6 @@
 // descobrir por que a internet caiu.
 class LinkSupervisor {
  public:
-  enum class State {
-    Connecting,  // tentativa em andamento
-    Online,      // PPP com IP e NAT armado
-    Backoff,     // esperando a proxima tentativa
-  };
-
   LinkSupervisor(ModemPpp& modem, NatBridge& nat);
 
   // Cria a task e dispara a primeira conexao. Nao bloqueia.
@@ -35,10 +30,17 @@ class LinkSupervisor {
   // supervisor, que e a unica dona do modem depois do begin().
   void applySettings(const RouterSettings& settings);
 
-  State state() const { return state_; }
-
-  // Tentativas malsucedidas seguidas. Zera a cada conexao bem-sucedida.
-  uint32_t consecutiveFailures() const { return consecutiveFailures_; }
+  // Estado corrente, para a pagina de configuracao. Um acessor so em vez de um por
+  // campo: quem le quer a situacao inteira, e devolver as partes soltas ja produziu dois
+  // acessores sem chamador (debito 22).
+  //
+  // Fora de linha porque o orcamento de reinicio vive em variavel de RTC RAM no .cpp.
+  //
+  // O retorno nao e um instantaneo atomico: os campos sao lidos um a um e a task do
+  // supervisor pode avancar no meio. Aceito de proposito — isto alimenta um texto de
+  // status que o navegador ja le com atraso, e o pior caso e uma contagem de falhas um
+  // ciclo velha. Nada aqui decide nada.
+  UplinkStatus status() const;
 
  private:
   static void taskEntry(void* context);
@@ -53,10 +55,10 @@ class LinkSupervisor {
   ModemPpp& modem_;
   NatBridge& nat_;
 
-  // Lida pela task do loop() via state()/consecutiveFailures(), escrita so pela task do
-  // supervisor. Palavras alinhadas, escrita por uma tarefa e lida por outra, sem
-  // leitura-modificacao-escrita cruzada — volatile basta, nao precisa de lock.
-  volatile State state_ = State::Connecting;
+  // Lida pela task do loop() via status(), escrita so pela task do supervisor. Palavras
+  // alinhadas, escrita por uma tarefa e lida por outra, sem leitura-modificacao-escrita
+  // cruzada — volatile basta, nao precisa de lock.
+  volatile UplinkState state_ = UplinkState::Connecting;
   volatile uint32_t consecutiveFailures_ = 0;
 
   // RouterSettings carrega String, que aloca no heap: copiar sem lock enquanto o HTTP
