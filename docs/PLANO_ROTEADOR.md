@@ -225,8 +225,14 @@ Usuário abre 192.168.4.1
     imagem em `PendingVerify`, o clique saiu em `Firmware: confirmado pelo operador,
     rollback cancelado`, e um **power-on reset** depois a placa continuou em `0x20000` —
     reset por energia é mais forte que o reset por software que o critério pedia
-- ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar
-- ⚠️ Prazo de 600 s sem clique segue por validar em placa
+  - **Prazo sem clique**: exercitado com um build de teste de 60 s. O revert saiu aos
+    **61,25 s**, numa unica tentativa, e o bootloader voltou de `0x20000` para `0x1f0000`.
+    A primeira rodada deste cenario falhou de dois jeitos e os dois viraram correcao: o
+    `Revert` nao marcava a decisao como resolvida e repetiu 3679 vezes em dois minutos, e
+    nao havia tratamento para `Rollback is not possible, do not have any suitable apps in
+    slots` — a IDF recusa quando o outro slot nao tem imagem valida, que e onde uma
+    sequencia de reverts deixa a placa
+- ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar — unico criterio aberto
 - Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
 
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
