@@ -2,7 +2,10 @@
 
 #include <Arduino.h>
 #include <esp_attr.h>
+#include <esp_ota_ops.h>
 #include <esp_system.h>
+
+#include "../domain/firmware_update.h"
 
 namespace {
 
@@ -78,6 +81,23 @@ UplinkStatus LinkSupervisor::status() const {
   current.reboot_budget_exhausted = gRebootsWithoutUplink >= kMaxRebootsWithoutUplink &&
                                     consecutiveFailures_ >= kMaxFailuresBeforeReboot;
   return current;
+}
+
+// Le o estado da imagem direto do otadata em vez de receber por parametro: a decisao e
+// tomada dentro da task do supervisor, que roda por ate 160s por volta, e um valor passado
+// no begin() estaria velho justamente no momento que importa — logo depois de uma
+// atualizacao. A leitura e de flash, mas so acontece na decima falha seguida de uplink.
+bool LinkSupervisor::mayRebootNow() const {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  esp_ota_img_states_t raw = ESP_OTA_IMG_UNDEFINED;
+  if (running == nullptr || esp_ota_get_state_partition(running, &raw) != ESP_OK) {
+    // Sem leitura confiavel, reiniciar segue permitido: o reboot por falta de uplink e a
+    // recuperacao que existe ha mais tempo e que funciona sem depender deste caminho.
+    return true;
+  }
+  return supervisorMayRebootForUplink(raw == ESP_OTA_IMG_PENDING_VERIFY
+                                          ? FirmwareImageState::PendingVerify
+                                          : FirmwareImageState::Valid);
 }
 
 bool LinkSupervisor::begin(const RouterSettings& settings) {
@@ -209,7 +229,15 @@ void LinkSupervisor::run() {
     modem_.stop();
 
     if (consecutiveFailures_ >= kMaxFailuresBeforeReboot) {
-      if (gRebootsWithoutUplink < kMaxRebootsWithoutUplink) {
+      if (!mayRebootNow()) {
+        // So na transicao, pelo mesmo motivo da mensagem de causa externa mais abaixo.
+        if (consecutiveFailures_ == kMaxFailuresBeforeReboot) {
+          Serial.println(
+              "Uplink: reinicio segurado — ha uma atualizacao de firmware esperando "
+              "confirmacao, e reiniciar agora faria o bootloader reverte-la por falta de "
+              "sinal, que nao e defeito dela. Segue tentando sem reiniciar.");
+        }
+      } else if (gRebootsWithoutUplink < kMaxRebootsWithoutUplink) {
         gRebootsWithoutUplink++;
         Serial.printf("Uplink: %u falhas seguidas — reiniciando a placa (reinicio %u/%u)\n",
                       consecutiveFailures_, gRebootsWithoutUplink, kMaxRebootsWithoutUplink);

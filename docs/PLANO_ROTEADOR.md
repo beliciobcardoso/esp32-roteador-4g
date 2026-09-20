@@ -208,8 +208,31 @@ Usuário abre 192.168.4.1
   arquivo truncado recusado pelo `esp_image_verify()` sem reiniciar nada, formulário vazio
   recusado com a frase do domínio, e rollback de verdade — reset dentro da janela voltou de
   `0x1f0000` para `0x20000`, e a confirmação saiu em 300,9 s de uptime
-- ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar — é o único critério aberto
-  da fase
+- **Confirmação manual validada em placa em 20/09/2026.** A confirmação automática por
+  tempo saiu: ficar de pé não prova que alguém consegue chegar na placa. Dois cenários
+  exercidos com builds de teste propositalmente quebrados:
+  - **`loop()` travado** (spin infinito): `task_wdt` disparou ~5 s depois, `Aborting.`,
+    reboot, e o bootloader voltou de `0x20000` para `0x1f0000`. Sem
+    `CONFIG_ESP_TASK_WDT_PANIC=y` o watchdog só imprimia o aviso e a placa ficava de pé,
+    muda e inalcançável — este era o caminho que perdia o dispositivo
+  - **SoftAP forçado a falhar**: `loop()` girou, o autocheck viu `ap_up = false` e o revert
+    ativo saiu em **589 ms**, sem esperar o prazo — `esp_ota_ops: Rollback to previously
+    worked partition. Restart.` Na primeira tentativa a placa tinha morrido antes disso,
+    num `assert failed: tcpip_send_msg_wait_sem (Invalid mbox)`, porque o
+    `httpConfigHandler.begin()` abria socket sem AP no ar; corrigido, e o mesmo caminho é
+    alcançável em produção pela NVS ilegível
+  - **Botão de confirmar**: upload subiu para `0x20000`, o botão apareceu na página com a
+    imagem em `PendingVerify`, o clique saiu em `Firmware: confirmado pelo operador,
+    rollback cancelado`, e um **power-on reset** depois a placa continuou em `0x20000` —
+    reset por energia é mais forte que o reset por software que o critério pedia
+  - **Prazo sem clique**: exercitado com um build de teste de 60 s. O revert saiu aos
+    **61,25 s**, numa unica tentativa, e o bootloader voltou de `0x20000` para `0x1f0000`.
+    A primeira rodada deste cenario falhou de dois jeitos e os dois viraram correcao: o
+    `Revert` nao marcava a decisao como resolvida e repetiu 3679 vezes em dois minutos, e
+    nao havia tratamento para `Rollback is not possible, do not have any suitable apps in
+    slots` — a IDF recusa quando o outro slot nao tem imagem valida, que e onde uma
+    sequencia de reverts deixa a placa
+- ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar — unico criterio aberto
 - Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
 
 ## Em aberto para decidir durante a implementação (não bloqueia o início)

@@ -6,9 +6,9 @@
 // Placeholders substituidos em runtime pelo http_config_handler: {{SSID}}, {{APN}},
 // {{APN_USER}}, {{ADMIN_USER}}, {{UPLINK_STATUS}}, {{ADMIN_NOTICE}}, {{CLOCK}},
 // {{TIMEZONE_OPTIONS}}, {{BATTERY_RATIO}}, {{FIRMWARE_SLOT}}, {{FIRMWARE_VERSION}},
-// {{FIRMWARE_STATE}}.
+// {{FIRMWARE_STATE}}, {{FIRMWARE_CONFIRM}}.
 //
-// {{ADMIN_NOTICE}} e {{TIMEZONE_OPTIONS}} sao os unicos que recebem marcacao, nao valor: o
+// {{ADMIN_NOTICE}}, {{TIMEZONE_OPTIONS}} e {{FIRMWARE_CONFIRM}} recebem marcacao, nao valor: o
 // handler monta o paragrafo de alerta e as <option> da tabela de fusos do dominio. O texto
 // dentro dos dois passa pelo escape do mesmo jeito.
 extern const char kConfigPageTemplate[];

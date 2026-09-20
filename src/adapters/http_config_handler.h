@@ -30,6 +30,11 @@ class HttpConfigHandler {
   // ela — o navegador mostraria erro de conexao depois de uma atualizacao bem-sucedida.
   using RestartRequested = void (*)();
 
+  // Avisada quando o operador clicou em confirmar. O adaptador nao chama o
+  // esp_ota_mark_app_valid_cancel_rollback() direto: quem decide e o main, que junta o
+  // clique ao estado da imagem pela regra do dominio.
+  using FirmwareConfirmed = void (*)();
+
   HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase,
                     FirmwareWriter& firmwareWriter);
 
@@ -47,6 +52,7 @@ class HttpConfigHandler {
   using ClockTextProvider = String (*)();
   void onClockTextRequested(ClockTextProvider provider) { clockText_ = provider; }
   void onRestartRequested(RestartRequested callback) { restartRequested_ = callback; }
+  void onFirmwareConfirmed(FirmwareConfirmed callback) { firmwareConfirmed_ = callback; }
 
  private:
   void handleGetRoot();
@@ -58,7 +64,16 @@ class HttpConfigHandler {
   void handleUpdateUpload();
   void handleUpdateDone();
 
+  // POST porque muda estado da placa: um GET aqui seria disparado por prefetch do
+  // navegador ou por qualquer <img> apontando para a rota, e confirmaria uma imagem que o
+  // operador nunca olhou.
+  void handleConfirmFirmware();
+
   String firmwareStateText() const;
+
+  // Botao de confirmar, ou nada. So aparece com a imagem em janela de verificacao: nos
+  // outros estados nao ha o que confirmar, e um botao que nao faz nada convida a clicar.
+  String firmwareConfirmHtml() const;
   String uplinkStatusText() const;
   String clockTextOrExcuse() const;
   String timezoneOptionsHtml(const RouterSettings& current) const;
@@ -74,6 +89,7 @@ class HttpConfigHandler {
   LocalSettingsChanged localChanged_ = nullptr;
   ClockTextProvider clockText_ = nullptr;
   RestartRequested restartRequested_ = nullptr;
+  FirmwareConfirmed firmwareConfirmed_ = nullptr;
 
   // Estado de um upload de firmware, valido so entre o inicio e o fim de um POST /update.
   // Mora aqui e nao em variaveis locais porque o upload chega picado em varias chamadas do
