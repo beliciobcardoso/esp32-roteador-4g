@@ -1,6 +1,6 @@
 # PRD 07 — Relógio (NTP + fuso configurável)
 
-**Status: não iniciada**
+**Status: implementada em 19/09/2026 — validação em hardware pendente**
 
 Fonte: ideia do usuário, 18/09/2026.
 
@@ -69,14 +69,37 @@ degrau 2 → 3 em `domain/settings_migration`, que para um campo novo com defaul
 só preencher `timezone` com o default. Com teste nativo do degrau. Ver
 [CONFIGURACAO_NVS.md](../CONFIGURACAO_NVS.md).
 
-## A decidir na implementação
+## Decidido na implementação
 
-- Servidores NTP: `pool.ntp.org` ou `a.st1.ntp.br` (o brasileiro tem RTT menor e é mantido
-  pelo NIC.br). Provavelmente os dois, com o nacional primeiro
-- Onde fica o gatilho de sincronização: dentro do `LinkSupervisor` ao entrar em `Online`,
-  ou um handler próprio de `IP_EVENT_PPP_GOT_IP`. O segundo desacopla, o primeiro é uma
-  linha
-- O que a página mostra quando ainda não sincronizou — "sincronizando" ou nada
+- **Servidores: os dois, `a.st1.ntp.br` primeiro.** E foi preciso mexer no Kconfig:
+  `CONFIG_LWIP_SNTP_MAX_SERVERS` vale `1` por padrão, e com ele o segundo
+  `esp_sntp_setservername()` é **ignorado sem nenhum erro** — a placa ficaria dependendo só
+  do ntp.br achando que tinha fallback. Subiu para `2` no `sdkconfig.defaults`
+- **Gatilho no `LinkSupervisor`, ao entrar em `Online`.** Um handler próprio de
+  `IP_EVENT_PPP_GOT_IP` desacoplaria mais, mas o supervisor já é o dono desse evento e já
+  tem o ponteiro de função para notificar o adaptador HTTP — seria a segunda forma de dizer
+  a mesma coisa. O `main.cpp` faz a ponte, como faz para o resto
+- **A página diz que não sincronizou, com o motivo.** Nem "sincronizando" (que promete
+  chegada) nem nada (que parece página quebrada): `ainda nao sincronizado (precisa do
+  uplink 4G)`. Mostrar a epoch formatada seria fingir horário, que é exatamente o que o
+  critério de aceite proíbe
+- **"Já sincronizou alguma vez" é um latch, não `sntp_get_sync_status()`.** A função volta
+  a `SNTP_SYNC_STATUS_RESET` depois que a atualização completa (documentado no `esp_sntp.h`
+  instalado), então ela responde "está sincronizando agora?", não "a hora vale?". O latch é
+  ligado pelo callback de `sntp_set_time_sync_notification_cb`, e mora fora da classe
+  porque a assinatura do callback do lwIP (`void(struct timeval*)`) não carrega contexto
+- **O fuso default mora em `domain/timezone.h`, não no `config.h`.** É a primeira entrada da
+  tabela por construção (`kOptions[0].posix`): um default fora da tabela faria o `validate()`
+  reprovar a própria configuração de fábrica, e sem configuração válida o AP não sobe —
+  não sobraria página para corrigir de onde
+
+## Caronas do mesmo degrau de schema
+
+O degrau 2 → 3 fechou junto a metade em aberto do débito 1: `battery_divider_ratio` virou
+campo configurável, com faixa validada no domínio e aplicação a quente. Fazer separado
+custaria dois degraus, dois testes e dois bumps, e a unidade em campo migraria 1 → 2 → 3 de
+qualquer jeito. A faixa `[1.4, 10.0]` sai da física, não de gosto — ver o comentário em
+`domain/router_settings.cpp`.
 
 ## Riscos conhecidos
 
@@ -90,8 +113,17 @@ só preencher `timezone` com o default. Com teste nativo do degrau. Ver
 
 ## Critérios de aceite
 
-- Boot com uplink → hora correta no fuso configurado, confirmado via serial
-- Troca de fuso pela página vale a quente, sem reboot
-- Uplink cai e volta → relógio ressincroniza sozinho
-- Sem uplink, o firmware sobe normalmente e diz que a hora não está sincronizada — nunca
-  finge um horário
+- [x] `<select>` de fuso montado da tabela do domínio, e POST com fuso fora dela é recusado
+      pelo `validate()` — o formulário não é a defesa
+- [x] Degrau 2 → 3 preenche `timezone` e `battery_divider_ratio` sem desfazer nada do
+      registro, e encadeia a partir do schema 1 numa passada só
+- [x] Sem uplink, o firmware sobe normalmente e a página diz que a hora não está
+      sincronizada — nunca finge um horário
+- [x] `pio test -e native` cobre a tabela de fusos e a faixa do divisor — 89 testes
+- [ ] Boot com uplink → hora correta no fuso configurado, confirmado via serial
+- [ ] Troca de fuso pela página vale a quente, sem reboot
+- [ ] Uplink cai e volta → relógio ressincroniza sozinho
+- [ ] UDP 123 sai pelo NAT — é o primeiro tráfego originado pelo próprio ESP32, e pode
+      revelar problema que o NAPT esconde no forward de cliente
+
+Os quatro últimos são de bancada e ficam abertos até a placa rodar esta versão.

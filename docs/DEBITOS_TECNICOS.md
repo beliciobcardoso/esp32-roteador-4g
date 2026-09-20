@@ -1,6 +1,6 @@
 # Débitos Técnicos
 
-## 1. `VOLTAGE_DIVIDER_RATIO` hardcoded e calibrado por placa — PARCIAL em 19/09/2026
+## 1. `VOLTAGE_DIVIDER_RATIO` hardcoded e calibrado por placa — RESOLVIDO em 19/09/2026
 
 **Onde:** [include/config.h](../include/config.h) — `BATTERY_VOLTAGE_DIVIDER_RATIO`
 (era `src/main.cpp`, movido em 19/09/2026)
@@ -13,21 +13,33 @@ Constante `2.19` calibrada com multímetro numa placa específica (16/09). Resis
 [config.h](../include/config.h), junto dos outros defaults de fábrica e com a calibração
 documentada ali. Recalibrar é trocar um valor num arquivo que já existe para isso.
 
-**Em aberto — a metade que importa:** sobrescrever por configuração. Exige campo em
-`RouterSettings`, `putFloat`/`getFloat` na NVS, campo no formulário e faixa aceitável no
-`validate()`.
+**O que estava em aberto:** sobrescrever por configuração. O bloqueio nunca foi o
+trabalho, era o efeito — campo novo obriga subir o schema, e `load()` tratava schema menor
+que o atual como registro ausente. Pior depois do débito 10: `load()` falso faz o
+`ProvisionSettingsUseCase` **sortear senha nova**, então o bump não custava só a
+configuração, custava o acesso à unidade. A migração ([PRD 10](prd/10-migracao-de-schema.md))
+acabou com isso.
 
-**O que destravou em 19/09/2026:** o bloqueio não era o trabalho, era o efeito. Campo novo
-obriga subir o schema de 2 para 3, e `load()` tratava schema menor que o atual como
-registro ausente — a placa caía nos defaults e perdia SSID, senha e APN. Pior depois do
-débito 10: `load()` falso faz o `ProvisionSettingsUseCase` **sortear senha nova**, então o
-bump não custava só a configuração, custava o acesso à unidade.
+**Resolvido:** `battery_divider_ratio` é campo de `RouterSettings`, gravado em `bat_ratio`
+com `putFloat`/`getFloat`, editável pela página de config e aplicado a quente
+(`BatteryAdc::applyDividerRatio()`, sem reboot e sem reconectar nada). Entrou no degrau
+2 → 3 junto com o fuso da Fase 7: fazer separado custaria dois degraus, dois testes e dois
+bumps, e a unidade em campo migraria 1 → 2 → 3 de qualquer jeito. O `config.h` continua
+tendo o valor, agora só como default de fábrica.
 
-Isso acabou. `domain/settings_migration` migra registro antigo em vez de descartar, e subir
-o schema passou a ser acrescentar um degrau com teste nativo — ver
-[PRD 10](prd/10-migracao-de-schema.md). O campo do divisor pode entrar sozinho ou junto com
-a Fase 7; nos dois casos a unidade em campo preserva o que já tinha. Continua em aberto
-porque ninguém escreveu o campo, não porque sai caro.
+**A faixa `[1.4, 10.0]` é física, não gosto.** `ratio = Vbateria / Vpino`: uma LiPo 1S cheia
+chega a ~4.4 V e a referência do ADC é 3.3 V, então abaixo de 4.4/3.3 = 1.33 a leitura
+satura e a placa reporta tensão **menor** justamente quando está carregada — falha
+silenciosa, porque o ADC não avisa que grampeou. 1.4 arredonda isso pra cima; 10.0 pega o
+`21.9` digitado com o ponto no lugar errado. Os dois extremos, o zero e o negativo têm teste
+nativo.
+
+**Vírgula é recusada com 400 antes do `toFloat()`**, que para `"2,19"` devolve `2.00` sem
+sinal nenhum de erro: valor dentro da faixa válida, e a bateria passaria a ser lida com ~9%
+a menos para sempre. O `<input type="number">` normaliza, mas ele só existe no navegador.
+
+Falta validar em placa que a troca pela página muda a leitura seguinte — Fase 7 ainda não
+rodou em hardware.
 
 ## 2. Perda de precisão silenciosa em `voltageToPercent` — RESOLVIDO em 19/09/2026
 
@@ -518,8 +530,8 @@ O `esp_log_level_set("gpio", ESP_LOG_WARN)` foi junto, para `BatteryAdc::begin()
 mudança global de nível de log, mas existe só porque `analogRead` loga 20 linhas por
 leitura de bateria — ficando ao lado da causa, sai junto se a leitura sair.
 
-**Em aberto:** só a metade do débito 1 que depende do schema 3 (ver lá). O débito 3 não foi
-mexido, de propósito.
+**Em aberto:** nada da extração. A metade do débito 1 que dependia do schema 3 fechou na
+Fase 7 (ver lá). O débito 3 não foi mexido, de propósito.
 
 ## 19. Nenhum teste automatizado, e nenhum ambiente onde rodar um — RESOLVIDO em 18/09/2026
 

@@ -147,15 +147,26 @@ Usuário abre 192.168.4.1
   [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md)
 - Acertos, erros e lições da fase: [prd/06-integracao-testes-carga.md](prd/06-integracao-testes-carga.md#retrospectiva-da-fase)
 
-### Fase 7 — Relógio (NTP + fuso) — planejada
+### Fase 7 — Relógio (NTP + fuso) — implementada, validação em hardware pendente
 
-- `infra/clock`: SNTP sincronizado ao subir o uplink e a cada reconexão
-- Campo `timezone` na NVS (`kCurrentSchema` 2→3, com degrau de migração em
-  `domain/settings_migration` — desde 19/09/2026 o bump não descarta mais a config) e
-  `<select>` de fuso na página de configuração, valendo a quente
+- `infra/clock`: SNTP com `a.st1.ntp.br` e `pool.ntp.org`, sincronizado quando o
+  `LinkSupervisor` entra em `Online` — primeira conexão e cada reconexão. `esp_sntp_init()`
+  não é chamado duas vezes (guarda com `esp_sntp_enabled()`, e reconexão usa
+  `sntp_restart()`)
+- `CONFIG_LWIP_SNTP_MAX_SERVERS=2` no `sdkconfig.defaults`: o default é `1`, e com ele o
+  segundo servidor é ignorado sem erro nenhum
+- Campo `timezone` na NVS (`kCurrentSchema` 2→3, com degrau em
+  `domain/settings_migration`) e `<select>` montado da tabela de `domain/timezone.h`,
+  aplicado a quente. A tabela é domínio porque o `setenv("TZ", ...)`/`tsset()` do IDF não
+  reclama de string sem sentido — o resultado seria hora errada em silêncio
+- **Carona no mesmo degrau:** `battery_divider_ratio` virou configurável, fechando o
+  débito 1. Faixa `[1.4, 10.0]` validada no domínio, aplicada a quente
 - Fonte é NTP, não `AT+CCLK?`/NITZ — NITZ depende da operadora entregar
 - **Consumidores da hora ficam fora do escopo**: histórico de quedas, agendamento de
-  reboot, expiração de sessão e carimbo de OTA dependem disso, mas vêm depois
+  reboot, expiração de sessão e carimbo de OTA dependem disso, mas vêm depois. A página de
+  config mostra o relógio só para dar como verificar que ele funciona
+- ⚠️ Nada disso rodou em placa ainda: hora correta no serial, troca de fuso a quente,
+  ressincronização após queda e UDP 123 saindo pelo NAT seguem por validar
 - Detalhes em [prd/07-relogio-ntp.md](prd/07-relogio-ntp.md)
 
 ## Em aberto para decidir durante a implementação (não bloqueia o início)

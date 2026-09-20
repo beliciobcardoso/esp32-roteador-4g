@@ -38,7 +38,7 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 - `infra/` — wrappers finos sobre APIs ESP-IDF/Arduino (WiFi AP, PPP, NAT)
 - `main.cpp` — só orquestração/injeção, zero lógica de negócio
 
-**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
+**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). A Fase 7 (relógio por SNTP e fuso configurável) está implementada mas **ainda não rodou em placa**. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
 
 A configuração persistida (chaves da NVS, defaults de fábrica, como consultar e apagar) está documentada em [docs/CONFIGURACAO_NVS.md](docs/CONFIGURACAO_NVS.md).
 
@@ -79,6 +79,14 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   `INADDR_ANY` o socket atenderia a interface PPP e o roteador viraria resolvedor aberto
   para a rede da operadora. Encurtar o lease foi rejeitado: agravaria a janela de DHCP.
   Justificativa completa em [docs/prd/09-dns-local.md](docs/prd/09-dns-local.md)
+- O relógio vem de SNTP, não do `AT+CCLK?`/NITZ do modem — NITZ depende de a operadora
+  entregar, NTP não depende de operadora nenhuma. A sincronização é disparada pelo
+  `LinkSupervisor` ao entrar em `Online`, e "já sincronizou alguma vez" é um latch ligado
+  pelo callback do lwIP: `sntp_get_sync_status()` **não serve** para isso, porque volta a
+  `SNTP_SYNC_STATUS_RESET` depois que a atualização completa. A tabela de fusos mora em
+  `domain/timezone.h` e não no adaptador: `setenv("TZ", ...)` + `tzset()` não reclamam de
+  string sem sentido, e o `<select>` da página não protege de um POST direto.
+  Justificativa completa em [docs/prd/07-relogio-ntp.md](docs/prd/07-relogio-ntp.md)
 - Até 15 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — 15 é o teto do
   driver no ESP32 clássico (`ESP_WIFI_MAX_CONN_NUM`), não uma escolha de projeto
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico
@@ -88,7 +96,7 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
 ## Hardware — cuidados obrigatórios
 
 - `BOARD_POWERON_PIN` (GPIO12) tem que ir `HIGH` no `setup()` — sem isso a placa desliga sozinha rodando só na bateria
-- `BATTERY_VOLTAGE_DIVIDER_RATIO` em [include/config.h](include/config.h) é calibrado por multímetro numa placa específica — não é universal, e ainda não é sobrescrevível por configuração (débito 1 em [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md))
+- `BATTERY_VOLTAGE_DIVIDER_RATIO` em [include/config.h](include/config.h) é calibrado por multímetro numa placa específica — não é universal. Desde a Fase 7 é só o **default de fábrica**: o valor em uso vem da NVS e é editável pela página de config, com faixa `[1.4, 10.0]` validada no domínio. O piso é física, não gosto — abaixo de 4.4/3.3 a leitura satura e a placa reporta tensão menor justamente quando está carregada
 - Só um processo por vez na porta serial — upload falha com `Device or resource busy` se o monitor estiver aberto
 - A porta serial reenumera após o reset do upload (`ttyACM0` → `ttyACM1`) — sempre usar o caminho estável `/dev/serial/by-id/...`, nunca o numerado
 - Pulso de PWRKEY do A7670E precisa de 1000 ms (`Ton(pwrkey)`) — 100 ms faz o handshake AT demorar ou falhar
