@@ -96,15 +96,22 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   16 primeiros bytes até o fim, então imagem parcial nunca fica bootável. A autenticação é
   conferida no `UPLOAD_FILE_START`, **não** no handler do POST: o `WebServer` chama o
   callback de upload dentro do parser da requisição, antes do handler, e checar depois
-  gravaria a flash de quem não tem credencial. A imagem nova é confirmada no `loop()`
-  depois de **300 s** de pé (`kVerificationWindowMs`), não no `setup()` — confirmar no
-  `setup()` só pegaria firmware que morre antes do AP subir. O teto da janela é o
-  `LinkSupervisor`, que só consegue reiniciar a placa depois de ~7 min; a janela tem que
-  fechar bem antes, ou falta de cobertura reverteria uma atualização boa. Subiu de 120 s
-  para 300 s em 20/09/2026, a pedido de quem testa: 2 min não dão tempo de abrir a página,
-  conferir e reiniciar, e o defeito que só aparece na primeira reconexão de PPP ficava fora
-  da janela. A folga contra o supervisor caiu de ~5 min para ~2 min — não esticar mais sem
-  mexer no supervisor junto.
+  gravaria a flash de quem não tem credencial. **A imagem nova é confirmada pelo operador, não pelo relógio.** Em
+  20/09/2026 a confirmação automática por tempo saiu: ficar de pé não prova que alguém
+  consegue chegar na placa, e um firmware que sobe, roda e não atende passava batido —
+  confirmava sozinho, cancelava o rollback e deixava a placa viva e inalcançável, sem
+  ninguém no local para apertar nada. Quem confirma agora é o botão em
+  `POST /firmware/confirmar`, e o clique é prova empírica: se o POST chegou, o AP subiu, o
+  DHCP entregou IP e o servidor respondeu. A regra está em `decideFirmwareConfirmation()`,
+  no domínio, e junta três entradas — clique, saúde do boot e prazo:
+  - clique → confirma, e ganha de uma leitura de saúde ruim (o POST veio pelo caminho que
+    ela diz estar fora)
+  - AP não subiu ou servidor fora → reverte na hora, sem esperar o prazo: esperar por um
+    clique que não tem como chegar não acrescenta informação
+  - `kConfirmationDeadlineMs` (**600 s**) sem clique → reverte
+  O revert é ativo (`esp_ota_mark_app_invalid_rollback_and_reboot()`), não passivo: o
+  rollback do bootloader depende de um reset, e firmware que roda normal nunca reseta
+  sozinho.
   Justificativa completa em [docs/prd/11-atualizacao-ota.md](docs/prd/11-atualizacao-ota.md)
 - **O core do Arduino cancela o rollback antes do `setup()` se ninguém o impedir.** O
   `initArduino()` (`esp32-hal-misc.c`) chama `esp_ota_mark_app_valid_cancel_rollback()`
@@ -117,6 +124,18 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   lugar nenhum. Conferir com
   `xtensa-esp32-elf-nm .pio/build/esp-wrover-kit/firmware.elf | grep verifyRollbackLater`:
   `T` é a aplicação valendo, `W` é o core vencendo
+- **O `LinkSupervisor` segura o reboot dele enquanto a confirmação está pendente**
+  (`supervisorMayRebootForUplink()`). Ele reinicia a placa depois de 10 falhas de uplink, a
+  partir de ~7 min — dentro do prazo de 600 s isso faria o bootloader reverter uma imagem
+  possivelmente boa por falta de sinal, que não é defeito dela. Foi o que destravou o prazo
+  passar dos 7 min. Custo: até 10 min sem tentativas de reconexão quando o firmware novo é
+  justamente o que quebrou o modem — e esse caso termina em revert no fim do prazo de todo
+  jeito
+- **`CONFIG_ESP_TASK_WDT_PANIC=y`.** Sem ela o Task WDT só imprime aviso no serial a cada
+  5 s e não reinicia nada: firmware travado — `while` infinito, deadlock, espera de I/O sem
+  timeout — fica de pé, mudo e inalcançável para sempre, e o rollback nunca roda porque
+  depende de um reset que não acontece. É a única das três camadas que cobre travamento;
+  prazo e autocheck só funcionam com o `loop()` girando
 - Até 15 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — 15 é o teto do
   driver no ESP32 clássico (`ESP_WIFI_MAX_CONN_NUM`), não uma escolha de projeto
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico

@@ -23,6 +23,7 @@ void HttpConfigHandler::begin() {
   // bloco, e a primeira so depois que o corpo inteiro acabou.
   server_.on("/update", HTTP_POST, [this]() { handleUpdateDone(); },
              [this]() { handleUpdateUpload(); });
+  server_.on("/firmware/confirmar", HTTP_POST, [this]() { handleConfirmFirmware(); });
   server_.onNotFound([this]() { handleNotFound(); });
   server_.begin();
 }
@@ -121,6 +122,41 @@ String HttpConfigHandler::firmwareStateText() const {
   return describeFirmwareImageState(firmwareWriter_.runningImageState());
 }
 
+String HttpConfigHandler::firmwareConfirmHtml() const {
+  if (!needsHealthConfirmation(firmwareWriter_.runningImageState())) return String();
+
+  // O texto diz o prazo porque a pagina e o unico lugar onde o operador pode descobrir que
+  // existe um: sem clique, a placa volta sozinha para a imagem anterior.
+  String block = "<p><strong>Esta atualizacao ainda nao foi confirmada.</strong> Confira se ";
+  block += "tudo esta funcionando e confirme em ate ";
+  block += numberToString(kConfirmationDeadlineMs / 60000);
+  block += " minutos. Sem confirmacao, a placa reinicia sozinha no firmware anterior.</p>";
+  block += "<form method=\"POST\" action=\"/firmware/confirmar\">";
+  block += "<button type=\"submit\">Confirmar atualizacao</button>";
+  block += "</form>";
+  return block;
+}
+
+void HttpConfigHandler::handleConfirmFirmware() {
+  RouterSettings current = loadUseCase_.execute();
+  if (!authenticate(current)) return;
+
+  // Estado conferido aqui tambem, e nao so na montagem do botao: a pagina pode estar aberta
+  // desde antes de a imagem ser confirmada por outro caminho, e o POST chegaria para uma
+  // janela que ja fechou.
+  if (!needsHealthConfirmation(firmwareWriter_.runningImageState())) {
+    server_.send(409, "text/plain", "Nao ha atualizacao pendente de confirmacao.");
+    return;
+  }
+
+  if (firmwareConfirmed_ != nullptr) firmwareConfirmed_();
+
+  // 303 e nao 200: sem ele um F5 na pagina de resposta reenviaria o POST. O destino e a
+  // raiz, onde o operador ve o estado ja atualizado.
+  server_.sendHeader("Location", "/");
+  server_.send(303, "text/plain", "Atualizacao confirmada.");
+}
+
 void HttpConfigHandler::handleGetRoot() {
   RouterSettings current = loadUseCase_.execute();
   if (!authenticate(current)) return;
@@ -144,6 +180,8 @@ void HttpConfigHandler::handleGetRoot() {
   // por nos a partir de literais do dominio. Os textos que vao dentro dela ja foram
   // escapados um a um no timezoneOptionsHtml().
   page.replace("{{TIMEZONE_OPTIONS}}", timezoneOptionsHtml(current));
+  // Marcacao nossa, de literais: nao passa pelo escape pelo mesmo motivo do bloco acima.
+  page.replace("{{FIRMWARE_CONFIRM}}", firmwareConfirmHtml());
   server_.send(200, "text/html", page);
 }
 
@@ -345,13 +383,13 @@ void HttpConfigHandler::handleUpdateDone() {
     return;
   }
 
-  // O prazo vem do dominio e nao de um numero digitado aqui: e o mesmo que o loop() espera
-  // antes de confirmar a imagem, e duas redacoes do mesmo prazo divergem na primeira vez
-  // que uma delas mudar.
+  // O prazo vem do dominio e nao de um numero digitado aqui: e o mesmo que o loop() usa
+  // para decidir, e duas redacoes do mesmo prazo divergem na primeira vez que uma delas
+  // mudar.
   String message = "Firmware gravado. A placa reinicia agora e a pagina volta assim que o AP subir. ";
-  message += "Nao desligue nem reinicie nos primeiros ";
-  message += numberToString(kVerificationWindowMs / 1000);
-  message += " segundos: ate la o bootloader ainda volta para o firmware anterior.";
+  message += "Abra esta pagina de novo e clique em Confirmar atualizacao em ate ";
+  message += numberToString(kConfirmationDeadlineMs / 60000);
+  message += " minutos. Sem confirmacao a placa volta sozinha para o firmware anterior.";
   server_.send(200, "text/plain", message);
 
   // Depois do send, e de fora: um esp_restart() aqui dentro cortaria a resposta antes de

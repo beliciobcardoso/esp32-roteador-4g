@@ -61,4 +61,13 @@ class OtaUpdater : public FirmwareWriter {
   // Marca a imagem em execucao como boa e cancela o rollback. So chamar quando o
   // needsHealthConfirmation() concordar.
   bool confirmRunningImage();
+
+  // Marca a imagem em execucao como ruim e reinicia no slot anterior. Nao retorna: o
+  // esp_ota_mark_app_invalid_rollback_and_reboot() so devolve em caso de erro — se nao ha
+  // imagem anterior para onde voltar, por exemplo — e ai a placa segue viva na atual.
+  //
+  // O reboot e ativo de proposito. O rollback do bootloader e passivo: ele so acontece se
+  // alguma coisa resetar a placa. Um firmware que sobe, roda e nao atende ninguem nunca
+  // reseta sozinho, e ficaria de pe e inalcancavel para sempre.
+  void revertToPreviousImage();
 };

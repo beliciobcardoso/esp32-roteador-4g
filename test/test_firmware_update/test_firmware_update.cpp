@@ -127,20 +127,111 @@ void test_only_a_pending_image_needs_confirmation() {
 // tem que caber com folga antes do primeiro reboot que o LinkSupervisor consegue disparar
 // (10 falhas com backoff de 5/10/20/40/60 s dao mais de 7 min, sem contar o tempo de cada
 // tentativa). Reiniciar dentro da janela reverte, e o supervisor nao pode causar isso.
-void test_the_window_is_not_over_before_it_elapses() {
-  TEST_ASSERT_FALSE(verificationWindowElapsed(0));
-  TEST_ASSERT_FALSE(verificationWindowElapsed(kVerificationWindowMs - 1));
+void test_the_deadline_gives_the_operator_more_than_the_supervisor_used_to_allow() {
+  // O prazo agora e maior que os 7 min em que o supervisor reiniciava a placa por falta de
+  // sinal. Isso so e seguro porque o supervisor passa a segurar o reboot enquanto a
+  // confirmacao estiver pendente — ver supervisorMayRebootForUplink().
+  TEST_ASSERT_TRUE(kConfirmationDeadlineMs >= 10UL * 60UL * 1000UL);
 }
 
-void test_the_window_is_over_once_it_elapses() {
-  TEST_ASSERT_TRUE(verificationWindowElapsed(kVerificationWindowMs));
-  TEST_ASSERT_TRUE(verificationWindowElapsed(kVerificationWindowMs + 1));
+// --- decisao de confirmacao ---
+
+int decision(FirmwareConfirmationOutcome outcome) {
+  return static_cast<int>(outcome);
 }
 
-void test_the_window_fits_before_the_supervisor_can_reboot() {
-  // 7 min e o piso do tempo ate o supervisor reiniciar a placa. A janela tem que terminar
-  // bem antes, senao falta de sinal — que nao e defeito do firmware — dispara o rollback.
-  TEST_ASSERT_TRUE(kVerificationWindowMs < 7UL * 60UL * 1000UL);
+FirmwareHealth healthy() {
+  FirmwareHealth health;
+  health.ap_up = true;
+  health.http_up = true;
+  return health;
+}
+
+void test_an_image_that_is_not_pending_has_nothing_to_decide() {
+  for (FirmwareImageState state :
+       {FirmwareImageState::Valid, FirmwareImageState::Unmarked, FirmwareImageState::Unknown}) {
+    TEST_ASSERT_EQUAL_INT(
+        decision(FirmwareConfirmationOutcome::Nothing),
+        decision(decideFirmwareConfirmation(state, healthy(), false, 0)));
+  }
+}
+
+void test_a_pending_image_waits_for_the_operator() {
+  TEST_ASSERT_EQUAL_INT(
+      decision(FirmwareConfirmationOutcome::KeepWaiting),
+      decision(decideFirmwareConfirmation(FirmwareImageState::PendingVerify, healthy(), false, 0)));
+}
+
+void test_the_operator_click_confirms() {
+  TEST_ASSERT_EQUAL_INT(
+      decision(FirmwareConfirmationOutcome::Confirm),
+      decision(decideFirmwareConfirmation(FirmwareImageState::PendingVerify, healthy(), true, 0)));
+}
+
+void test_the_deadline_reverts_an_unconfirmed_image() {
+  TEST_ASSERT_EQUAL_INT(decision(FirmwareConfirmationOutcome::Revert),
+                        decision(decideFirmwareConfirmation(FirmwareImageState::PendingVerify,
+                                                            healthy(), false,
+                                                            kConfirmationDeadlineMs)));
+}
+
+void test_one_millisecond_before_the_deadline_still_waits() {
+  TEST_ASSERT_EQUAL_INT(decision(FirmwareConfirmationOutcome::KeepWaiting),
+                        decision(decideFirmwareConfirmation(FirmwareImageState::PendingVerify,
+                                                            healthy(), false,
+                                                            kConfirmationDeadlineMs - 1)));
+}
+
+void test_an_ap_that_did_not_come_up_reverts_without_waiting() {
+  // O caso que o prazo sozinho nao pega: firmware roda, nao trava, mas ninguem consegue
+  // chegar na pagina para clicar. Esperar os 10 min nao traria informacao nenhuma.
+  FirmwareHealth health = healthy();
+  health.ap_up = false;
+  TEST_ASSERT_EQUAL_INT(
+      decision(FirmwareConfirmationOutcome::Revert),
+      decision(decideFirmwareConfirmation(FirmwareImageState::PendingVerify, health, false, 0)));
+}
+
+void test_an_http_server_that_is_down_reverts_without_waiting() {
+  FirmwareHealth health = healthy();
+  health.http_up = false;
+  TEST_ASSERT_EQUAL_INT(
+      decision(FirmwareConfirmationOutcome::Revert),
+      decision(decideFirmwareConfirmation(FirmwareImageState::PendingVerify, health, false, 0)));
+}
+
+void test_a_click_wins_over_a_failed_self_check() {
+  // Se o clique chegou, o AP subiu e o servidor respondeu — foi por eles que o POST veio.
+  // Uma leitura de saude dizendo o contrario esta errada, e a prova empirica ganha.
+  FirmwareHealth health;
+  health.ap_up = false;
+  health.http_up = false;
+  TEST_ASSERT_EQUAL_INT(
+      decision(FirmwareConfirmationOutcome::Confirm),
+      decision(decideFirmwareConfirmation(FirmwareImageState::PendingVerify, health, true, 0)));
+}
+
+void test_a_broken_image_that_is_not_pending_is_left_alone() {
+  // Placa gravada por serial com o AP mal configurado nao e assunto do rollback: nao ha
+  // imagem anterior para voltar, e reverter a toa derrubaria a unica que existe.
+  FirmwareHealth health;
+  health.ap_up = false;
+  health.http_up = false;
+  TEST_ASSERT_EQUAL_INT(
+      decision(FirmwareConfirmationOutcome::Nothing),
+      decision(decideFirmwareConfirmation(FirmwareImageState::Unmarked, health, false, 0)));
+}
+
+// --- o supervisor nao pode competir com a janela ---
+
+void test_the_supervisor_holds_its_reboot_while_confirmation_is_pending() {
+  TEST_ASSERT_FALSE(supervisorMayRebootForUplink(FirmwareImageState::PendingVerify));
+}
+
+void test_the_supervisor_reboots_normally_once_the_image_is_settled() {
+  TEST_ASSERT_TRUE(supervisorMayRebootForUplink(FirmwareImageState::Valid));
+  TEST_ASSERT_TRUE(supervisorMayRebootForUplink(FirmwareImageState::Unmarked));
+  TEST_ASSERT_TRUE(supervisorMayRebootForUplink(FirmwareImageState::Unknown));
 }
 
 }  // namespace
@@ -161,8 +252,17 @@ int main(int, char**) {
   RUN_TEST(test_every_error_code_has_its_own_message);
   RUN_TEST(test_every_state_has_its_own_message);
   RUN_TEST(test_only_a_pending_image_needs_confirmation);
-  RUN_TEST(test_the_window_is_not_over_before_it_elapses);
-  RUN_TEST(test_the_window_is_over_once_it_elapses);
-  RUN_TEST(test_the_window_fits_before_the_supervisor_can_reboot);
+  RUN_TEST(test_the_deadline_gives_the_operator_more_than_the_supervisor_used_to_allow);
+  RUN_TEST(test_an_image_that_is_not_pending_has_nothing_to_decide);
+  RUN_TEST(test_a_pending_image_waits_for_the_operator);
+  RUN_TEST(test_the_operator_click_confirms);
+  RUN_TEST(test_the_deadline_reverts_an_unconfirmed_image);
+  RUN_TEST(test_one_millisecond_before_the_deadline_still_waits);
+  RUN_TEST(test_an_ap_that_did_not_come_up_reverts_without_waiting);
+  RUN_TEST(test_an_http_server_that_is_down_reverts_without_waiting);
+  RUN_TEST(test_a_click_wins_over_a_failed_self_check);
+  RUN_TEST(test_a_broken_image_that_is_not_pending_is_left_alone);
+  RUN_TEST(test_the_supervisor_holds_its_reboot_while_confirmation_is_pending);
+  RUN_TEST(test_the_supervisor_reboots_normally_once_the_image_is_settled);
   return UNITY_END();
 }

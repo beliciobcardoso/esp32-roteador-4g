@@ -159,6 +159,20 @@ bool startRouting(const RouterSettings& settings) {
   return true;
 }
 
+// Uma vez por boot: depois que a imagem e confirmada ou revertida nao ha mais o que
+// decidir, e consultar o otadata a cada volta do loop() seria leitura de flash de graca.
+bool firmwareDecisionSettled = false;
+
+// O que este boot conseguiu levantar. Preenchido no setup(), lido pela regra do dominio.
+FirmwareHealth firmwareHealth;
+
+// Ligado pelo POST /firmware/confirmar. volatile porque a escrita vem do handler do
+// WebServer e a leitura do settleFirmwareConfirmation(), no mesmo loop mas em pontos
+// diferentes — bool alinhado, sem leitura-modificacao-escrita cruzada.
+volatile bool operatorConfirmedFirmware = false;
+
+void onFirmwareConfirmed() { operatorConfirmedFirmware = true; }
+
 void setup() {
   pinMode(BOARD_POWERON_PIN, OUTPUT);
   digitalWrite(BOARD_POWERON_PIN, HIGH);
@@ -177,13 +191,22 @@ void setup() {
 
   linkSupervisor.onUplinkOnline(&onUplinkOnline);
 
-  startRouting(provision.settings);
+  // O retorno importa agora: e a prova de que o AP subiu, e sem AP ninguem chega na pagina
+  // para confirmar coisa nenhuma. Ver settleFirmwareConfirmation().
+  firmwareHealth.ap_up = startRouting(provision.settings);
   httpConfigHandler.onUplinkSettingsChanged(&onUplinkSettingsChanged);
   httpConfigHandler.onUplinkStatusRequested(&currentUplinkStatus);
   httpConfigHandler.onLocalSettingsChanged(&onLocalSettingsChanged);
   httpConfigHandler.onClockTextRequested(&currentClockText);
   httpConfigHandler.onRestartRequested(&onRestartRequested);
+  httpConfigHandler.onFirmwareConfirmed(&onFirmwareConfirmed);
   httpConfigHandler.begin();
+
+  // O `WebServer::begin()` nao devolve nada e o `server_.begin()` tambem nao, entao isto
+  // registra que o servidor foi iniciado, nao que ele esta atendendo. E menos do que se
+  // gostaria; o ap_up acima e quem pega o caso que de fato acontece — configuracao
+  // invalida ou softAP que nao sobe — e ai este ja nem e alcancado com AP no ar.
+  firmwareHealth.http_up = firmwareHealth.ap_up;
 }
 
 // Cadencias do loop. Antes eram delay() em sequencia, o que segurava o loop inteiro por
@@ -202,10 +225,6 @@ constexpr unsigned long kRestartGraceMs = 1000;
 unsigned long lastLedToggleMs = 0;
 unsigned long lastBatteryReportMs = 0;
 bool ledOn = false;
-
-// Uma vez por boot: depois disso nao ha mais o que confirmar, e consultar o otadata a cada
-// volta do loop() seria leitura de flash de graca.
-bool firmwareHealthChecked = false;
 
 void blinkLed(unsigned long now) {
   if (now - lastLedToggleMs < kLedBlinkIntervalMs) {
@@ -240,31 +259,52 @@ void reportBattery(unsigned long now) {
 // na pagina nasce "confirmado" e reset nenhum reverte. O rollback inteiro vira enfeite.
 //
 // Retornar true so adia a decisao — nao a cancela. Quem confirma passa a ser o
-// confirmFirmwareIfHealthy(), depois da janela, que e o ponto do PRD 11.
+// settleFirmwareConfirmation(), que espera o operador confirmar pela pagina.
 extern "C" bool verifyRollbackLater() { return true; }
 
 // Fecha a janela de verificacao do firmware novo. Ate aqui a imagem esta em
 // PENDING_VERIFY e qualquer reboot a desfaz; confirmar e o que torna a atualizacao
 // definitiva.
 //
-// Nao e feito no setup() de proposito: ali o rollback so pegaria um firmware que morre
-// antes de o AP subir, e e justamente o defeito que aparece depois — no primeiro ciclo de
-// bateria, na primeira resposta HTTP — que interessa. O prazo esta no dominio, junto da
-// conta que o amarra ao piso de reboot do LinkSupervisor.
-void confirmFirmwareIfHealthy(unsigned long now) {
-  if (firmwareHealthChecked) return;
-  if (!verificationWindowElapsed(now)) return;
-  firmwareHealthChecked = true;
+// Nao ha mais confirmacao automatica por tempo. Ficar de pe nao prova que alguem consegue
+// chegar na placa, e era justamente o firmware que sobe, roda e nao atende que passava
+// batido: confirmava sozinho, cancelava o rollback e deixava a placa viva e inalcancavel.
+//
+// Quem confirma agora e o operador, pelo botao da pagina. A regra que junta o clique, a
+// saude do boot e o prazo esta no dominio.
+void settleFirmwareConfirmation(unsigned long now) {
+  if (firmwareDecisionSettled) return;
 
   FirmwareImageState state = otaUpdater.runningImageState();
-  if (!needsHealthConfirmation(state)) return;
+  FirmwareConfirmationOutcome outcome =
+      decideFirmwareConfirmation(state, firmwareHealth, operatorConfirmedFirmware, now);
 
-  if (otaUpdater.confirmRunningImage()) {
-    Serial.println("Firmware: imagem nova confirmada, rollback cancelado");
-  } else {
-    // A imagem continua PENDING_VERIFY: o proximo reboot volta para a anterior. Grave o
-    // bastante para o log, e nada a fazer daqui — quem decide e quem le.
-    Serial.println("Firmware: NAO foi possivel confirmar a imagem — o proximo reboot reverte");
+  switch (outcome) {
+    case FirmwareConfirmationOutcome::KeepWaiting:
+      return;
+
+    case FirmwareConfirmationOutcome::Nothing:
+      // Imagem ja confirmada, ou gravada por serial: nao ha decisao a tomar neste boot.
+      firmwareDecisionSettled = true;
+      return;
+
+    case FirmwareConfirmationOutcome::Confirm:
+      firmwareDecisionSettled = true;
+      if (otaUpdater.confirmRunningImage()) {
+        Serial.println("Firmware: confirmado pelo operador, rollback cancelado");
+      } else {
+        // A imagem continua PENDING_VERIFY: o proximo reboot volta para a anterior. Grave o
+        // bastante para o log, e nada a fazer daqui — quem decide e quem le.
+        Serial.println("Firmware: NAO foi possivel confirmar a imagem — o proximo reboot reverte");
+      }
+      return;
+
+    case FirmwareConfirmationOutcome::Revert:
+      // Nao marca settled: o revertToPreviousImage() reinicia a placa, e se a IDF recusar o
+      // rollback nao ha estado novo a guardar — o proximo loop tenta de novo e loga de novo,
+      // que e o unico sinal que sobra para quem conseguir chegar na placa.
+      otaUpdater.revertToPreviousImage();
+      return;
   }
 }
 
@@ -283,6 +323,6 @@ void loop() {
   httpConfigHandler.handleClient();
   blinkLed(now);
   reportBattery(now);
-  confirmFirmwareIfHealthy(now);
+  settleFirmwareConfirmation(now);
   applyPendingRestart(now);
 }

@@ -117,6 +117,7 @@ const char kConfigPageTemplate[] = R"HTML(
     <p>Slot em execucao: {{FIRMWARE_SLOT}}</p>
     <p>Versao: {{FIRMWARE_VERSION}}</p>
     <p>Estado da imagem: {{FIRMWARE_STATE}}</p>
+    {{FIRMWARE_CONFIRM}}
     <!-- enctype e obrigatorio: sem ele o navegador manda o nome do arquivo como texto e o
          corpo chega sem um byte do firmware. -->
     <form method="POST" action="/update" enctype="multipart/form-data">

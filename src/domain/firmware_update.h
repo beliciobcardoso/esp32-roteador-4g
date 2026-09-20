@@ -66,13 +66,50 @@ String describeFirmwareImageState(FirmwareImageState state);
 // factory" no log. Chamar ali seria erro a cada boot sem defeito nenhum por tras.
 bool needsHealthConfirmation(FirmwareImageState state);
 
-// Quanto tempo de pe a imagem nova precisa antes de ser confirmada. Confirmar no setup()
-// tornaria o rollback quase inutil: pegaria so o firmware que morre antes do AP subir.
+// Prazo para o operador abrir a pagina e clicar em confirmar. Nao ha mais confirmacao
+// automatica por tempo: ficar de pe nao prova que alguem consegue chegar na placa, e era
+// justamente um firmware que sobe, roda e nao atende que passava batido.
 //
-// O teto vem do LinkSupervisor, que reinicia a placa depois de 10 falhas de uplink. Com
-// backoff de 5/10/20/40/60 s isso passa de 7 min mesmo se toda tentativa falhasse na hora,
-// e o reboot dele e por falta de sinal — nao e defeito do firmware. A janela tem que
-// terminar bem antes, ou uma area sem cobertura reverte uma atualizacao boa.
-extern const unsigned long kVerificationWindowMs;
+// 10 min passa dos 7 min em que o LinkSupervisor reiniciava a placa por falta de sinal. E
+// deliberado, e so e seguro porque supervisorMayRebootForUplink() segura aquele reboot
+// enquanto a confirmacao estiver pendente — sem isso, uma area sem cobertura reverteria
+// uma atualizacao boa antes de o operador chegar.
+extern const unsigned long kConfirmationDeadlineMs;
 
-bool verificationWindowElapsed(unsigned long uptimeMs);
+// O que a placa conseguiu levantar deste boot. Nao e diagnostico completo: sao as duas
+// coisas sem as quais ninguem consegue entrar para consertar nada.
+struct FirmwareHealth {
+  bool ap_up = false;
+  bool http_up = false;
+};
+
+enum class FirmwareConfirmationOutcome {
+  Nothing,      // a imagem nao esta em janela de verificacao; nao ha o que decidir
+  KeepWaiting,  // dentro do prazo e de pe: espera o clique
+  Confirm,      // confirma e cancela o rollback
+  Revert,       // volta para a imagem anterior
+};
+
+// Decide o destino da imagem recem-gravada. Regra pura: recebe o estado, o que a placa
+// levantou, se o operador clicou e ha quanto tempo ela esta de pe.
+//
+// O clique ganha de uma leitura de saude ruim de proposito. Se o POST chegou, o AP subiu e
+// o servidor respondeu — foi por eles que ele veio. Uma flag dizendo o contrario esta
+// errada, e a prova empirica vale mais que a leitura.
+//
+// Saude ruim reverte na hora, sem esperar o prazo: esperar 10 min por um clique que so
+// poderia vir por um caminho que nao existe nao acrescenta informacao nenhuma.
+FirmwareConfirmationOutcome decideFirmwareConfirmation(FirmwareImageState state,
+                                                       FirmwareHealth health,
+                                                       bool operator_confirmed,
+                                                       unsigned long uptimeMs);
+
+// O LinkSupervisor reinicia a placa depois de 10 falhas de uplink — com backoff de
+// 5/10/20/40/60 s, a partir de ~7 min. Dentro da janela de confirmacao esse reboot faria o
+// bootloader reverter uma imagem que talvez estivesse boa, por um motivo que nao e defeito
+// do firmware: falta de sinal.
+//
+// Enquanto a confirmacao estiver pendente ele segura. O custo e perder ate 10 min de
+// tentativas de reconexao quando o firmware novo e justamente o que quebrou o modem — e
+// esse caso termina em Revert no fim do prazo de qualquer jeito.
+bool supervisorMayRebootForUplink(FirmwareImageState state);

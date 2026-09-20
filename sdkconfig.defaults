@@ -49,3 +49,10 @@ CONFIG_LWIP_SNTP_MAX_SERVERS=2
 # Vem junto com a janela de verificacao do loop() — sem a chave, confirmar nao faz nada;
 # sem a confirmacao, todo boot seguinte reverteria.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Task Watchdog com panic. Sem isto ele so imprime aviso no serial a cada 5s e nao reinicia
+# nada: um firmware que trava — while infinito, deadlock, espera de I/O sem timeout — fica
+# de pe, mudo e inalcancavel para sempre, e o rollback do bootloader nunca chega a rodar
+# porque ele depende de um reset que nunca acontece. Com panic, travar vira reset, e reset
+# dentro da janela de confirmacao e exatamente o que devolve a imagem anterior.
+CONFIG_ESP_TASK_WDT_PANIC=y

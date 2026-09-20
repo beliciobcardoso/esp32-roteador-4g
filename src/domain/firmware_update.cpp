@@ -12,7 +12,7 @@ const size_t kEspImageHeaderSize = 24;
 // Continua seguro porque aquele piso supoe toda tentativa falhando instantaneamente, e na
 // placa cada ciclo de reconexao gasta ~15 s so entre o ERRORPEERDEAD e o Connected. Nao
 // esticar mais sem mexer no supervisor junto: a partir daqui a folga vira ruido.
-const unsigned long kVerificationWindowMs = 300000;
+const unsigned long kConfirmationDeadlineMs = 600000;
 
 const char* to_string(FirmwareUpdateError error) {
   switch (error) {
@@ -63,6 +63,23 @@ bool needsHealthConfirmation(FirmwareImageState state) {
   return state == FirmwareImageState::PendingVerify;
 }
 
-bool verificationWindowElapsed(unsigned long uptimeMs) {
-  return uptimeMs >= kVerificationWindowMs;
+FirmwareConfirmationOutcome decideFirmwareConfirmation(FirmwareImageState state,
+                                                       FirmwareHealth health,
+                                                       bool operator_confirmed,
+                                                       unsigned long uptimeMs) {
+  if (!needsHealthConfirmation(state)) return FirmwareConfirmationOutcome::Nothing;
+
+  // Antes da saude de proposito: o clique so pode ter chegado pelo AP e pelo servidor, e
+  // uma leitura que os desminta esta errada.
+  if (operator_confirmed) return FirmwareConfirmationOutcome::Confirm;
+
+  if (!health.ap_up || !health.http_up) return FirmwareConfirmationOutcome::Revert;
+
+  if (uptimeMs >= kConfirmationDeadlineMs) return FirmwareConfirmationOutcome::Revert;
+
+  return FirmwareConfirmationOutcome::KeepWaiting;
+}
+
+bool supervisorMayRebootForUplink(FirmwareImageState state) {
+  return !needsHealthConfirmation(state);
 }
