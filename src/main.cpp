@@ -314,10 +314,26 @@ void settleFirmwareConfirmation(unsigned long now) {
       return;
 
     case FirmwareConfirmationOutcome::Revert:
-      // Nao marca settled: o revertToPreviousImage() reinicia a placa, e se a IDF recusar o
-      // rollback nao ha estado novo a guardar — o proximo loop tenta de novo e loga de novo,
-      // que e o unico sinal que sobra para quem conseguir chegar na placa.
-      otaUpdater.revertToPreviousImage();
+      // Marcado antes da chamada: dando certo, o revertToPreviousImage() reinicia a placa de
+      // dentro e este valor nem chega a importar; dando errado, ele impede a segunda
+      // tentativa. A primeira versao nao marcava, apostando que "o proximo loop loga de
+      // novo" servisse de sinal — em bancada isso virou 3679 tentativas em dois minutos e
+      // 11 mil linhas de serial, afogando justamente o sinal que a aposta queria preservar.
+      firmwareDecisionSettled = true;
+      if (otaUpdater.revertToPreviousImage()) return;
+
+      // A IDF recusou: nao ha outro slot com imagem valida. Acontece depois de uma sequencia
+      // de reverts, que gasta a imagem do outro lado — visto em bancada em 20/09/2026.
+      //
+      // Confirmar a atual e o menos ruim. Ela pode estar com defeito, mas nao ha para onde
+      // voltar: deixar em PENDING_VERIFY nao protege de nada e ainda arma um rollback que
+      // vai falhar de novo no proximo reset, agora sem ninguem olhando o serial.
+      Serial.println("Firmware: nao ha imagem anterior para voltar — confirmando a atual");
+      if (otaUpdater.confirmRunningImage()) {
+        Serial.println("Firmware: imagem atual confirmada por falta de alternativa");
+      } else {
+        Serial.println("Firmware: NAO foi possivel confirmar a imagem atual");
+      }
       return;
   }
 }

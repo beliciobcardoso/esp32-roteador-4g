@@ -62,12 +62,15 @@ class OtaUpdater : public FirmwareWriter {
   // needsHealthConfirmation() concordar.
   bool confirmRunningImage();
 
-  // Marca a imagem em execucao como ruim e reinicia no slot anterior. Nao retorna: o
-  // esp_ota_mark_app_invalid_rollback_and_reboot() so devolve em caso de erro — se nao ha
-  // imagem anterior para onde voltar, por exemplo — e ai a placa segue viva na atual.
+  // Marca a imagem em execucao como ruim e reinicia no slot anterior.
+  //
+  // Devolve falso quando a IDF recusa, e so nesse caso devolve alguma coisa: dando certo,
+  // a placa reinicia de dentro da chamada. O motivo pratico da recusa e nao existir outro
+  // slot com imagem valida — "do not have any suitable apps in slots" —, o que acontece
+  // depois de uma sequencia de reverts que gastou a imagem do outro lado.
   //
   // O reboot e ativo de proposito. O rollback do bootloader e passivo: ele so acontece se
   // alguma coisa resetar a placa. Um firmware que sobe, roda e nao atende ninguem nunca
   // reseta sozinho, e ficaria de pe e inalcancavel para sempre.
-  void revertToPreviousImage();
+  bool revertToPreviousImage();
 };
