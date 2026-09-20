@@ -24,6 +24,11 @@ const char* kKeyAdminPass = "admin_pass";
 // registro do schema 2 nao tem a chave, cai no false e segue com a senha que a pessoa
 // escolheu, sem precisar de degrau de migracao nenhum.
 const char* kKeyAdminPending = "admin_pend";
+// Chaves do schema 3. Entraram com degrau de migracao em `domain/settings_migration`, e
+// nao lidas com default como o `admin_pend`: nenhuma das duas tem default seguro que o
+// dominio aceite — fuso vazio e ratio 0.0 sao reprovados pelo validate(), de proposito.
+const char* kKeyTimezone = "tz";
+const char* kKeyBatteryRatio = "bat_ratio";
 
 // putString devolve strlen(value) quando gravou e 0 quando falhou (erro no nvs_set_str ou
 // no nvs_commit — particao cheia cai aqui). Comparar com o comprimento esperado e o que
@@ -66,6 +71,11 @@ bool NvsSettingsRepository::load(RouterSettings& out) {
   stored.admin_user = prefs.getString(kKeyAdminUser, "");
   stored.admin_password = prefs.getString(kKeyAdminPass, "");
   stored.admin_password_pending = prefs.getBool(kKeyAdminPending, false);
+  // Defaults que o degrau 2 -> 3 sobrescreve. Ficam invalidos de proposito: se o degrau
+  // nao rodar por engano, o validate() reprova em vez de a placa operar com fuso errado e
+  // bateria lida como 0 V.
+  stored.timezone = prefs.getString(kKeyTimezone, "");
+  stored.battery_divider_ratio = prefs.getFloat(kKeyBatteryRatio, 0.0f);
 
   prefs.end();
 
@@ -73,6 +83,7 @@ bool NvsSettingsRepository::load(RouterSettings& out) {
   defaults.apn = DEFAULT_APN;
   defaults.apn_user = DEFAULT_APN_USER;
   defaults.apn_password = DEFAULT_APN_PASSWORD;
+  defaults.battery_divider_ratio = BATTERY_VOLTAGE_DIVIDER_RATIO;
 
   // A migracao acontece em memoria e nao regrava nada. De proposito: `load()` que escreve
   // surpreende, e a consolidacao vem de graca no primeiro `save()`, que sempre grava o
@@ -98,11 +109,16 @@ bool NvsSettingsRepository::save(const RouterSettings& settings) {
             wrote(prefs.putString(kKeyApnUser, settings.apn_user), settings.apn_user) &&
             wrote(prefs.putString(kKeyApnPass, settings.apn_password), settings.apn_password) &&
             wrote(prefs.putString(kKeyAdminUser, settings.admin_user), settings.admin_user) &&
-            wrote(prefs.putString(kKeyAdminPass, settings.admin_password), settings.admin_password);
+            wrote(prefs.putString(kKeyAdminPass, settings.admin_password), settings.admin_password) &&
+            wrote(prefs.putString(kKeyTimezone, settings.timezone), settings.timezone);
 
   // putBool devolve 1 quando gravou, para true e para false (putUChar no core Arduino),
   // entao 0 aqui e falha e nao "gravou false".
   ok = ok && prefs.putBool(kKeyAdminPending, settings.admin_password_pending) != 0;
+
+  // putFloat devolve 4 quando grava (sizeof(float)) e 0 quando falha. Sem a ambiguidade do
+  // campo vazio das strings: nao existe float de comprimento zero.
+  ok = ok && prefs.putFloat(kKeyBatteryRatio, settings.battery_divider_ratio) != 0;
 
   // putInt devolve 4 e putBool devolve 1 quando gravam — valores fixos, entao aqui 0 so
   // pode ser falha e nao ha a ambiguidade do campo vazio.

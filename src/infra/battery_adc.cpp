@@ -11,7 +11,12 @@ namespace {
 const int kSampleIntervalMs = 5;
 }  // namespace
 
-void BatteryAdc::begin() {
+void BatteryAdc::applyDividerRatio(float dividerRatio) {
+  dividerRatio_ = dividerRatio;
+}
+
+void BatteryAdc::begin(float dividerRatio) {
+  applyDividerRatio(dividerRatio);
   analogReadResolution(12);
 
   // Cada analogRead reconfigura o pino e o driver de GPIO loga em INFO — 20 linhas por
@@ -29,5 +34,8 @@ float BatteryAdc::readVoltage() {
 
   const float averageRaw = sum / static_cast<float>(BATTERY_ADC_SAMPLES);
   const float pinVoltage = (averageRaw / BATTERY_ADC_MAX) * BATTERY_ADC_REF_VOLTAGE;
-  return pinVoltage * BATTERY_VOLTAGE_DIVIDER_RATIO;
+  // O ratio vem da configuracao, nao mais do #define: os resistores variam por placa
+  // dentro da tolerancia, entao recalibrar deixou de exigir regravar o firmware (debito 1).
+  // O default de fabrica continua no config.h, e e ele que o provisionamento grava.
+  return pinVoltage * dividerRatio_;
 }

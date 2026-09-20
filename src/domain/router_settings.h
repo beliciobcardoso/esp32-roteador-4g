@@ -16,6 +16,13 @@ struct RouterSettings {
   // True enquanto a senha de admin ainda e a sorteada no provisionamento do primeiro boot.
   // Nao e preferencia de UI: e o que faz a senha da etiqueta valer para um acesso so.
   bool admin_password_pending = false;
+  // String POSIX TZ, sempre uma das entradas de domain/timezone.h. Nasce vazia de
+  // proposito: quem constroi a configuracao tem que escolher, e o validate() pega quem
+  // esqueceu. Silenciar isso com um default aqui esconderia o campo nao preenchido.
+  String timezone;
+  // Ratio do divisor resistivo da bateria, calibrado por placa. Zero e invalido pelo
+  // mesmo motivo: campo em branco no formulario chega como 0.0 pelo toFloat().
+  float battery_divider_ratio = 0.0f;
 };
 
 enum class SettingsValidationError {
@@ -31,6 +38,8 @@ enum class SettingsValidationError {
   // ve uma sozinha. Mora no mesmo enum porque a mensagem para o usuario sai do mesmo
   // to_string(), e duas fontes de texto de erro divergem com o tempo.
   AdminPasswordMustChange,
+  UnknownTimezone,
+  BatteryDividerOutOfRange,
 };
 
 SettingsValidationError validate(const RouterSettings& settings);

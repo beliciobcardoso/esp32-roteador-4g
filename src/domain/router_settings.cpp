@@ -1,5 +1,7 @@
 #include "router_settings.h"
 
+#include "timezone.h"
+
 namespace {
 const size_t kMinPasswordLength = 8;
 // Limites do 802.11, nao escolha nossa. O core Arduino nao os impoe: softAP() so rejeita
@@ -11,6 +13,16 @@ const size_t kMinPasswordLength = 8;
 const size_t kMaxSsidLength = 32;
 // 63 e o maximo da passphrase WPA2; o 64o byte do buffer e o terminador.
 const size_t kMaxWifiPasswordLength = 63;
+
+// Faixa do divisor da bateria. ratio = Vbateria / Vpino, entao o piso sai da fisica: uma
+// LiPo 1S cheia chega a ~4.4 V e a referencia do ADC e 3.3 V, logo abaixo de 4.4/3.3 =
+// 1.33 a leitura satura e a placa reporta tensao MENOR justamente quando esta carregada —
+// falha silenciosa, porque o ADC nao avisa que grampeou. 1.4 arredonda isso pra cima.
+//
+// O teto e largo de proposito: nao existe divisor util perto dele (com 10 o pino ve 0.42 V
+// e a resolucao vira ruido), e o que ele barra e dedo trocado — 21.9 no lugar de 2.19.
+const float kMinBatteryDividerRatio = 1.4f;
+const float kMaxBatteryDividerRatio = 10.0f;
 }
 
 SettingsValidationError validate(const RouterSettings& settings) {
@@ -21,6 +33,11 @@ SettingsValidationError validate(const RouterSettings& settings) {
   if (settings.apn.length() == 0) return SettingsValidationError::EmptyApn;
   if (settings.admin_user.length() == 0) return SettingsValidationError::EmptyAdminUser;
   if (settings.admin_password.length() < kMinPasswordLength) return SettingsValidationError::AdminPasswordTooShort;
+  if (!isKnownTimezone(settings.timezone)) return SettingsValidationError::UnknownTimezone;
+  if (settings.battery_divider_ratio < kMinBatteryDividerRatio ||
+      settings.battery_divider_ratio > kMaxBatteryDividerRatio) {
+    return SettingsValidationError::BatteryDividerOutOfRange;
+  }
   return SettingsValidationError::None;
 }
 
@@ -35,6 +52,8 @@ const char* to_string(SettingsValidationError error) {
     case SettingsValidationError::EmptyAdminUser: return "usuario admin nao pode ser vazio";
     case SettingsValidationError::AdminPasswordTooShort: return "senha admin precisa ter no minimo 8 caracteres";
     case SettingsValidationError::AdminPasswordMustChange: return "troque a senha de admin sorteada no primeiro boot antes de salvar qualquer configuracao";
+    case SettingsValidationError::UnknownTimezone: return "fuso horario precisa ser um dos da lista";
+    case SettingsValidationError::BatteryDividerOutOfRange: return "divisor da bateria precisa ficar entre 1.4 e 10.0";
   }
   return "erro desconhecido";
 }

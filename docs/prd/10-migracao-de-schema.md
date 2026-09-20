@@ -70,6 +70,18 @@ Quando o APN é preservado, `apn_user` e `apn_password` ficam vazios — inventa
 a senha da Vivo para o APN de outra operadora seria criar dado que ninguém forneceu, e APN
 sem autenticação é caso legítimo.
 
+### O degrau 2 → 3 (acrescentado pela Fase 7, 19/09/2026)
+
+Entrou junto com `timezone` e `battery_divider_ratio`. Os dois nascem com default seguro, e
+o degrau é só preenchê-los — mas ele **precisou existir**: fuso vazio e ratio `0.0` são
+reprovados pelo `validate()`, então esses campos não podiam entrar como chave lida com
+default, que foi o caminho do `admin_pend`.
+
+Os degraus encadeiam com `<=` e sem `return` no meio, de propósito: uma unidade que nunca
+foi atualizada desde o schema 1 atravessa 1 → 2 → 3 numa passada só. Parar no 2 deixaria o
+fuso vazio, e configuração inválida não sobe o AP — a unidade ficaria inacessível por causa
+da própria migração.
+
 ### Downgrade de firmware
 
 Registro com schema **maior** que o atual é lido como está. Recusar seria coerente — esta
@@ -93,7 +105,6 @@ aplicado — mas significa que o número gravado não indica o formato em uso.
 - **Transação.** `save()` continua sem atomicidade: a `Preferences` faz `nvs_commit` por
   chave e não oferece transação, então reboot no meio de uma gravação ainda mistura campos
   novos e velhos. `configured` e `schema` por último é o que existe hoje, e continua.
-- **Degrau 2 → 3.** Pertence à Fase 7, junto com o campo que vai justificá-lo.
 - **Downgrade com perda de campo.** Salvar por cima de um registro mais novo regrava o
   schema menor e os campos que esta versão não conhece ficam órfãos na NVS.
 
@@ -106,7 +117,9 @@ aplicado — mas significa que o número gravado não indica o formato em uso.
 - [x] Schema 0 ou negativo é recusado e não deixa configuração parcial no chamador
 - [x] Registro de firmware mais novo é lido em vez de recusado
 - [x] Migrar não liga `admin_password_pending`
-- [x] `pio test -e native` cobre os degraus e as recusas — 10 testes em
+- [x] Degrau 2 → 3 preenche fuso e divisor sem desfazer nada do registro, e o schema 1
+      chega ao formato atual numa passada só
+- [x] `pio test -e native` cobre os degraus e as recusas — 16 testes em
       `test/test_settings_migration/`
 - [ ] Unidade real com registro de schema 1 sobe preservando SSID e senha (sem placa nesse
       estado hoje; validar quando aparecer uma, ou forjando o registro pela NVS)

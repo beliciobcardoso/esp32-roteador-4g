@@ -1,6 +1,7 @@
 #include "load_settings.h"
 
 #include "../../include/config.h"
+#include "../domain/timezone.h"
 
 RouterSettings LoadSettingsUseCase::execute() {
   RouterSettings settings;
@@ -23,5 +24,7 @@ RouterSettings LoadSettingsUseCase::execute() {
   settings.apn_password = DEFAULT_APN_PASSWORD;
   settings.admin_user = DEFAULT_ADMIN_USER;
   settings.admin_password = "";
+  settings.timezone = kDefaultTimezone;
+  settings.battery_divider_ratio = BATTERY_VOLTAGE_DIVIDER_RATIO;
   return settings;
 }

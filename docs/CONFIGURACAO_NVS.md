@@ -17,9 +17,9 @@ não apaga a configuração**. Só um `erase_flash` ou um `nvs_flash_erase` expl
 
 ## Chaves
 
-Todas as chaves de conteúdo são string; `schema` é int e `configured` é bool. O limite de
-nome de chave da NVS é 15 caracteres — daí os nomes abreviados (`wifi_pass` e não
-`wifi_password`).
+Quase todas as chaves de conteúdo são string; `bat_ratio` é float, `schema` é int e
+`configured`/`admin_pend` são bool. O limite de nome de chave da NVS é 15 caracteres — daí
+os nomes abreviados (`wifi_pass` e não `wifi_password`).
 
 | Chave NVS | Campo em `RouterSettings` | Tipo | Default de fábrica | Validação |
 | --- | --- | --- | --- | --- |
@@ -31,7 +31,9 @@ nome de chave da NVS é 15 caracteres — daí os nomes abreviados (`wifi_pass` 
 | `admin_user` | `admin_user` | String | `admin` | não pode ser vazio |
 | `admin_pass` | `admin_password` | String | sorteada no 1º boot | mínimo 8 caracteres |
 | `admin_pend` | `admin_password_pending` | bool | `true` no provisionamento | interno, ver abaixo |
-| `schema` | — | int | `2` | interno, ver abaixo |
+| `tz` | `timezone` | String | `<-03>3` (Brasília) | precisa ser uma das opções de `domain/timezone.h` |
+| `bat_ratio` | `battery_divider_ratio` | float | `BATTERY_VOLTAGE_DIVIDER_RATIO` (2.19) | entre 1.4 e 10.0 |
+| `schema` | — | int | `3` | interno, ver abaixo |
 | `configured` | — | bool | `true` após o primeiro save | interno, ver abaixo |
 
 ⚠️ **Não existe mais senha de fábrica.** `DEFAULT_AP_PASSWORD` e `DEFAULT_ADMIN_PASSWORD`
@@ -52,6 +54,8 @@ Regras de validação em [src/domain/router_settings.cpp](../src/domain/router_s
 | `apn` | [src/infra/modem_ppp.cpp](../src/infra/modem_ppp.cpp) | `AT+CGDCONT=1,"IP",<apn>` antes do registro, e `ESP_MODEM_DCE_DEFAULT_CONFIG` |
 | `apn_user`, `apn_password` | [src/infra/modem_ppp.cpp](../src/infra/modem_ppp.cpp) | `esp_netif_ppp_set_auth(PAP, ...)` — **só é chamado se `apn_user` não for vazio** |
 | `admin_user`, `admin_password` | [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) | HTTP Basic Auth, realm `roteador-4g` |
+| `timezone` | [src/infra/clock.cpp](../src/infra/clock.cpp) | `setenv("TZ", ...)` + `tzset()`; trocar pela página vale a quente, sem reboot |
+| `battery_divider_ratio` | [src/infra/battery_adc.cpp](../src/infra/battery_adc.cpp) | multiplica a tensão do pino; trocar pela página vale na leitura seguinte |
 | `admin_password_pending` | [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) | enquanto `true`, o `GET /` mostra o aviso e o `POST /` recusa gravação que mantenha a senha sorteada |
 
 Valores fixos em código, **não** configuráveis pela NVS: IP do AP (192.168.4.1/24),
@@ -69,7 +73,11 @@ canal Wi-Fi (1), limite de clientes, porta HTTP (80), pinagem do modem, baud da 
 [`domain/settings_migration`](../src/domain/settings_migration.cpp), que ajusta o que
 mudou de formato e preserva o resto. Ver [PRD 10](prd/10-migracao-de-schema.md).
 
-O que a migração faz hoje, no único degrau que existe (1 → 2):
+Os degraus **encadeiam**: um registro de schema 1 numa unidade que nunca foi atualizada
+atravessa 1 → 2 → 3 numa passada só. Parar no 2 deixaria `tz` vazio, que o `validate()`
+reprova — e configuração inválida não sobe o AP.
+
+Degrau 1 → 2 (credenciais de APN):
 
 | campo | schema 1 | depois da migração |
 |---|---|---|
@@ -77,6 +85,18 @@ O que a migração faz hoje, no único degrau que existe (1 → 2):
 | `apn` igual ao default antigo (`internet`) | não conecta na Vivo | vira o default atual |
 | `apn` escolhido pela pessoa | gravado | preservado |
 | `apn_user`, `apn_pass` | não existiam | vazios, exceto quando o APN foi reposto |
+
+Degrau 2 → 3 (Fase 7 — relógio e calibração da bateria):
+
+| campo | schema 2 | depois da migração |
+|---|---|---|
+| tudo que o registro já tinha | gravado | preservado como está |
+| `tz` | não existia | default de `domain/timezone.h` (Brasília) |
+| `bat_ratio` | não existia | `BATTERY_VOLTAGE_DIVIDER_RATIO` do `config.h` |
+
+Os dois campos novos **não têm default seguro que o domínio aceite** — fuso vazio e ratio
+`0.0` são reprovados pelo `validate()`. É por isso que este degrau precisou existir, em vez
+de entrar como chave lida com default como foi o `admin_pend`.
 
 Registro com schema **maior** que o atual (downgrade de firmware) é lido como está: os
 campos que esta versão conhece continuam onde sempre estiveram. Recusar seria pior — faria
@@ -99,7 +119,7 @@ configurada por uma pessoa não tem senha pendente) e não precisa de degrau nen
 
 ## Comportamento de escrita parcial
 
-`save()` grava os 7 campos de uma vez, sempre. Não existe update de campo isolado.
+`save()` grava os 9 campos de uma vez, sempre. Não existe update de campo isolado.
 
 O formulário HTTP tem um atalho: **campo de senha em branco mantém a senha atual** (as três
 — Wi-Fi, APN e admin). Serve para trocar só o SSID sem retypar tudo. Isso acontece no

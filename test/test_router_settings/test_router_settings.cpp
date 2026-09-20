@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "domain/router_settings.h"
+#include "domain/timezone.h"
 
 namespace {
 
@@ -28,6 +29,8 @@ RouterSettings validSettings() {
   settings.apn_password = "vivo";
   settings.admin_user = "admin";
   settings.admin_password = "admin1234";
+  settings.timezone = kDefaultTimezone;
+  settings.battery_divider_ratio = 2.19f;
   return settings;
 }
 
@@ -131,6 +134,76 @@ void test_ssid_error_wins_over_later_fields() {
 
 // Nenhum codigo pode cair no fallback "erro desconhecido": a pagina de config mostra este
 // texto cru pro usuario, entao um enum novo sem mensagem vira erro mudo na tela.
+// --- Fuso horario ---
+
+void test_a_known_timezone_is_accepted() {
+  RouterSettings settings = validSettings();
+  settings.timezone = timezoneOptions()[timezoneOptionCount() - 1].posix;
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::None), code(validate(settings)));
+}
+
+// Fora da tabela e recusado aqui, e nao no adaptador, porque o <select> nao protege nada:
+// um POST direto manda a string que quiser, e setenv("TZ", lixo) nao devolve erro — so
+// produz hora errada em silencio, que e o tipo de defeito que aparece semanas depois.
+void test_a_timezone_outside_the_table_is_rejected() {
+  RouterSettings settings = validSettings();
+  settings.timezone = "America/Sao_Paulo";
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::UnknownTimezone), code(validate(settings)));
+}
+
+void test_an_empty_timezone_is_rejected() {
+  RouterSettings settings = validSettings();
+  settings.timezone = "";
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::UnknownTimezone), code(validate(settings)));
+}
+
+// --- Divisor da bateria ---
+
+// O piso nao e estetico. ratio = Vbateria / Vpino, entao abaixo de 4.4/3.3 = 1.33 uma
+// bateria cheia entrega mais que a referencia do ADC: a leitura satura e a placa reporta
+// tensao MENOR justamente quando esta carregada. 1.4 arredonda isso pra cima.
+void test_a_divider_ratio_below_the_floor_is_rejected() {
+  RouterSettings settings = validSettings();
+  settings.battery_divider_ratio = 1.39f;
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::BatteryDividerOutOfRange),
+                        code(validate(settings)));
+}
+
+void test_a_divider_ratio_at_the_floor_is_accepted() {
+  RouterSettings settings = validSettings();
+  settings.battery_divider_ratio = 1.4f;
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::None), code(validate(settings)));
+}
+
+void test_a_divider_ratio_above_the_ceiling_is_rejected() {
+  RouterSettings settings = validSettings();
+  settings.battery_divider_ratio = 10.01f;
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::BatteryDividerOutOfRange),
+                        code(validate(settings)));
+}
+
+void test_a_divider_ratio_at_the_ceiling_is_accepted() {
+  RouterSettings settings = validSettings();
+  settings.battery_divider_ratio = 10.0f;
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::None), code(validate(settings)));
+}
+
+// Campo nao preenchido chega como 0.0 pelo toFloat() do adaptador. Sem o piso isso viraria
+// uma bateria lida como 0 V, ou seja 0%, sem nenhum erro no caminho.
+void test_a_zero_divider_ratio_is_rejected() {
+  RouterSettings settings = validSettings();
+  settings.battery_divider_ratio = 0.0f;
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::BatteryDividerOutOfRange),
+                        code(validate(settings)));
+}
+
+void test_a_negative_divider_ratio_is_rejected() {
+  RouterSettings settings = validSettings();
+  settings.battery_divider_ratio = -2.19f;
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::BatteryDividerOutOfRange),
+                        code(validate(settings)));
+}
+
 void test_every_error_code_has_its_own_message() {
   const SettingsValidationError all[] = {
       SettingsValidationError::None,
@@ -142,6 +215,8 @@ void test_every_error_code_has_its_own_message() {
       SettingsValidationError::EmptyAdminUser,
       SettingsValidationError::AdminPasswordTooShort,
       SettingsValidationError::AdminPasswordMustChange,
+      SettingsValidationError::UnknownTimezone,
+      SettingsValidationError::BatteryDividerOutOfRange,
   };
 
   for (SettingsValidationError error : all) {
@@ -204,6 +279,15 @@ int main(int, char**) {
   RUN_TEST(test_admin_password_at_minimum_is_accepted);
   RUN_TEST(test_empty_apn_credentials_are_accepted);
   RUN_TEST(test_ssid_error_wins_over_later_fields);
+  RUN_TEST(test_a_known_timezone_is_accepted);
+  RUN_TEST(test_a_timezone_outside_the_table_is_rejected);
+  RUN_TEST(test_an_empty_timezone_is_rejected);
+  RUN_TEST(test_a_divider_ratio_below_the_floor_is_rejected);
+  RUN_TEST(test_a_divider_ratio_at_the_floor_is_accepted);
+  RUN_TEST(test_a_divider_ratio_above_the_ceiling_is_rejected);
+  RUN_TEST(test_a_divider_ratio_at_the_ceiling_is_accepted);
+  RUN_TEST(test_a_zero_divider_ratio_is_rejected);
+  RUN_TEST(test_a_negative_divider_ratio_is_rejected);
   RUN_TEST(test_every_error_code_has_its_own_message);
   RUN_TEST(test_pending_admin_password_blocks_a_save_that_keeps_it);
   RUN_TEST(test_changing_the_admin_password_settles_the_pendency);

@@ -19,7 +19,7 @@
 
 // Versao do formato gravado. Mora aqui, e nao no adaptador, porque e a politica que decide
 // o que cada versao significa.
-const int kCurrentSchema = 2;
+const int kCurrentSchema = 3;
 
 enum class SchemaVerdict {
   // Registro ilegivel: numero de schema que nenhuma versao do firmware gravou.
@@ -37,6 +37,10 @@ struct MigrationDefaults {
   String apn;
   String apn_user;
   String apn_password;
+  // Calibracao do divisor resistivo. Vem de fora e o fuso nao: o fuso default e escolha
+  // de produto e mora em `domain/timezone.h`, onde esta garantido de ser uma opcao valida;
+  // o ratio e calibracao por placa e mora no `config.h` como os outros defaults de fabrica.
+  float battery_divider_ratio = 0.0f;
 };
 
 // Ajusta `settings` do formato `storedSchema` para o atual. Nao toca em nada quando
