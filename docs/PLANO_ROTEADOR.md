@@ -221,8 +221,12 @@ Usuário abre 192.168.4.1
     num `assert failed: tcpip_send_msg_wait_sem (Invalid mbox)`, porque o
     `httpConfigHandler.begin()` abria socket sem AP no ar; corrigido, e o mesmo caminho é
     alcançável em produção pela NVS ilegível
+  - **Botão de confirmar**: upload subiu para `0x20000`, o botão apareceu na página com a
+    imagem em `PendingVerify`, o clique saiu em `Firmware: confirmado pelo operador,
+    rollback cancelado`, e um **power-on reset** depois a placa continuou em `0x20000` —
+    reset por energia é mais forte que o reset por software que o critério pedia
 - ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar
-- ⚠️ Botão de confirmar e prazo de 600 s seguem por validar em placa
+- ⚠️ Prazo de 600 s sem clique segue por validar em placa
 - Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
 
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
