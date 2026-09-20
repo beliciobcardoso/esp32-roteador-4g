@@ -56,3 +56,34 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # porque ele depende de um reset que nunca acontece. Com panic, travar vira reset, e reset
 # dentro da janela de confirmacao e exatamente o que devolve a imagem anterior.
 CONFIG_ESP_TASK_WDT_PANIC=y
+
+# Entrega direta no caminho de entrada do lwIP, em vez de enfileirar para a task tcpip.
+#
+# Sem isto, cada quadro PPP entrante ocupa um slot da fila da task tcpip, e com NAPT a mesma
+# task ainda faz o forward e entrega ao driver WiFi antes de drenar o proximo. Rajada de
+# download entra mais rapido do que ela escoa, e o excedente vira
+# `pppos_input_tcpip failed with -1` (ERR_MEM) — debito 13.
+#
+# Medido em 20/09/2026, em duas rodadas:
+#
+#  - fila 32, download de video: ~3166 descartes, pico de 1239 numa janela de 30 s
+#  - fila 64, download de um zip de 19 MB: 1727 descartes, pico de 540
+#
+# Dobrar a fila nao resolveu — so empurrou o ponto de saturacao, como o proprio debito 13
+# previa antes da medicao. O gargalo e drenagem, nao tamanho: a task nao escoa no ritmo da
+# rajada, e fila maior compra menos de um segundo de folga.
+#
+# A mesma medicao derrubou a hipotese alternativa do debito, de heap esgotado: o heap interno
+# livre nunca desceu de 113 KB, contra um piso de 32 KB. E fila, nao memoria.
+#
+# CORE_LOCKING troca a fila por um mutex: quem recebe entrega direto, segurando o lock, em
+# vez de postar mensagem. A classe inteira do problema deixa de existir porque nao ha mais
+# fila para encher. Custo: muda o modelo de concorrencia do lwIP.
+#
+# O codigo deste projeto ja esta do lado certo dessa mudanca — o dns_forwarder usa BSD
+# sockets, que adquirem o lock por dentro, e o nat_bridge chama ip_napt_enable por
+# esp_netif_tcpip_exec(), que com CORE_LOCKING passa a pegar o lock em vez de postar.
+# Validado em bancada com CONFIG_LWIP_CHECK_THREAD_SAFETY=y num build descartavel, que
+# aborta em runtime a cada chamada de API feita fora do lock.
+CONFIG_LWIP_TCPIP_CORE_LOCKING=y
+CONFIG_LWIP_TCPIP_CORE_LOCKING_INPUT=y
