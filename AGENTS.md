@@ -141,6 +141,17 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico
     não suporta SAE em softAP no IDF 4.4 (`ESP32_WIFI_ENABLE_WPA3_SAE` cobre só o lado
     station). O driver rejeitava com `Invalid authmode 7`. Reabrir se migrarmos para IDF 5.x.
+- **A página de configuração mora em `http/index.html`, não num raw string em C++.** O
+  arquivo entra no binário como está, pelo `EMBED_TXTFILES` de `src/CMakeLists.txt` mais o
+  `board_build.embed_txtfiles` do `platformio.ini` — as duas chaves são necessárias, o CMake
+  só lista o `.S` gerado e quem o gera é o SCons do PlatformIO. `html_page.h` expõe o
+  conteúdo como `kConfigPageTemplate` via `asm("_binary_index_html_start")`, e
+  `html_page.cpp` ficou só com o `escapeForHtmlAttribute`. Antes havia duas cópias do mesmo
+  HTML — a que ia pro firmware e a que se editava no navegador — e elas já estavam
+  divergindo na indentação. Consequência a aceitar: abrir `http/index.html` direto no
+  navegador mostra os `{{PLACEHOLDER}}` crus, porque agora é o template de verdade, não uma
+  maquete. Renomear ou mover o arquivo quebra o link com `undefined reference to
+  _binary_index_html_start`, não em silêncio
 
 ## Hardware — cuidados obrigatórios
 
