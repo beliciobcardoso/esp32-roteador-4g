@@ -200,13 +200,27 @@ void setup() {
   httpConfigHandler.onClockTextRequested(&currentClockText);
   httpConfigHandler.onRestartRequested(&onRestartRequested);
   httpConfigHandler.onFirmwareConfirmed(&onFirmwareConfirmed);
-  httpConfigHandler.begin();
 
-  // O `WebServer::begin()` nao devolve nada e o `server_.begin()` tambem nao, entao isto
-  // registra que o servidor foi iniciado, nao que ele esta atendendo. E menos do que se
-  // gostaria; o ap_up acima e quem pega o caso que de fato acontece — configuracao
-  // invalida ou softAP que nao sobe — e ai este ja nem e alcancado com AP no ar.
-  firmwareHealth.http_up = firmwareHealth.ap_up;
+  // Guardado pelo ap_up, e nao incondicional: o `server_.begin()` abre um socket TCP, e sem
+  // o AP no ar o `esp_netif_init()` nunca rodou — o lwIP bate em
+  // `assert failed: tcpip_send_msg_wait_sem ... (Invalid mbox)` e a placa reinicia no
+  // setup(). Visto em bancada em 20/09/2026 com o SoftAP forcado a falhar, e alcancavel em
+  // producao pelo caminho da NVS ilegivel, em que o validate() reprova a configuracao antes
+  // de qualquer radio subir.
+  //
+  // Crashar aqui nao e so feio: a placa nunca chega ao loop(), entao o autocheck do
+  // settleFirmwareConfirmation() nao roda e o revert ativo nunca acontece. O rollback ate
+  // vinha, mas pelo caminho passivo, e so enquanto a imagem estivesse em PENDING_VERIFY —
+  // numa imagem ja confirmada o mesmo defeito vira boot loop sem saida.
+  if (firmwareHealth.ap_up) {
+    httpConfigHandler.begin();
+    // O `WebServer::begin()` nao devolve nada, entao isto registra que o servidor foi
+    // iniciado, nao que ele esta atendendo. E menos do que se gostaria; o ap_up e quem pega
+    // o caso que de fato acontece.
+    firmwareHealth.http_up = true;
+  } else {
+    Serial.println("Roteamento: sem AP — servidor HTTP nao sobe, e o loop segue para decidir o firmware");
+  }
 }
 
 // Cadencias do loop. Antes eram delay() em sequencia, o que segurava o loop inteiro por
