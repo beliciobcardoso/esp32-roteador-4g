@@ -37,3 +37,8 @@ CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM=0
 CONFIG_LWIP_ENABLE_LCP_ECHO=y
 CONFIG_LWIP_LCP_ECHOINTERVAL=3
 CONFIG_LWIP_LCP_MAXECHOFAILS=3
+
+# Fase 7 (relogio): o default e 1 servidor SNTP, e com ele o segundo setservername() e
+# ignorado sem nenhum erro — a placa ficaria dependendo so do ntp.br. Dois servidores
+# custam um nome resolvido a mais e evitam ficar sem hora quando um deles cai.
+CONFIG_LWIP_SNTP_MAX_SERVERS=2

@@ -6,6 +6,7 @@
 #include "adapters/nvs_settings_repository.h"
 #include "domain/battery.h"
 #include "infra/battery_adc.h"
+#include "infra/clock.h"
 #include "infra/dns_forwarder.h"
 #include "infra/entropy.h"
 #include "infra/link_supervisor.h"
@@ -28,6 +29,9 @@ SaveSettingsUseCase saveSettingsUseCase(settingsRepository);
 HttpConfigHandler httpConfigHandler(loadSettingsUseCase, saveSettingsUseCase);
 
 BatteryAdc batteryAdc;
+// `systemClock` e nao `clock`: <time.h> ja declara ::clock() no escopo global, e uma
+// variavel com esse nome conflita na hora do link.
+Clock systemClock;
 WifiAp wifiAp;
 ModemPpp modemPpp;
 NatBridge natBridge;
@@ -38,6 +42,25 @@ LinkSupervisor linkSupervisor(modemPpp, natBridge);
 // supervisor nao conhece HTTP.
 void onUplinkSettingsChanged(const RouterSettings& updated) {
   linkSupervisor.applySettings(updated);
+}
+
+// Mudanca que vale a quente e nao passa pelo uplink. Nao derruba o PPP de proposito:
+// reconectar o 4G por causa de um fuso seria estrago sem motivo.
+void onLocalSettingsChanged(const RouterSettings& updated) {
+  systemClock.applyTimezone(updated.timezone);
+  batteryAdc.applyDividerRatio(updated.battery_divider_ratio);
+}
+
+// Gatilho da sincronizacao: o unico momento em que se sabe que ha rota para fora. Roda na
+// task do supervisor, nao na do loop() — por isso nao toca em nada do HTTP.
+void onUplinkOnline() {
+  systemClock.onUplinkOnline();
+}
+
+// A pagina pergunta a hora sem conhecer quem responde. String vazia enquanto nao houve
+// sincronizacao nenhuma; quem formata a desculpa e o adaptador.
+String currentClockText() {
+  return systemClock.nowText();
 }
 
 // Mesma ponte, no sentido contrario: a pagina pergunta como esta o 4G sem conhecer quem
@@ -124,11 +147,18 @@ void setup() {
   ProvisionResult provision = provisionSettingsUseCase.execute();
   reportProvisioning(provision);
 
-  batteryAdc.begin();
+  batteryAdc.begin(provision.settings.battery_divider_ratio);
+
+  // Antes do startRouting(): begin() so aplica o fuso e prepara o SNTP, mas o supervisor
+  // pode entrar em Online logo depois de subir, e o callback precisa achar tudo pronto.
+  systemClock.begin(provision.settings.timezone);
+  linkSupervisor.onUplinkOnline(&onUplinkOnline);
 
   startRouting(provision.settings);
   httpConfigHandler.onUplinkSettingsChanged(&onUplinkSettingsChanged);
   httpConfigHandler.onUplinkStatusRequested(&currentUplinkStatus);
+  httpConfigHandler.onLocalSettingsChanged(&onLocalSettingsChanged);
+  httpConfigHandler.onClockTextRequested(&currentClockText);
   httpConfigHandler.begin();
 }
 

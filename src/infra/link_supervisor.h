@@ -20,6 +20,11 @@
 // descobrir por que a internet caiu.
 class LinkSupervisor {
  public:
+  // Avisada a cada vez que a sessao PPP sobe. Ponteiro de funcao pelo mesmo motivo do
+  // http_config_handler: nao ha captura a fazer, e o supervisor nao precisa conhecer quem
+  // escuta. Hoje o ouvinte e o relogio, que so sabe sincronizar quando ha rota para fora.
+  using UplinkOnline = void (*)();
+
   LinkSupervisor(ModemPpp& modem, NatBridge& nat);
 
   // Cria a task e dispara a primeira conexao. Nao bloqueia.
@@ -29,6 +34,11 @@ class LinkSupervisor {
   // reconectar ja com ela. Chamada da task do HTTP; a troca so acontece na task do
   // supervisor, que e a unica dona do modem depois do begin().
   void applySettings(const RouterSettings& settings);
+
+  // Registrado depois da construcao, como os callbacks do handler HTTP: o destino vive
+  // noutro global e a ordem de inicializacao entre unidades de traducao nao e garantida.
+  // Chamada de dentro da task do supervisor, nao da do loop().
+  void onUplinkOnline(UplinkOnline callback) { uplinkOnline_ = callback; }
 
   // Estado corrente, para a pagina de configuracao. Um acessor so em vez de um por
   // campo: quem le quer a situacao inteira, e devolver as partes soltas ja produziu dois
@@ -69,6 +79,8 @@ class LinkSupervisor {
 
   // Copia de trabalho da task. Nunca tocada de fora, logo nao entra no mutex.
   RouterSettings activeSettings_;
+
+  UplinkOnline uplinkOnline_ = nullptr;
 
   TaskHandle_t task_ = nullptr;
 };

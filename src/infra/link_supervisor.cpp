@@ -196,6 +196,12 @@ void LinkSupervisor::run() {
       gRebootsWithoutUplink = 0;
       state_ = UplinkState::Online;
       Serial.println("Uplink: online — clientes do AP saem pelo 4G");
+      // Depois do estado e do log: o ouvinte roda nesta task, entao qualquer coisa que ele
+      // demore atrasa o proximo ciclo de supervisao. Avisar por ultimo mantem o estado
+      // consistente para quem consultar de fora enquanto isso acontece.
+      if (uplinkOnline_ != nullptr) {
+        uplinkOnline_();
+      }
       continue;
     }
 

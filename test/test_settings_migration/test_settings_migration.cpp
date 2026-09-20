@@ -2,6 +2,7 @@
 
 #include "domain/router_settings.h"
 #include "domain/settings_migration.h"
+#include "domain/timezone.h"
 
 namespace {
 
@@ -15,6 +16,7 @@ MigrationDefaults defaults() {
   values.apn = "zap.vivo.com.br";
   values.apn_user = "vivo";
   values.apn_password = "vivo";
+  values.battery_divider_ratio = 2.19f;
   return values;
 }
 
@@ -29,6 +31,18 @@ RouterSettings schema1Record() {
   settings.apn_password = "";
   settings.admin_user = "admin";
   settings.admin_password = "senha-do-admin";
+  return settings;
+}
+
+// Como um registro do schema 2 chega ao dominio: tem as credenciais do APN, e os campos
+// que o schema 3 acrescentou caem nos defaults vazios do struct.
+RouterSettings schema2Record() {
+  RouterSettings settings = schema1Record();
+  settings.apn = "apn.escolhido.pela.pessoa";
+  settings.apn_user = "usuario";
+  settings.apn_password = "senha-do-apn";
+  settings.timezone = "";
+  settings.battery_divider_ratio = 0.0f;
   return settings;
 }
 
@@ -121,6 +135,69 @@ void test_a_record_from_a_newer_firmware_is_read_as_it_is() {
   TEST_ASSERT_EQUAL_STRING("outra.operadora", settings.apn.c_str());
 }
 
+// --- Degrau 2 -> 3: fuso horario e divisor da bateria ---
+
+void test_schema_two_is_migrated() {
+  RouterSettings settings = schema2Record();
+
+  TEST_ASSERT_EQUAL_INT(code(SchemaVerdict::Migrated),
+                        code(migrateSettings(2, defaults(), settings)));
+}
+
+void test_the_step_to_three_fills_the_timezone_with_the_default() {
+  RouterSettings settings = schema2Record();
+  migrateSettings(2, defaults(), settings);
+
+  TEST_ASSERT_EQUAL_STRING(kDefaultTimezone, settings.timezone.c_str());
+}
+
+void test_the_step_to_three_fills_the_divider_ratio_with_the_default() {
+  RouterSettings settings = schema2Record();
+  migrateSettings(2, defaults(), settings);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2.19f, settings.battery_divider_ratio);
+}
+
+// O degrau novo nao pode desfazer o que o registro do schema 2 ja tinha — era exatamente
+// esse o defeito que a migracao existe para corrigir.
+void test_the_step_to_three_keeps_everything_the_record_already_had() {
+  RouterSettings settings = schema2Record();
+  migrateSettings(2, defaults(), settings);
+
+  TEST_ASSERT_EQUAL_STRING("unidade-07", settings.wifi_ssid.c_str());
+  TEST_ASSERT_EQUAL_STRING("senha-da-unidade", settings.wifi_password.c_str());
+  TEST_ASSERT_EQUAL_STRING("apn.escolhido.pela.pessoa", settings.apn.c_str());
+  TEST_ASSERT_EQUAL_STRING("usuario", settings.apn_user.c_str());
+  TEST_ASSERT_EQUAL_STRING("senha-do-apn", settings.apn_password.c_str());
+  TEST_ASSERT_EQUAL_STRING("senha-do-admin", settings.admin_password.c_str());
+}
+
+// Unidade que nunca foi atualizada desde o schema 1 pula direto para o 3. Os degraus tem
+// que encadear: parar no 2 deixaria o fuso vazio, que o validate() reprova.
+void test_a_schema_one_record_goes_all_the_way_to_the_current_format() {
+  RouterSettings settings = schema1Record();
+
+  TEST_ASSERT_EQUAL_INT(code(SchemaVerdict::Migrated),
+                        code(migrateSettings(1, defaults(), settings)));
+  TEST_ASSERT_EQUAL_STRING("zap.vivo.com.br", settings.apn.c_str());
+  TEST_ASSERT_EQUAL_STRING(kDefaultTimezone, settings.timezone.c_str());
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2.19f, settings.battery_divider_ratio);
+}
+
+// Migrar duas vezes tem que dar o mesmo resultado: o registro nao e regravado, entao o
+// degrau roda de novo a cada boot ate a primeira gravacao pela pagina.
+void test_migrating_twice_changes_nothing() {
+  RouterSettings once = schema1Record();
+  migrateSettings(1, defaults(), once);
+
+  RouterSettings twice = once;
+  migrateSettings(1, defaults(), twice);
+
+  TEST_ASSERT_EQUAL_STRING(once.apn.c_str(), twice.apn.c_str());
+  TEST_ASSERT_EQUAL_STRING(once.timezone.c_str(), twice.timezone.c_str());
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, once.battery_divider_ratio, twice.battery_divider_ratio);
+}
+
 }  // namespace
 
 int main(int, char**) {
@@ -135,5 +212,11 @@ int main(int, char**) {
   RUN_TEST(test_a_negative_schema_is_rejected);
   RUN_TEST(test_a_rejected_record_is_left_untouched);
   RUN_TEST(test_a_record_from_a_newer_firmware_is_read_as_it_is);
+  RUN_TEST(test_schema_two_is_migrated);
+  RUN_TEST(test_the_step_to_three_fills_the_timezone_with_the_default);
+  RUN_TEST(test_the_step_to_three_fills_the_divider_ratio_with_the_default);
+  RUN_TEST(test_the_step_to_three_keeps_everything_the_record_already_had);
+  RUN_TEST(test_a_schema_one_record_goes_all_the_way_to_the_current_format);
+  RUN_TEST(test_migrating_twice_changes_nothing);
   return UNITY_END();
 }

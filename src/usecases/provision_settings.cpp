@@ -2,6 +2,7 @@
 
 #include "../../include/config.h"
 #include "../domain/secret.h"
+#include "../domain/timezone.h"
 
 ProvisionResult ProvisionSettingsUseCase::execute() {
   ProvisionResult result;
@@ -28,6 +29,8 @@ ProvisionResult ProvisionSettingsUseCase::execute() {
   // A senha sorteada vale para um acesso: sai impressa no serial, e a primeira gravacao
   // pela pagina obriga a troca.
   result.settings.admin_password_pending = true;
+  result.settings.timezone = kDefaultTimezone;
+  result.settings.battery_divider_ratio = BATTERY_VOLTAGE_DIVIDER_RATIO;
   result.provisioned = true;
 
   // Valida antes de gravar pelo mesmo motivo do SaveSettingsUseCase: defaults de fabrica

@@ -1,5 +1,6 @@
 #include "http_config_handler.h"
 
+#include "../domain/timezone.h"
 #include "html_page.h"
 
 namespace {
@@ -71,6 +72,40 @@ String HttpConfigHandler::adminNoticeHtml(const RouterSettings& current) const {
          "</p>";
 }
 
+// Linha do relogio. Sem provider registrado, ou com o NTP ainda sem sincronizar, a pagina
+// diz isso em vez de omitir a linha ou mostrar a epoch de 1970 formatada — a regra da Fase
+// 7 e que o firmware nunca finge um horario.
+String HttpConfigHandler::clockTextOrExcuse() const {
+  if (clockText_ == nullptr) {
+    return "indisponivel: nenhuma fonte de hora foi registrada.";
+  }
+  String text = clockText_();
+  if (text.length() == 0) return "ainda nao sincronizado (precisa do uplink 4G).";
+  return text;
+}
+
+// As <option> saem da tabela do dominio, nao de uma lista repetida aqui: duas listas para
+// o mesmo conjunto divergem na primeira vez que uma for editada, e a que o validate() usa
+// e a do dominio — a pagina e que ficaria oferecendo um fuso recusado na gravacao.
+//
+// O `selected` compara com o valor gravado. Registro cujo fuso nao esta na tabela (POST
+// forjado antes desta validacao existir, downgrade de firmware) nao seleciona nada, e o
+// navegador mostra a primeira opcao — gravar a pagina como esta conserta o registro.
+String HttpConfigHandler::timezoneOptionsHtml(const RouterSettings& current) const {
+  String html;
+  for (size_t i = 0; i < timezoneOptionCount(); ++i) {
+    const TimezoneOption& option = timezoneOptions()[i];
+    html += "<option value=\"";
+    html += escapeForHtmlAttribute(option.posix);
+    html += "\"";
+    if (current.timezone == option.posix) html += " selected";
+    html += ">";
+    html += escapeForHtmlAttribute(option.label);
+    html += "</option>";
+  }
+  return html;
+}
+
 void HttpConfigHandler::handleGetRoot() {
   RouterSettings current = loadUseCase_.execute();
   if (!authenticate(current)) return;
@@ -85,6 +120,12 @@ void HttpConfigHandler::handleGetRoot() {
   // exemplo — a defesa ja esta no caminho, em vez de depender de alguem lembrar dela.
   page.replace("{{UPLINK_STATUS}}", escapeForHtmlAttribute(uplinkStatusText()));
   page.replace("{{ADMIN_NOTICE}}", adminNoticeHtml(current));
+  page.replace("{{CLOCK}}", escapeForHtmlAttribute(clockTextOrExcuse()));
+  page.replace("{{BATTERY_RATIO}}", escapeForHtmlAttribute(String(current.battery_divider_ratio, 2)));
+  // Depois dos outros replaces, e sem passar pelo escape: aqui o valor E marcacao, montada
+  // por nos a partir de literais do dominio. Os textos que vao dentro dela ja foram
+  // escapados um a um no timezoneOptionsHtml().
+  page.replace("{{TIMEZONE_OPTIONS}}", timezoneOptionsHtml(current));
   server_.send(200, "text/html", page);
 }
 
@@ -105,6 +146,18 @@ void HttpConfigHandler::handlePostRoot() {
   updated.admin_user = server_.arg("admin_user");
   String newAdminPassword = server_.arg("admin_password");
   updated.admin_password = newAdminPassword.length() > 0 ? newAdminPassword : current.admin_password;
+  updated.timezone = server_.arg("timezone");
+
+  // Virgula recusada antes do toFloat(), que para "2,19" devolve 2.00 sem sinal nenhum de
+  // erro — valor dentro da faixa valida, e a bateria passaria a ser lida com 9% a menos
+  // para sempre. O <input type="number"> ja normaliza para ponto, mas ele so existe no
+  // navegador: um POST direto manda o que quiser.
+  String rawRatio = server_.arg("battery_ratio");
+  if (rawRatio.indexOf(',') >= 0) {
+    server_.send(400, "text/plain", "use ponto e nao virgula no divisor da bateria");
+    return;
+  }
+  updated.battery_divider_ratio = rawRatio.toFloat();
 
   // A pendencia cai sozinha quando a senha muda, e sobrevive a qualquer outra gravacao.
   // Checar aqui em vez de dentro do validate() porque a regra compara duas configuracoes e
@@ -127,6 +180,8 @@ void HttpConfigHandler::handlePostRoot() {
                        updated.apn_password != current.apn_password;
   bool apChanged = updated.wifi_ssid != current.wifi_ssid ||
                    updated.wifi_password != current.wifi_password;
+  bool localChanged = updated.timezone != current.timezone ||
+                      updated.battery_divider_ratio != current.battery_divider_ratio;
 
   String message = "Configuracao salva.";
   if (uplinkChanged) {
@@ -141,7 +196,17 @@ void HttpConfigHandler::handlePostRoot() {
     message += " SSID e senha do Wi-Fi so valem apos reiniciar a placa.";
   }
 
+  if (localChanged) {
+    // Fuso e divisor valem na proxima leitura, sem reconectar nem reiniciar nada. Dizer
+    // isso evita que a pessoa fique esperando um efeito que ja aconteceu.
+    message += " Fuso e calibracao da bateria ja valem.";
+  }
+
   server_.send(200, "text/plain", message);
+
+  if (localChanged && localChanged_ != nullptr) {
+    localChanged_(updated);
+  }
 
   // Depois do send: a reconexao e assincrona, mas manter a resposta na frente evita que
   // qualquer mudanca futura nesse caminho segure o cliente esperando.

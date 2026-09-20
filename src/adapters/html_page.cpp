@@ -41,7 +41,9 @@ const char kConfigPageTemplate[] = R"HTML(
         }
 
         input[type="text"],
-        input[type="password"] {
+        input[type="password"],
+        input[type="number"],
+        select {
             width: 100%;
             padding: 8px;
             margin-top: 4px;
@@ -87,6 +89,7 @@ const char kConfigPageTemplate[] = R"HTML(
         <p>APN: {{APN}}</p>
         <p>Usuario APN: {{APN_USER}}</p>
         <p>Usuario admin: {{ADMIN_USER}}</p>
+        <p>Relogio: {{CLOCK}}</p>
     </div>
     <div id="config">
     <h1>Configuracao do Roteador 4G</h1>
@@ -104,6 +107,9 @@ const char kConfigPageTemplate[] = R"HTML(
         <label>Usuario admin: <input type="text" name="admin_user" value="{{ADMIN_USER}}"></label><br>
         <label>Senha admin: <input type="password" name="admin_password"
                 placeholder="deixe em branco para manter"></label><br>
+        <label>Fuso horario: <select name="timezone">{{TIMEZONE_OPTIONS}}</select></label><br>
+        <label>Divisor da bateria: <input type="number" name="battery_ratio" step="0.01"
+                min="1.4" max="10" value="{{BATTERY_RATIO}}"></label><br>
         <button type="submit">Salvar</button>
     </form>
     </div>

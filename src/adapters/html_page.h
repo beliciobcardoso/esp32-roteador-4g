@@ -4,10 +4,12 @@
 
 // Pagina HTML embutida do formulario de configuracao.
 // Placeholders substituidos em runtime pelo http_config_handler: {{SSID}}, {{APN}},
-// {{APN_USER}}, {{ADMIN_USER}}, {{UPLINK_STATUS}}, {{ADMIN_NOTICE}}.
+// {{APN_USER}}, {{ADMIN_USER}}, {{UPLINK_STATUS}}, {{ADMIN_NOTICE}}, {{CLOCK}},
+// {{TIMEZONE_OPTIONS}}, {{BATTERY_RATIO}}.
 //
-// {{ADMIN_NOTICE}} e o unico que recebe marcacao, nao valor: o handler monta o paragrafo
-// de alerta ou string vazia. O texto dentro dele passa pelo escape do mesmo jeito.
+// {{ADMIN_NOTICE}} e {{TIMEZONE_OPTIONS}} sao os unicos que recebem marcacao, nao valor: o
+// handler monta o paragrafo de alerta e as <option> da tabela de fusos do dominio. O texto
+// dentro dos dois passa pelo escape do mesmo jeito.
 extern const char kConfigPageTemplate[];
 
 // Prepara um valor para ser interpolado no template acima.
