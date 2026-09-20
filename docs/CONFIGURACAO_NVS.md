@@ -59,28 +59,43 @@ canal Wi-Fi (1), limite de clientes, porta HTTP (80), pinagem do modem, baud da 
 
 ## `configured` e `schema` — por que existem duas chaves de controle
 
-`load()` devolve `false` (= "usa os defaults de fábrica") em dois casos:
+`load()` devolve `false` (= "não há registro") em dois casos:
 
 1. `configured` ausente ou `false` — primeiro boot, nada foi salvo ainda.
-2. `schema` gravado **menor** que `kCurrentSchema` (hoje `2`).
+2. `schema` gravado é `0` ou negativo — número que nenhuma versão do firmware gravou, ou
+   seja, registro corrompido.
 
-O schema 1 não tinha `apn_user`/`apn_pass` e guardava um APN default que não existe na
-rede da Vivo. Sem o corte por versão, um dispositivo já configurado continuaria insistindo
-no APN velho para sempre, porque `configured` estava `true`.
+**Registro de schema antigo não é mais descartado.** Ele passa por
+[`domain/settings_migration`](../src/domain/settings_migration.cpp), que ajusta o que
+mudou de formato e preserva o resto. Ver [PRD 10](prd/10-migracao-de-schema.md).
 
-**Consequência operacional: subir o `kCurrentSchema` descarta silenciosamente toda a
-configuração do usuário e volta para os defaults de fábrica — inclusive SSID e senhas.**
-Não há migração campo a campo. Fazer isso só quando a perda for intencional.
+O que a migração faz hoje, no único degrau que existe (1 → 2):
+
+| campo | schema 1 | depois da migração |
+|---|---|---|
+| `ssid`, `wifi_pass`, `admin_user`, `admin_pass` | gravados | preservados como estão |
+| `apn` igual ao default antigo (`internet`) | não conecta na Vivo | vira o default atual |
+| `apn` escolhido pela pessoa | gravado | preservado |
+| `apn_user`, `apn_pass` | não existiam | vazios, exceto quando o APN foi reposto |
+
+Registro com schema **maior** que o atual (downgrade de firmware) é lido como está: os
+campos que esta versão conhece continuam onde sempre estiveram. Recusar seria pior — faria
+o provisionamento sortear senha nova e derrubar quem está associado.
+
+A migração acontece **em memória e não regrava nada**. `load()` que escreve surpreende, e a
+consolidação vem de graça no primeiro `save()`, que sempre grava o schema atual. Até lá a
+unidade migra a cada boot, o que não custa nada porque `migrateSettings()` é puro.
 
 `save()` sempre grava os dois: primeiro o `schema`, depois `configured = true`.
 
 ### Por que `admin_pend` não subiu o schema
 
-`admin_pend` é chave nova e o schema continua em `2`, de propósito. Subir para `3` faria
-`load()` tratar todo registro existente como ausente — **toda unidade já configurada
-perderia SSID, senha e APN** por causa de um booleano. A chave é lida com default `false`,
-que é exatamente o comportamento certo para registro antigo: unidade que já foi configurada
-por uma pessoa não tem senha pendente.
+`admin_pend` é chave nova e o schema continua em `2`. Na época (débito 10) isso era
+obrigatório: registro de schema menor era descartado, e subir para `3` apagaria SSID, senha
+e APN de toda unidade configurada por causa de um booleano. Com a migração isso deixou de
+ser verdade, mas o padrão continua sendo o melhor para campo novo com default seguro — a
+chave é lida com default `false`, que é o comportamento certo para registro antigo (unidade
+configurada por uma pessoa não tem senha pendente) e não precisa de degrau nenhum.
 
 ## Comportamento de escrita parcial
 

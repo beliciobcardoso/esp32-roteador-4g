@@ -55,14 +55,19 @@ timestamp torto. Quatro opções cobrem o país, e o Brasil não tem horário de
 | Acre (UTC−5) | `<-05>5` |
 | Fernando de Noronha (UTC−2) | `<-02>2` |
 
-### `kCurrentSchema` sobe para 3 e a configuração é descartada
+### `kCurrentSchema` sobe para 3, com degrau de migração
 
-Campo novo na NVS exige subir o schema, e não há migração campo a campo — `load()` volta
-aos defaults de fábrica e leva SSID, senhas e APN junto. Aceito: estamos em bancada, e
-reconfigurar uma placa custa menos que escrever migração para um dado que ninguém ainda
-depende de preservar. Ver [CONFIGURACAO_NVS.md](../CONFIGURACAO_NVS.md).
+**Revisado em 19/09/2026.** O texto original aceitava descartar a configuração: não havia
+migração campo a campo, e reconfigurar uma placa de bancada custava menos que escrevê-la.
+Isso mudou duas vezes. Primeiro o provisionamento por unidade (débito 10) tornou o descarte
+bem mais caro: `load()` falso faz o `ProvisionSettingsUseCase` **sortear senha nova**, então
+o bump derrubaria todos os clientes e a senha nova só existiria no serial. Depois a
+migração passou a existir ([PRD 10](10-migracao-de-schema.md)).
 
-Reavaliar quando houver unidade em campo.
+O que a Fase 7 precisa fazer, então: subir `kCurrentSchema` para 3 **e** acrescentar o
+degrau 2 → 3 em `domain/settings_migration`, que para um campo novo com default seguro é
+só preencher `timezone` com o default. Com teste nativo do degrau. Ver
+[CONFIGURACAO_NVS.md](../CONFIGURACAO_NVS.md).
 
 ## A decidir na implementação
 

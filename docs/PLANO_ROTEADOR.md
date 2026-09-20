@@ -150,8 +150,9 @@ Usuário abre 192.168.4.1
 ### Fase 7 — Relógio (NTP + fuso) — planejada
 
 - `infra/clock`: SNTP sincronizado ao subir o uplink e a cada reconexão
-- Campo `timezone` na NVS (`kCurrentSchema` 2→3, descarta a config atual) e `<select>` de
-  fuso na página de configuração, valendo a quente
+- Campo `timezone` na NVS (`kCurrentSchema` 2→3, com degrau de migração em
+  `domain/settings_migration` — desde 19/09/2026 o bump não descarta mais a config) e
+  `<select>` de fuso na página de configuração, valendo a quente
 - Fonte é NTP, não `AT+CCLK?`/NITZ — NITZ depende da operadora entregar
 - **Consumidores da hora ficam fora do escopo**: histórico de quedas, agendamento de
   reboot, expiração de sessão e carimbo de OTA dependem disso, mas vêm depois

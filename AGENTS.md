@@ -112,10 +112,13 @@ Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
 
 ## Regras de código
 
-- Migration destrutiva/irreversível: sinalizar antes. Na prática isto quer dizer **não subir
-  `kCurrentSchema` por causa de campo novo**: `load()` trata schema menor que o atual como
-  registro ausente, então o bump apaga SSID, senha e APN de toda unidade já configurada.
-  Chave nova entra lida com default (foi assim com `admin_pend`, débito 10)
+- Migration destrutiva/irreversível: sinalizar antes. Para a NVS isto deixou de ser o caso
+  padrão: subir `kCurrentSchema` exige **um degrau novo em `domain/settings_migration`**,
+  com teste nativo, e aí a unidade em campo preserva o que já tinha. Campo novo com default
+  seguro continua entrando lido com default, sem subir o schema (foi assim com `admin_pend`,
+  débito 10) — é menos trabalho e não precisa de degrau. Subir o schema **sem** escrever o
+  degrau volta a ser destrutivo, e pior que antes: `load()` falso faz o
+  `ProvisionSettingsUseCase` sortear senha nova, derrubando todos os clientes da unidade
 - Nenhuma senha em código versionado — nem como default de fábrica. Segredo por unidade é
   sorteado no dispositivo (`domain/secret.h` + `infra/entropy.h`)
 - Toda rota HTTP sensível (config): Basic Auth obrigatório, erro sem vazar detalhe interno
