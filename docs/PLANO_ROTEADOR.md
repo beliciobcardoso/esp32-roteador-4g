@@ -169,6 +169,32 @@ Usuário abre 192.168.4.1
   ressincronização após queda e UDP 123 saindo pelo NAT seguem por validar
 - Detalhes em [prd/07-relogio-ntp.md](prd/07-relogio-ntp.md)
 
+### Fase 8 — Atualização de firmware pela página (OTA) — implementada, validação em hardware pendente
+
+- `POST /update` no mesmo `WebServer`: upload de `firmware.bin` pelo AP, gravado direto no
+  slot livre pelo `Update` do Arduino. Sem arquivo intermediário e sem a partição `spiffs`
+- **Basic Auth conferido no primeiro bloco do upload**, não no handler que responde: o
+  `WebServer` chama o upload de dentro do `_parseForm()`, antes do handler de POST, e
+  autenticar no fim gravaria ~900 KB no slot de quem não se identificou
+- `domain/firmware_update`: exame raso da imagem em duas partes — magic `0xE9` no primeiro
+  bloco, tamanho contra o slot no fim (o `WebServer` não expõe `Content-Length`). Quem
+  valida de verdade é o `esp_image_verify()` dentro do `Update.end()`, que confere o
+  SHA-256 da própria imagem — por isso não há campo de checksum no formulário
+- `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`, fechando o débito 6. A imagem nova é confirmada
+  pelo `loop()` depois de **120 s de pé**, não no `setup()`: ali o rollback só pegaria o
+  firmware que morre antes de o AP subir. O prazo tem teto — o `LinkSupervisor` pode
+  reiniciar a placa após ~7 min por falta de sinal, e isso não pode disparar rollback
+- Bloco de firmware no `GET /`: slot em execução, versão, data de compilação e estado da
+  imagem, com o aviso de não reiniciar durante a janela de verificação
+- O reboot sai do `loop()` e não do handler — `esp_restart()` lá dentro cortaria a resposta
+  antes de ela sair do socket
+- ⚠️ **A senha de admin passou a valer execução de código**, e a página continua em HTTP
+  puro sobre PSK compartilhada. Aceitável em bancada, bloqueante para campo — registrado no
+  débito 10 ao lado do TLS
+- ⚠️ Nada disso rodou em placa ainda: upload real, rollback por reset dentro da janela,
+  arquivo truncado e upload interrompido seguem por validar
+- Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
+
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
 
 - Se a mudança de config exige reboot do ESP32 ou se o firmware reconecta a quente
