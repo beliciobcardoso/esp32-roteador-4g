@@ -134,6 +134,14 @@ bool startRouting(const RouterSettings& settings) {
   }
   Serial.printf("Roteamento: AP no ar em %s\n", WiFi.softAPIP().toString().c_str());
 
+  // Aqui e nao antes do AP: as funcoes do esp_sntp entram pelo tcpip_callback, e a task
+  // tcpip do lwIP so existe depois do esp_netif_init() que roda dentro do wifiAp.start().
+  // Chamado antes, o tcpip_callback bate no assert de mbox invalida e a placa entra em
+  // boot loop sem subir AP nenhum — sem pagina, sem serial util, so o panico repetindo.
+  // Continua antes do linkSupervisor.begin(): o supervisor pode entrar em Online logo
+  // depois de subir, e o callback de sincronizacao precisa achar o SNTP ja preparado.
+  systemClock.begin(settings.timezone);
+
   // Depois do AP e antes do uplink: e o endereco do AP que o forwarder ocupa, e os clientes
   // ja recebem esse endereco como DNS no primeiro lease. Falhar aqui nao derruba o
   // roteamento — quebra a resolucao de nomes, que e grave o bastante para ir pro log e
@@ -167,9 +175,6 @@ void setup() {
 
   batteryAdc.begin(provision.settings.battery_divider_ratio);
 
-  // Antes do startRouting(): begin() so aplica o fuso e prepara o SNTP, mas o supervisor
-  // pode entrar em Online logo depois de subir, e o callback precisa achar tudo pronto.
-  systemClock.begin(provision.settings.timezone);
   linkSupervisor.onUplinkOnline(&onUplinkOnline);
 
   startRouting(provision.settings);
