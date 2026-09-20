@@ -38,7 +38,10 @@
         }
 
         input[type="text"],
-        input[type="password"] {
+        input[type="password"],
+        input[type="number"],
+        input[type="file"],
+        select {
             width: 100%;
             padding: 8px;
             margin-top: 4px;
@@ -55,6 +58,14 @@
 
         button:hover {
             background-color: #0056b3;
+        }
+
+        .alert {
+            background-color: #ffdd57;
+            color: #3d3000;
+            padding: 10px;
+            max-width: 400px;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -76,24 +87,40 @@
         <p>APN: {{APN}}</p>
         <p>Usuario APN: {{APN_USER}}</p>
         <p>Usuario admin: {{ADMIN_USER}}</p>
+        <p>Relogio: {{CLOCK}}</p>
     </div>
     <div id="config">
-    <h1>Configuracao do Roteador 4G</h1>
-    <h2>Uplink 4G</h2>
-    <p>{{UPLINK_STATUS}}</p>
-    <form method="POST" action="/">
-        <label>SSID WiFi: <input type="text" name="wifi_ssid" value="{{SSID}}"></label><br>
-        <label>Senha WiFi: <input type="password" name="wifi_password"
-                placeholder="deixe em branco para manter"></label><br>
-        <label>APN: <input type="text" name="apn" value="{{APN}}"></label><br>
-        <label>Usuario APN: <input type="text" name="apn_user" value="{{APN_USER}}"></label><br>
-        <label>Senha APN: <input type="password" name="apn_password"
-                placeholder="deixe em branco para manter"></label><br>
-        <label>Usuario admin: <input type="text" name="admin_user" value="{{ADMIN_USER}}"></label><br>
-        <label>Senha admin: <input type="password" name="admin_password"
-                placeholder="deixe em branco para manter"></label><br>
-        <button type="submit">Salvar</button>
-    </form>
+        <h1>Configuracao do Roteador 4G</h1>
+        {{ADMIN_NOTICE}}
+        <h2>Uplink 4G</h2>
+        <p>{{UPLINK_STATUS}}</p>
+        <form method="POST" action="/">
+            <label>SSID WiFi: <input type="text" name="wifi_ssid" value="{{SSID}}"></label><br>
+            <label>Senha WiFi: <input type="password" name="wifi_password"
+                    placeholder="deixe em branco para manter"></label><br>
+            <label>APN: <input type="text" name="apn" value="{{APN}}"></label><br>
+            <label>Usuario APN: <input type="text" name="apn_user" value="{{APN_USER}}"></label><br>
+            <label>Senha APN: <input type="password" name="apn_password"
+                    placeholder="deixe em branco para manter"></label><br>
+            <label>Usuario admin: <input type="text" name="admin_user" value="{{ADMIN_USER}}"></label><br>
+            <label>Senha admin: <input type="password" name="admin_password"
+                    placeholder="deixe em branco para manter"></label><br>
+            <label>Fuso horario: <select name="timezone">{{TIMEZONE_OPTIONS}}</select></label><br>
+            <label>Divisor da bateria: <input type="number" name="battery_ratio" step="0.01" min="1.4" max="10"
+                    value="{{BATTERY_RATIO}}"></label><br>
+            <button type="submit">Salvar</button>
+        </form>
+        <h2>Firmware</h2>
+        <p>Slot em execucao: {{FIRMWARE_SLOT}}</p>
+        <p>Versao: {{FIRMWARE_VERSION}}</p>
+        <p>Estado da imagem: {{FIRMWARE_STATE}}</p>
+        {{FIRMWARE_CONFIRM}}
+        <!-- enctype e obrigatorio: sem ele o navegador manda o nome do arquivo como texto e o
+         corpo chega sem um byte do firmware. -->
+        <form method="POST" action="/update" enctype="multipart/form-data">
+            <label>Arquivo firmware.bin: <input type="file" name="firmware" accept=".bin"></label><br>
+            <button type="submit">Enviar e reiniciar</button>
+        </form>
     </div>
 </body>
 
