@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 
 #include "../include/config.h"
@@ -7,6 +8,7 @@
 #include "adapters/nvs_settings_repository.h"
 #include "domain/battery.h"
 #include "domain/firmware_update.h"
+#include "domain/link_diagnostics.h"
 #include "infra/battery_adc.h"
 #include "infra/clock.h"
 #include "infra/dns_forwarder.h"
@@ -15,6 +17,7 @@
 #include "infra/modem_ppp.h"
 #include "infra/nat_bridge.h"
 #include "infra/ota_updater.h"
+#include "infra/ppp_drop_counter.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
 #include "usecases/provision_settings.h"
@@ -181,6 +184,10 @@ void setup() {
   delay(100); // pequena margem para o circuito de power estabilizar
   Serial.begin(115200);
 
+  // Antes de o PPP subir: instalado depois, os descartes da primeira sessao ainda sairiam
+  // como linha solta, que e o que este hook existe para evitar (debito 13).
+  PppDropCounter::begin();
+
   // Antes do batteryAdc.begin() e antes de qualquer radio, e a ordem nao e arbitraria: o
   // sorteio usa o SAR ADC como fonte de entropia (infra/entropy.cpp) e o contrato da IDF
   // exige fechar essa janela antes de inicializar ADC ou RF.
@@ -238,6 +245,7 @@ constexpr unsigned long kRestartGraceMs = 1000;
 // comparacao direta de instantes, que quebra na virada.
 unsigned long lastLedToggleMs = 0;
 unsigned long lastBatteryReportMs = 0;
+unsigned long lastDropReportMs = 0;
 bool ledOn = false;
 
 void blinkLed(unsigned long now) {
@@ -338,6 +346,27 @@ void settleFirmwareConfirmation(unsigned long now) {
   }
 }
 
+// Publica o que o PppDropCounter juntou desde o ultimo relatorio. A leitura do heap vai
+// junto porque e ela que separa as duas hipoteses do debito 13 — fila cheia ou heap no talo
+// — e o total sozinho nao decide entre aumentar a fila e caçar consumo de memoria.
+//
+// MALLOC_CAP_INTERNAL e nao o heap total: a PSRAM da placa tem 8 MB e mascararia a DRAM
+// apertada, que e a que o lwIP usa para pbuf.
+void reportPppDrops(unsigned long now) {
+  static uint32_t pending = 0;
+
+  // Drenado a cada volta, nao so na hora do relatorio: o contador e a unica copia do dado, e
+  // deixa-lo acumular na task do lwIP por 30 s so para ler no fim nao ganha nada.
+  pending += PppDropCounter::takeCount();
+
+  if (!dropReportDue(now, lastDropReportMs, pending)) return;
+  lastDropReportMs = now;
+
+  uint32_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  Serial.println(describeDropWindow(pending, freeInternal));
+  pending = 0;
+}
+
 void applyPendingRestart(unsigned long now) {
   if (restartRequestedAtMs == 0) return;
   if (now - restartRequestedAtMs < kRestartGraceMs) return;
@@ -353,6 +382,7 @@ void loop() {
   httpConfigHandler.handleClient();
   blinkLed(now);
   reportBattery(now);
+  reportPppDrops(now);
   settleFirmwareConfirmation(now);
   applyPendingRestart(now);
 }
