@@ -358,6 +358,41 @@ começa com um passo manual que alguém vai esquecer. Baixar o nível de log des
 (`esp_log_level_set("esp-netif_lwip-ppp", ESP_LOG_NONE)`) esconderia o sintoma e continuaria
 descartando pacote — pior negócio do que o remendo.
 
+
+**Medido e corrigido em 20/09/2026 — validação sob carga sustentada pendente.**
+
+A poluição do serial saiu primeiro, e sem calar o componente: `infra/ppp_drop_counter`
+intercepta o `esp_log_set_vprintf`, conta o evento e suprime a linha; o `loop()` publica o
+total uma vez por janela de 30 s, junto do heap interno livre. O número deixou de afogar o
+serial e virou a medição que esta seção pedia. `HW FIFO Overflow` e as linhas de bateria
+cortadas (`ateria:`, `eria:`) desapareceram junto.
+
+Com o número na mão, as duas hipóteses se separaram:
+
+| Config | Carga | Janelas | Total | Pico |
+|---|---|---|---|---|
+| `RECVMBOX=32` | vídeo | 14 | 3166 | 1239 |
+| `RECVMBOX=64` | vídeo | 23 | 3043 | 1187 |
+| `RECVMBOX=64` | zip 19 MB | 12 | 1727 | 540 |
+| `CORE_LOCKING` | 5,6 MB (parcial) | 0 | 0 | 0 |
+| `CORE_LOCKING` | zip 19 MB (parcial) | 0 | 0 | 0 |
+
+**Não era heap.** O heap interno livre nunca desceu de 113 KB em nenhuma rodada, contra um
+piso de 32 KB — a hipótese alternativa desta seção está descartada com número.
+
+**Dobrar a fila não resolveu**, como esta seção previa antes da medição: 32 → 64 mudou o pico
+de 1239 para 1187 na mesma carga. O gargalo é drenagem, não tamanho. A fila voltou a 32.
+
+A correção é `CONFIG_LWIP_TCPIP_CORE_LOCKING` + `CORE_LOCKING_INPUT`: entrega direta sob
+mutex, sem fila no caminho de entrada, então não há fila para encher. O código do projeto já
+estava do lado certo — `dns_forwarder` usa BSD sockets, que adquirem o lock por dentro, e
+`nat_bridge` chama `ip_napt_enable` por `esp_netif_tcpip_exec()`.
+
+**O que falta:** nenhuma das duas rodadas com `CORE_LOCKING` teve download completo — o PPP
+caiu no meio das duas. O 4G estava instável naquele dia (44 quedas somadas nas quatro
+sessões, e mais frequentes *sem* `CORE_LOCKING`: 6 e 22 contra 14 e 2). Zero descartes em
+~8 min de tráfego é sinal — no regime anterior a primeira janela do zip já marcava 540 — mas
+não é prova sob carga sustentada. Fechar exige um download inteiro com enlace estável.
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `begin()`
