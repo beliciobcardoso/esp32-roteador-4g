@@ -94,3 +94,12 @@ FirmwareImageState OtaUpdater::runningImageState() const {
 bool OtaUpdater::confirmRunningImage() {
   return esp_ota_mark_app_valid_cancel_rollback() == ESP_OK;
 }
+
+bool OtaUpdater::revertToPreviousImage() {
+  Serial.println("Firmware: sem confirmacao — revertendo para a imagem anterior");
+  Serial.flush();
+  esp_err_t err = esp_ota_mark_app_invalid_rollback_and_reboot();
+  // So chega aqui se a IDF recusou — dando certo, o reboot acontece la dentro.
+  Serial.printf("Firmware: rollback recusado pela IDF (%s)\n", esp_err_to_name(err));
+  return false;
+}

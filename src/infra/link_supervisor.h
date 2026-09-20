@@ -53,6 +53,11 @@ class LinkSupervisor {
   UplinkStatus status() const;
 
  private:
+  // Falso enquanto houver atualizacao esperando confirmacao do operador. Reiniciar ali
+  // faria o bootloader reverter uma imagem que talvez estivesse boa, por falta de sinal —
+  // que nao e defeito dela.
+  bool mayRebootNow() const;
+
   static void taskEntry(void* context);
   void run();
   bool connectOnce(const RouterSettings& settings);
