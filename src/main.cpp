@@ -1,10 +1,12 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_system.h>
 
 #include "../include/config.h"
 #include "adapters/http_config_handler.h"
 #include "adapters/nvs_settings_repository.h"
 #include "domain/battery.h"
+#include "domain/firmware_update.h"
 #include "infra/battery_adc.h"
 #include "infra/clock.h"
 #include "infra/dns_forwarder.h"
@@ -12,6 +14,7 @@
 #include "infra/link_supervisor.h"
 #include "infra/modem_ppp.h"
 #include "infra/nat_bridge.h"
+#include "infra/ota_updater.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
 #include "usecases/provision_settings.h"
@@ -26,7 +29,8 @@ NvsSettingsRepository settingsRepository;
 ProvisionSettingsUseCase provisionSettingsUseCase(settingsRepository, &fillRandomBytes);
 LoadSettingsUseCase loadSettingsUseCase(settingsRepository);
 SaveSettingsUseCase saveSettingsUseCase(settingsRepository);
-HttpConfigHandler httpConfigHandler(loadSettingsUseCase, saveSettingsUseCase);
+OtaUpdater otaUpdater;
+HttpConfigHandler httpConfigHandler(loadSettingsUseCase, saveSettingsUseCase, otaUpdater);
 
 BatteryAdc batteryAdc;
 // `systemClock` e nao `clock`: <time.h> ja declara ::clock() no escopo global, e uma
@@ -61,6 +65,20 @@ void onUplinkOnline() {
 // sincronizacao nenhuma; quem formata a desculpa e o adaptador.
 String currentClockText() {
   return systemClock.nowText();
+}
+
+// Pedido de reboot vindo da pagina, depois de um firmware novo gravado. So marca a hora:
+// reiniciar aqui dentro seria reiniciar de dentro do handler HTTP, com a resposta ainda na
+// fila do socket — o navegador mostraria erro de conexao depois de uma atualizacao que deu
+// certo. O loop() reinicia de verdade, uma volta depois.
+unsigned long restartRequestedAtMs = 0;
+
+void onRestartRequested() {
+  restartRequestedAtMs = millis();
+  // Zero e o valor de "ninguem pediu". millis() vale zero so no primeiro milissegundo do
+  // boot, onde isto nao acontece, mas deixar a coincidencia passar sem tratamento seria
+  // confiar num detalhe que nao esta escrito em lugar nenhum.
+  if (restartRequestedAtMs == 0) restartRequestedAtMs = 1;
 }
 
 // Mesma ponte, no sentido contrario: a pagina pergunta como esta o 4G sem conhecer quem
@@ -159,6 +177,7 @@ void setup() {
   httpConfigHandler.onUplinkStatusRequested(&currentUplinkStatus);
   httpConfigHandler.onLocalSettingsChanged(&onLocalSettingsChanged);
   httpConfigHandler.onClockTextRequested(&currentClockText);
+  httpConfigHandler.onRestartRequested(&onRestartRequested);
   httpConfigHandler.begin();
 }
 
@@ -168,12 +187,20 @@ void setup() {
 constexpr unsigned long kLedBlinkIntervalMs = 500;
 constexpr unsigned long kBatteryReportIntervalMs = 3000;
 
+// Folga entre a resposta do POST /update e o reboot. Tempo de a ultima volta do
+// handleClient() empurrar a resposta e fechar a conexao.
+constexpr unsigned long kRestartGraceMs = 1000;
+
 // Marcos da ultima execucao de cada tarefa periodica. unsigned long com aritmetica de
 // subtracao trata o overflow de millis() (~49 dias) corretamente — nao trocar por
 // comparacao direta de instantes, que quebra na virada.
 unsigned long lastLedToggleMs = 0;
 unsigned long lastBatteryReportMs = 0;
 bool ledOn = false;
+
+// Uma vez por boot: depois disso nao ha mais o que confirmar, e consultar o otadata a cada
+// volta do loop() seria leitura de flash de graca.
+bool firmwareHealthChecked = false;
 
 void blinkLed(unsigned long now) {
   if (now - lastLedToggleMs < kLedBlinkIntervalMs) {
@@ -202,10 +229,46 @@ void reportBattery(unsigned long now) {
   Serial.println("%");
 }
 
+// Fecha a janela de verificacao do firmware novo. Ate aqui a imagem esta em
+// PENDING_VERIFY e qualquer reboot a desfaz; confirmar e o que torna a atualizacao
+// definitiva.
+//
+// Nao e feito no setup() de proposito: ali o rollback so pegaria um firmware que morre
+// antes de o AP subir, e e justamente o defeito que aparece depois — no primeiro ciclo de
+// bateria, na primeira resposta HTTP — que interessa. O prazo esta no dominio, junto da
+// conta que o amarra ao piso de reboot do LinkSupervisor.
+void confirmFirmwareIfHealthy(unsigned long now) {
+  if (firmwareHealthChecked) return;
+  if (!verificationWindowElapsed(now)) return;
+  firmwareHealthChecked = true;
+
+  FirmwareImageState state = otaUpdater.runningImageState();
+  if (!needsHealthConfirmation(state)) return;
+
+  if (otaUpdater.confirmRunningImage()) {
+    Serial.println("Firmware: imagem nova confirmada, rollback cancelado");
+  } else {
+    // A imagem continua PENDING_VERIFY: o proximo reboot volta para a anterior. Grave o
+    // bastante para o log, e nada a fazer daqui — quem decide e quem le.
+    Serial.println("Firmware: NAO foi possivel confirmar a imagem — o proximo reboot reverte");
+  }
+}
+
+void applyPendingRestart(unsigned long now) {
+  if (restartRequestedAtMs == 0) return;
+  if (now - restartRequestedAtMs < kRestartGraceMs) return;
+
+  Serial.println("Firmware: reiniciando para subir a imagem nova");
+  Serial.flush();
+  esp_restart();
+}
+
 void loop() {
   unsigned long now = millis();
 
   httpConfigHandler.handleClient();
   blinkLed(now);
   reportBattery(now);
+  confirmFirmwareIfHealthy(now);
+  applyPendingRestart(now);
 }

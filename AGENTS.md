@@ -38,7 +38,7 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 - `infra/` — wrappers finos sobre APIs ESP-IDF/Arduino (WiFi AP, PPP, NAT)
 - `main.cpp` — só orquestração/injeção, zero lógica de negócio
 
-**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). A Fase 7 (relógio por SNTP e fuso configurável) está implementada mas **ainda não rodou em placa**. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
+**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). A Fase 7 (relógio por SNTP e fuso configurável) e a Fase 8 (atualização de firmware pela própria página, com rollback do bootloader) estão implementadas mas **ainda não rodaram em placa**. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
 
 A configuração persistida (chaves da NVS, defaults de fábrica, como consultar e apagar) está documentada em [docs/CONFIGURACAO_NVS.md](docs/CONFIGURACAO_NVS.md).
 
@@ -87,6 +87,21 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   `domain/timezone.h` e não no adaptador: `setenv("TZ", ...)` + `tzset()` não reclamam de
   string sem sentido, e o `<select>` da página não protege de um POST direto.
   Justificativa completa em [docs/prd/07-relogio-ntp.md](docs/prd/07-relogio-ntp.md)
+- A atualização de firmware é **push**: a pessoa sobe o `firmware.bin` pela página, a placa
+  não busca imagem em servidor nenhum. Pull exigiria URL, TLS e política de versão para um
+  parque que hoje é uma placa. Não existe campo de checksum no formulário porque não
+  adianta: o `esp_ota_set_boot_partition()` roda `image_validate()` antes de tocar no
+  otadata e confere o SHA-256 que a própria imagem carrega — um MD5 digitado à mão só
+  acrescentaria um jeito novo de errar. A gravação usa o `Update` do Arduino, que segura os
+  16 primeiros bytes até o fim, então imagem parcial nunca fica bootável. A autenticação é
+  conferida no `UPLOAD_FILE_START`, **não** no handler do POST: o `WebServer` chama o
+  callback de upload dentro do parser da requisição, antes do handler, e checar depois
+  gravaria a flash de quem não tem credencial. A imagem nova é confirmada no `loop()`
+  depois de **120 s** de pé (`kVerificationWindowMs`), não no `setup()` — confirmar no
+  `setup()` só pegaria firmware que morre antes do AP subir. O teto da janela é o
+  `LinkSupervisor`, que só consegue reiniciar a placa depois de ~7 min; a janela tem que
+  fechar bem antes, ou falta de cobertura reverteria uma atualização boa.
+  Justificativa completa em [docs/prd/11-atualizacao-ota.md](docs/prd/11-atualizacao-ota.md)
 - Até 15 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — 15 é o teto do
   driver no ESP32 clássico (`ESP_WIFI_MAX_CONN_NUM`), não uma escolha de projeto
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico

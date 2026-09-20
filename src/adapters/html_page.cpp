@@ -43,6 +43,7 @@ const char kConfigPageTemplate[] = R"HTML(
         input[type="text"],
         input[type="password"],
         input[type="number"],
+        input[type="file"],
         select {
             width: 100%;
             padding: 8px;
@@ -111,6 +112,16 @@ const char kConfigPageTemplate[] = R"HTML(
         <label>Divisor da bateria: <input type="number" name="battery_ratio" step="0.01"
                 min="1.4" max="10" value="{{BATTERY_RATIO}}"></label><br>
         <button type="submit">Salvar</button>
+    </form>
+    <h2>Firmware</h2>
+    <p>Slot em execucao: {{FIRMWARE_SLOT}}</p>
+    <p>Versao: {{FIRMWARE_VERSION}}</p>
+    <p>Estado da imagem: {{FIRMWARE_STATE}}</p>
+    <!-- enctype e obrigatorio: sem ele o navegador manda o nome do arquivo como texto e o
+         corpo chega sem um byte do firmware. -->
+    <form method="POST" action="/update" enctype="multipart/form-data">
+        <label>Arquivo firmware.bin: <input type="file" name="firmware" accept=".bin"></label><br>
+        <button type="submit">Enviar e reiniciar</button>
     </form>
     </div>
 </body>

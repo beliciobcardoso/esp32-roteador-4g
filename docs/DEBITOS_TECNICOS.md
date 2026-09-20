@@ -110,16 +110,26 @@ Docs que prometiam 20 (`AGENTS.md`, `PLANO_ROTEADOR.md`, PRD 02, PRD 06) corrigi
 clientes a placa realmente aguenta *navegando ao mesmo tempo* é outra pergunta, e depende
 de RAM e de vazão do 4G, não do teto do driver.
 
-## 6. Rollback de OTA ainda desabilitado
+## 6. Rollback de OTA ainda desabilitado — RESOLVIDO em 19/09/2026
 
 **Onde:** [sdkconfig.defaults](../sdkconfig.defaults), [partitions.csv](../partitions.csv)
 
 A tabela de partições já tem os dois slots (`app0`/`app1`) e `otadata`, mas
-`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` está intencionalmente desligado: sem um cliente OTA
+`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` estava intencionalmente desligado: sem um cliente OTA
 que chame `esp_ota_mark_app_valid_cancel_rollback()`, ligar o rollback faria o bootloader
 reverter toda imagem nova como se tivesse falhado.
 
-**Ação:** habilitar junto com a implementação do cliente OTA — os dois são indissociáveis.
+**Resolvido junto com a Fase 8** (ver [PRD 11](prd/11-atualizacao-ota.md)), porque os dois
+são indissociáveis: a chave está ligada e quem confirma é o `loop()`, via
+`needsHealthConfirmation()` e `verificationWindowElapsed()` de `domain/firmware_update`.
+
+O critério de saúde não é "chegou ao `setup()`". Confirmar ali tornaria o rollback quase
+inútil — pegaria só o firmware que morre antes de o AP subir — e o estado `PendingVerify`
+nunca apareceria na página. A imagem é confirmada depois de **120 s de pé**, e esse prazo
+tem teto: o `LinkSupervisor` reinicia a placa após 10 falhas de uplink, o que com backoff de
+5/10/20/40/60 s passa de 7 min. Esse reboot é por falta de sinal, não defeito do firmware —
+uma janela que encostasse nele faria uma área sem cobertura reverter uma atualização boa. O
+teste `test_the_window_fits_before_the_supervisor_can_reboot` amarra as duas pontas.
 
 ## 7. Partição `spiffs` reservada mas não montada
 
@@ -130,6 +140,9 @@ mas é espaço parado se nada for escrito ali.
 
 **Ação:** decidir na Fase 6 — montar para logs/telemetria persistente, ou devolver o espaço
 aos slots de app.
+
+**A Fase 8 (OTA) não consumiu essa partição**: o upload vai do socket direto para o slot de
+app, sem arquivo intermediário. A decisão continua aberta pelos mesmos motivos.
 
 ## 8. `infra/modem_ppp` escreve diagnóstico direto no `Serial`
 
@@ -219,6 +232,16 @@ Qualquer pessoa no alcance lê o BSSID num scan passivo e calcula a senha: seria
 senha pública no GitHub por uma senha pública no ar. Segredo por unidade tem que ser
 sorteado, e o sorteio usa `bootloader_random_enable()` porque acontece antes do rádio subir,
 justo na janela em que `esp_random()` não é confiável.
+
+**Agravado em 19/09/2026 pela Fase 8 (OTA).** A senha de admin deixou de valer
+"reconfigurar o roteador" e passou a valer **executar código arbitrário na placa**: quem
+autentica no `POST /update` troca o firmware. O canal não mudou — Basic Auth em base64 sobre
+HTTP puro, num AP cuja PSK é compartilhada entre todos os clientes —, então qualquer cliente
+associado que capture o handshake de outro consegue as credenciais e, com elas, a unidade
+inteira. A guarda que existe é a ordem: a credencial é conferida no `UPLOAD_FILE_START`,
+antes de qualquer escrita na flash, então quem não se identifica não grava nada. Isso protege
+contra o anônimo, não contra o vizinho de AP. **Em bancada é aceitável; para campo, o TLS
+abaixo deixou de ser melhoria e virou pré-requisito.**
 
 **Em aberto — os dois que dependem de decisão, não de código:**
 
