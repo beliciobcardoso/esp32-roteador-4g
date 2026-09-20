@@ -1,5 +1,51 @@
+# Fase 5 (NAT): LWIP_IPV4_NAPT depende de LWIP_IP_FORWARD e ja faz
+# `select LWIP_L2_TO_L3_COPY` sozinho (lwip/Kconfig:212-216) — sem a copia L2->L3 o
+# driver WiFi entrega buffers que o forward nao pode reescrever.
 CONFIG_LWIP_IPV4_NAPT=y
 CONFIG_LWIP_IP_FORWARD=y
-CONFIG_LWIP_NAPT=y
 CONFIG_FREERTOS_HZ=1000
 CONFIG_AUTOSTART_ARDUINO=y
+
+# Fase 4 (modem PPP via esp_modem) — habilita suporte PPP no esp_netif/lwIP,
+# desligado por default no sdkconfig do esp-wrover-kit.
+CONFIG_LWIP_PPP_SUPPORT=y
+
+# A Vivo autentica o APN via PAP. Sem PAP_SUPPORT o lwIP compila
+# pppapi_set_auth fora e esp_netif_ppp_set_auth devolve ESP_ERR_ESP_NETIF_IF_NOT_READY,
+# ou seja: usuario/senha do APN seriam ignorados sem nenhum erro de conexao.
+CONFIG_LWIP_PPP_PAP_SUPPORT=y
+
+# Fase 4: a flash real da T-A7670E R2 e de 4MB, mas o board esp-wrover-kit do PlatformIO
+# entrava com o default de 2MB e a tabela partitions_singleapp (app de 1MB, ja em 87%).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Tabela propria: dois slots de app de 1.875MB para OTA. O dispositivo fica em campo
+# com link celular proprio — gravar por serial em cada atualizacao nao e viavel, e o
+# dual-slot permite voltar atras se um firmware ruim subir.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Fase 6: sem isso o driver reserva slots de chave para o ESP-NOW e corta o AP em 10
+# clientes ("Affected by the ESP-NOW encrypt num, set the max connection num to 10").
+# Nao usamos ESP-NOW em lugar nenhum, entao zerar libera o teto real de 15
+# (ESP_WIFI_MAX_CONN_NUM, esp_wifi_types.h:320).
+CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM=0
+
+# Fase 6 (reconexao): sem LCP echo uma perda silenciosa de RF nunca gera evento — o PPP
+# fica "up" para sempre, o NAT continua armado e o roteador vira buraco negro. Com echo,
+# 3 falhas de 3s viram NETIF_PPP_ERRORPEERDEAD em ~9s, que e o gatilho da reconexao.
+CONFIG_LWIP_ENABLE_LCP_ECHO=y
+CONFIG_LWIP_LCP_ECHOINTERVAL=3
+CONFIG_LWIP_LCP_MAXECHOFAILS=3
+
+# Fase 7 (relogio): o default e 1 servidor SNTP, e com ele o segundo setservername() e
+# ignorado sem nenhum erro — a placa ficaria dependendo so do ntp.br. Dois servidores
+# custam um nome resolvido a mais e evitam ficar sem hora quando um deles cai.
+CONFIG_LWIP_SNTP_MAX_SERVERS=2
+
+# Fase 8 (OTA): o bootloader passa a imagem recem-gravada para PENDING_VERIFY no primeiro
+# boot e so a mantem se o firmware se confirmar; reboot antes disso volta para o slot
+# anterior. E o que separa "atualizei e a placa sumiu" de "atualizei, deu ruim, voltou".
+# Vem junto com a janela de verificacao do loop() — sem a chave, confirmar nao faz nada;
+# sem a confirmacao, todo boot seguinte reverteria.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

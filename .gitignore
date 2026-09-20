@@ -5,3 +5,14 @@ sdkconfig.*
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Componentes baixados pelo ESP-IDF Component Manager — reprodutíveis a partir de
+# src/idf_component.yml + dependencies.lock (este sim versionado).
+managed_components/
+
+# Índice da ferramenta Serena (agente), não é artefato do projeto.
+.serena/
+
+# Configuracao local de maquina/placa (porta serial, etc). Carregado pelo extra_configs
+# do platformio.ini quando existe; o padrao versionado vale quando nao existe.
+platformio_override.ini
