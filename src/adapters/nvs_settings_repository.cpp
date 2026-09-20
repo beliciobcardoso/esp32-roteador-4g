@@ -3,6 +3,7 @@
 #include <Preferences.h>
 
 #include "../../include/config.h"
+#include "../domain/settings_migration.h"
 
 namespace {
 const char* kKeyConfigured = "configured";
@@ -11,18 +12,17 @@ const char* kKeyWifiPass = "wifi_pass";
 const char* kKeyApn = "apn";
 const char* kKeyApnUser = "apn_user";
 const char* kKeyApnPass = "apn_pass";
-// Versao do formato gravado. O schema 1 nao tinha as credenciais do APN e guardava
-// um APN default que nao existe na rede da Vivo; tratar esse registro como ausente
-// e o que faz o dispositivo cair nos defaults novos em vez de insistir no antigo.
+// Versao do formato gravado. O numero e a politica de cada versao vivem em
+// `domain/settings_migration`; aqui fica so a chave.
 const char* kKeySchema = "schema";
-const int kCurrentSchema = 2;
 const char* kKeyAdminUser = "admin_user";
 const char* kKeyAdminPass = "admin_pass";
-// Chave nova sem subir o schema, de proposito. O load() trata `schema < kCurrentSchema`
-// como registro ausente, entao subir para 3 apagaria SSID, senha e APN de toda unidade ja
-// configurada — migracao destrutiva por causa de um booleano nao se paga. Ler com default
-// e compativel por construcao: registro do schema 2 nao tem a chave, cai no false e segue
-// com a senha de admin que a pessoa escolheu.
+// Chave lida com default, sem ter subido o schema. Na epoca (debito 10) isso era
+// obrigatorio: registro de schema menor era descartado, entao subir para 3 apagaria SSID,
+// senha e APN de toda unidade configurada. Com `domain/settings_migration` isso deixou de
+// ser verdade, mas o padrao continua sendo o melhor para campo novo com default seguro —
+// registro do schema 2 nao tem a chave, cai no false e segue com a senha que a pessoa
+// escolheu, sem precisar de degrau de migracao nenhum.
 const char* kKeyAdminPending = "admin_pend";
 
 // putString devolve strlen(value) quando gravou e 0 quando falhou (erro no nvs_set_str ou
@@ -46,21 +46,43 @@ bool NvsSettingsRepository::load(RouterSettings& out) {
   if (!prefs.begin(SETTINGS_NVS_NAMESPACE, /*readOnly=*/true)) return false;
 
   bool configured = prefs.getBool(kKeyConfigured, false);
-  if (!configured || prefs.getInt(kKeySchema, 1) < kCurrentSchema) {
+  if (!configured) {
     prefs.end();
     return false;
   }
 
-  out.wifi_ssid = prefs.getString(kKeySsid, "");
-  out.wifi_password = prefs.getString(kKeyWifiPass, "");
-  out.apn = prefs.getString(kKeyApn, "");
-  out.apn_user = prefs.getString(kKeyApnUser, "");
-  out.apn_password = prefs.getString(kKeyApnPass, "");
-  out.admin_user = prefs.getString(kKeyAdminUser, "");
-  out.admin_password = prefs.getString(kKeyAdminPass, "");
-  out.admin_password_pending = prefs.getBool(kKeyAdminPending, false);
+  // Registro gravado antes de existir a chave conta como schema 1 — era o formato da
+  // epoca.
+  int storedSchema = prefs.getInt(kKeySchema, 1);
+
+  // Numa temporaria, nao direto no `out`: registro recusado nao pode deixar o chamador
+  // com meia configuracao lida, porque `load()` falso significa "nao ha registro".
+  RouterSettings stored;
+  stored.wifi_ssid = prefs.getString(kKeySsid, "");
+  stored.wifi_password = prefs.getString(kKeyWifiPass, "");
+  stored.apn = prefs.getString(kKeyApn, "");
+  stored.apn_user = prefs.getString(kKeyApnUser, "");
+  stored.apn_password = prefs.getString(kKeyApnPass, "");
+  stored.admin_user = prefs.getString(kKeyAdminUser, "");
+  stored.admin_password = prefs.getString(kKeyAdminPass, "");
+  stored.admin_password_pending = prefs.getBool(kKeyAdminPending, false);
 
   prefs.end();
+
+  MigrationDefaults defaults;
+  defaults.apn = DEFAULT_APN;
+  defaults.apn_user = DEFAULT_APN_USER;
+  defaults.apn_password = DEFAULT_APN_PASSWORD;
+
+  // A migracao acontece em memoria e nao regrava nada. De proposito: `load()` que escreve
+  // surpreende, e a consolidacao vem de graca no primeiro `save()`, que sempre grava o
+  // schema atual. Ate la a unidade continua migrando a cada boot, o que nao custa nada
+  // porque `migrateSettings()` e puro e idempotente.
+  if (migrateSettings(storedSchema, defaults, stored) == SchemaVerdict::Rejected) {
+    return false;
+  }
+
+  out = stored;
   return true;
 }
 
