@@ -5,6 +5,7 @@
 #include "../domain/uplink_status.h"
 #include "../usecases/load_settings.h"
 #include "../usecases/save_settings.h"
+#include "firmware_writer.h"
 
 // ADAPTADOR — rotas HTTP, parsing de formulario, Basic Auth.
 // Depende so de usecases (interfaces), nunca de nvs_settings_repository diretamente.
@@ -24,7 +25,13 @@ class HttpConfigHandler {
   // porque derrubar o PPP por causa de um fuso seria estrago sem motivo.
   using LocalSettingsChanged = void (*)(const RouterSettings& updated);
 
-  HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase);
+  // Avisada quando o firmware novo ja esta gravado e ativado. Nao reinicia aqui dentro:
+  // a resposta ainda esta na fila do socket, e um esp_restart() no meio do handler cortaria
+  // ela — o navegador mostraria erro de conexao depois de uma atualizacao bem-sucedida.
+  using RestartRequested = void (*)();
+
+  HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase,
+                    FirmwareWriter& firmwareWriter);
 
   void begin();
   void handleClient();
@@ -39,11 +46,19 @@ class HttpConfigHandler {
   // nao sincronizou — a pagina diz isso em vez de mostrar um horario inventado.
   using ClockTextProvider = String (*)();
   void onClockTextRequested(ClockTextProvider provider) { clockText_ = provider; }
+  void onRestartRequested(RestartRequested callback) { restartRequested_ = callback; }
 
  private:
   void handleGetRoot();
   void handlePostRoot();
   void handleNotFound();
+
+  // Os dois lados do POST /update. O de upload roda DENTRO do parser da requisicao, um
+  // bloco por vez, antes de o handler de POST existir; o de fim roda depois, uma vez.
+  void handleUpdateUpload();
+  void handleUpdateDone();
+
+  String firmwareStateText() const;
   String uplinkStatusText() const;
   String clockTextOrExcuse() const;
   String timezoneOptionsHtml(const RouterSettings& current) const;
@@ -52,9 +67,18 @@ class HttpConfigHandler {
 
   LoadSettingsUseCase& loadUseCase_;
   SaveSettingsUseCase& saveUseCase_;
+  FirmwareWriter& firmwareWriter_;
   WebServer server_;
   UplinkSettingsChanged uplinkChanged_ = nullptr;
   UplinkStatusProvider uplinkStatus_ = nullptr;
   LocalSettingsChanged localChanged_ = nullptr;
   ClockTextProvider clockText_ = nullptr;
+  RestartRequested restartRequested_ = nullptr;
+
+  // Estado de um upload de firmware, valido so entre o inicio e o fim de um POST /update.
+  // Mora aqui e nao em variaveis locais porque o upload chega picado em varias chamadas do
+  // handleUpdateUpload(), e a resposta so e montada depois, no handleUpdateDone().
+  bool updateAttempted_ = false;   // alguma parte de arquivo chegou
+  bool updateAuthorized_ = false;  // a credencial passou no primeiro bloco
+  String updateError_;             // primeira falha; vazio enquanto tudo caminha
 };

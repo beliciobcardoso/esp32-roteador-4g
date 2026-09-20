@@ -1,5 +1,6 @@
 #include "http_config_handler.h"
 
+#include "../domain/firmware_update.h"
 #include "../domain/timezone.h"
 #include "html_page.h"
 
@@ -8,12 +9,20 @@ const int kServerPort = 80;
 const char* kAuthRealm = "roteador-4g";
 }  // namespace
 
-HttpConfigHandler::HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase)
-    : loadUseCase_(loadUseCase), saveUseCase_(saveUseCase), server_(kServerPort) {}
+HttpConfigHandler::HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase,
+                                     FirmwareWriter& firmwareWriter)
+    : loadUseCase_(loadUseCase),
+      saveUseCase_(saveUseCase),
+      firmwareWriter_(firmwareWriter),
+      server_(kServerPort) {}
 
 void HttpConfigHandler::begin() {
   server_.on("/", HTTP_GET, [this]() { handleGetRoot(); });
   server_.on("/", HTTP_POST, [this]() { handlePostRoot(); });
+  // Duas funcoes para a mesma rota: a segunda roda durante a leitura do corpo, bloco a
+  // bloco, e a primeira so depois que o corpo inteiro acabou.
+  server_.on("/update", HTTP_POST, [this]() { handleUpdateDone(); },
+             [this]() { handleUpdateUpload(); });
   server_.onNotFound([this]() { handleNotFound(); });
   server_.begin();
 }
@@ -106,6 +115,12 @@ String HttpConfigHandler::timezoneOptionsHtml(const RouterSettings& current) con
   return html;
 }
 
+// Frase do estado da imagem em execucao. Sai do dominio para nao haver duas redacoes da
+// mesma regra — e a frase do PendingVerify e um aviso, nao enfeite.
+String HttpConfigHandler::firmwareStateText() const {
+  return describeFirmwareImageState(firmwareWriter_.runningImageState());
+}
+
 void HttpConfigHandler::handleGetRoot() {
   RouterSettings current = loadUseCase_.execute();
   if (!authenticate(current)) return;
@@ -122,6 +137,9 @@ void HttpConfigHandler::handleGetRoot() {
   page.replace("{{ADMIN_NOTICE}}", adminNoticeHtml(current));
   page.replace("{{CLOCK}}", escapeForHtmlAttribute(clockTextOrExcuse()));
   page.replace("{{BATTERY_RATIO}}", escapeForHtmlAttribute(String(current.battery_divider_ratio, 2)));
+  page.replace("{{FIRMWARE_SLOT}}", escapeForHtmlAttribute(firmwareWriter_.runningSlotLabel()));
+  page.replace("{{FIRMWARE_VERSION}}", escapeForHtmlAttribute(firmwareWriter_.runningVersionText()));
+  page.replace("{{FIRMWARE_STATE}}", escapeForHtmlAttribute(firmwareStateText()));
   // Depois dos outros replaces, e sem passar pelo escape: aqui o valor E marcacao, montada
   // por nos a partir de literais do dominio. Os textos que vao dentro dela ja foram
   // escapados um a um no timezoneOptionsHtml().
@@ -213,4 +231,130 @@ void HttpConfigHandler::handlePostRoot() {
   if (uplinkChanged && uplinkChanged_ != nullptr) {
     uplinkChanged_(updated);
   }
+}
+
+// --- POST /update ---
+//
+// A credencial e conferida AQUI, no primeiro bloco do arquivo, e nao no handler que
+// responde. O WebServer chama este upload de dentro do `_parseForm()`, enquanto le a
+// requisicao (Parsing.cpp), bem antes de invocar o handler de POST. Conferir la na frente
+// significaria gravar quase um megabyte no slot de OTA de quem nao se identificou, e so
+// entao recusar — a senha de admin deixaria de valer "reconfigurar o roteador" e passaria
+// a valer "trocar o firmware", mas sem a guarda nem senha seria preciso.
+//
+// O que nao da para evitar e o trafego: o parser le o corpo inteiro de qualquer jeito,
+// tendo respondido 401 ou nao. O que se impede aqui e a escrita na flash.
+void HttpConfigHandler::handleUpdateUpload() {
+  HTTPUpload& upload = server_.upload();
+
+  if (upload.status == UPLOAD_FILE_START) {
+    updateAttempted_ = true;
+    updateAuthorized_ = false;
+    updateError_ = "";
+
+    RouterSettings current = loadUseCase_.execute();
+    if (!authenticate(current)) return;  // o 401 ja saiu; nada sera gravado
+    updateAuthorized_ = true;
+
+    if (!firmwareWriter_.begin()) {
+      Serial.printf("OTA: abertura do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
+      updateError_ = "nao foi possivel abrir a particao de destino";
+    }
+    return;
+  }
+
+  if (!updateAuthorized_) return;
+  // Ja falhou: o resto do arquivo continua chegando pela rede e e descartado aqui. A
+  // primeira mensagem e a que descreve o defeito; as seguintes seriam consequencia dela.
+  if (updateError_.length() > 0) return;
+
+  if (upload.status == UPLOAD_FILE_ABORTED) {
+    // Conexao caiu no meio do envio. O slot fica com lixo, mas nao bootavel: o `Update`
+    // so grava os primeiros bytes da imagem no fim, justamente para este caso.
+    firmwareWriter_.abort();
+    updateError_ = "o envio foi interrompido antes do fim";
+    return;
+  }
+
+  if (upload.status == UPLOAD_FILE_WRITE) {
+    // Primeiro bloco: o `totalSize` so e somado depois desta chamada (Parsing.cpp), entao
+    // zero aqui significa que nada foi gravado ainda.
+    if (upload.totalSize == 0) {
+      FirmwareUpdateError verdict = inspectImageHead(upload.buf, upload.currentSize);
+      if (verdict != FirmwareUpdateError::None) {
+        firmwareWriter_.abort();
+        updateError_ = to_string(verdict);
+        return;
+      }
+    }
+
+    if (!firmwareWriter_.write(upload.buf, upload.currentSize)) {
+      Serial.printf("OTA: escrita falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
+      firmwareWriter_.abort();
+      updateError_ = "falha ao gravar no slot de destino: arquivo grande demais ou flash com defeito";
+    }
+    return;
+  }
+
+  if (upload.status == UPLOAD_FILE_END) {
+    // Unico momento em que o tamanho da imagem e conhecido. O `Update` tambem recusa
+    // passar do fim da particao, mas ali o erro sairia como falha de escrita; aqui sai
+    // dizendo o que aconteceu. E e este o caminho que pega o formulario enviado sem
+    // arquivo nenhum, que chega como uma parte de tamanho zero.
+    FirmwareUpdateError verdict =
+        inspectImageSize(upload.totalSize, firmwareWriter_.targetSlotSize());
+    if (verdict != FirmwareUpdateError::None) {
+      firmwareWriter_.abort();
+      updateError_ = to_string(verdict);
+      return;
+    }
+
+    // Aqui dentro roda a verificacao da imagem inteira, com o SHA-256 que ela carrega:
+    // arquivo truncado ou corrompido morre neste ponto, sem trocar o slot de boot.
+    if (!firmwareWriter_.finish()) {
+      Serial.printf("OTA: ativacao do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
+      updateError_ = "a imagem enviada nao passou na verificacao";
+    }
+  }
+}
+
+// Roda uma vez, depois do corpo inteiro. A gravacao ja aconteceu: aqui so se responde e,
+// se deu certo, se pede o reboot.
+void HttpConfigHandler::handleUpdateDone() {
+  if (!updateAttempted_) {
+    // POST sem parte de arquivo nenhuma — nem passou pelo upload, entao a credencial ainda
+    // nao foi conferida.
+    RouterSettings current = loadUseCase_.execute();
+    if (!authenticate(current)) return;
+    server_.send(400, "text/plain", to_string(FirmwareUpdateError::EmptyImage));
+    return;
+  }
+
+  const bool authorized = updateAuthorized_;
+  const String error = updateError_;
+  updateAttempted_ = false;
+  updateAuthorized_ = false;
+  updateError_ = "";
+
+  // Sem credencial o 401 ja saiu no primeiro bloco; responder de novo colocaria duas
+  // respostas na mesma conexao.
+  if (!authorized) return;
+
+  if (error.length() > 0) {
+    server_.send(400, "text/plain", error);
+    return;
+  }
+
+  // O prazo vem do dominio e nao de um numero digitado aqui: e o mesmo que o loop() espera
+  // antes de confirmar a imagem, e duas redacoes do mesmo prazo divergem na primeira vez
+  // que uma delas mudar.
+  String message = "Firmware gravado. A placa reinicia agora e a pagina volta assim que o AP subir. ";
+  message += "Nao desligue nem reinicie nos primeiros ";
+  message += numberToString(kVerificationWindowMs / 1000);
+  message += " segundos: ate la o bootloader ainda volta para o firmware anterior.";
+  server_.send(200, "text/plain", message);
+
+  // Depois do send, e de fora: um esp_restart() aqui dentro cortaria a resposta antes de
+  // ela sair da fila do socket.
+  if (restartRequested_ != nullptr) restartRequested_();
 }
