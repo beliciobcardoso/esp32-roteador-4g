@@ -3,12 +3,16 @@
 const unsigned char kEspImageMagic = 0xE9;
 const size_t kEspImageHeaderSize = 24;
 
-// Dois minutos. Cabem com folga antes do primeiro reboot possivel do LinkSupervisor (mais
-// de 7 min) e cobrem o que o rollback existe para pegar: crash no setup(), watchdog na
-// subida do modem, panico nos primeiros ciclos do loop(). Esticar mais nao pega defeito
-// novo — firmware que sobrevive dois minutos com AP no ar e HTTP respondendo nao esta
-// quebrado do jeito que o bootloader sabe consertar.
-const unsigned long kVerificationWindowMs = 120000;
+// Cinco minutos. Cobrem o que o rollback existe para pegar — crash no setup(), watchdog na
+// subida do modem, panico nos primeiros ciclos do loop() — e ainda alcancam o defeito que
+// so aparece depois da primeira reconexao de PPP, que dois minutos perdiam.
+//
+// A margem contra o LinkSupervisor encolheu de proposito: o piso dele e pouco mais de 7 min
+// (10 falhas com backoff de 5/10/20/40/60 s), entao sobram ~2 min em vez dos ~5 de antes.
+// Continua seguro porque aquele piso supoe toda tentativa falhando instantaneamente, e na
+// placa cada ciclo de reconexao gasta ~15 s so entre o ERRORPEERDEAD e o Connected. Nao
+// esticar mais sem mexer no supervisor junto: a partir daqui a folga vira ruido.
+const unsigned long kVerificationWindowMs = 300000;
 
 const char* to_string(FirmwareUpdateError error) {
   switch (error) {

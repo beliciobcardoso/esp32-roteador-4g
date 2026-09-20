@@ -125,7 +125,7 @@ são indissociáveis: a chave está ligada e quem confirma é o `loop()`, via
 
 O critério de saúde não é "chegou ao `setup()`". Confirmar ali tornaria o rollback quase
 inútil — pegaria só o firmware que morre antes de o AP subir — e o estado `PendingVerify`
-nunca apareceria na página. A imagem é confirmada depois de **120 s de pé**, e esse prazo
+nunca apareceria na página. A imagem é confirmada depois de **300 s de pé**, e esse prazo
 tem teto: o `LinkSupervisor` reinicia a placa após 10 falhas de uplink, o que com backoff de
 5/10/20/40/60 s passa de 7 min. Esse reboot é por falta de sinal, não defeito do firmware —
 uma janela que encostasse nele faria uma área sem cobertura reverter uma atualização boa. O
@@ -342,6 +342,21 @@ Se 64 não bastar, as opções são `CONFIG_LWIP_TCPIP_CORE_LOCKING` +
 `CORE_LOCKING_INPUT` (entrega direta, elimina a classe inteira do problema, mas muda o
 modelo de concorrência do lwIP) ou `CONFIG_LWIP_IRAM_OPTIMIZATION` (acelera o forward,
 custa IRAM). Ambas caras demais pra especular sem medição.
+
+**Medido em 20/09/2026, e é pior do que "perde vazão".** Numa captura contínua de serial
+durante os testes manuais da Fase 8, `7179` das `8067` linhas eram essa mensagem — **89% do
+serial**. Numa segunda captura, `3150` de `5187` (60%), mais `64` linhas de
+`W (…) uart_terminal: HW FIFO Overflow`. O efeito colateral é o que importa: com o FIFO
+estourando, linhas de outros módulos saem cortadas ao meio, e a leitura periódica de
+bateria aparece como `ateria:`, `eria:`, `ria:`. O log deixa de ser confiável exatamente
+quando há tráfego — que é quando se quer olhar para ele.
+
+Toda leitura de serial feita neste projeto passou a depender de um filtro
+(`grep -avE "pppos_input_tcpip|ateria:|^ria:|^eria:|^teria:"`), o que é remendo de
+ferramenta, não correção. Enquanto isso valer, qualquer diagnóstico por serial sob carga
+começa com um passo manual que alguém vai esquecer. Baixar o nível de log desse componente
+(`esp_log_level_set("esp-netif_lwip-ppp", ESP_LOG_NONE)`) esconderia o sintoma e continuaria
+descartando pacote — pior negócio do que o remendo.
 
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
@@ -789,3 +804,25 @@ placa e quebraria no host, que é o tipo exato de divergência que o seam existe
 - **`escapeForHtmlAttribute` é aplicado a um texto que hoje não precisa** — são literais
   nossos e um número. Fica no caminho para o dia em que a mensagem incluir um valor
   gravado.
+
+## 23. O caminho de OTA só fala no serial quando o gravador falha
+
+**Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) —
+`handleUpdateUpload()` e `handleUpdateDone()`
+
+As três linhas `Serial.printf("OTA: …")` cobrem só falha do `Update`: começo recusado,
+escrita curta e ativação do slot. Não existe linha nenhuma para **sucesso**, nem para as
+recusas do domínio (`inspectImageHead`/`inspectImageSize`) — arquivo que não é imagem do
+ESP32, arquivo curto demais, arquivo maior que o slot e formulário vazio são respondidos na
+página e somem.
+
+**Por que incomoda:** quem está com o cabo na mão e não com o celular na página não
+consegue distinguir "a placa recusou o arquivo" de "a requisição nunca chegou". Isso
+apareceu na validação de 20/09/2026: o teste do arquivo de lixo teve que ser refeito porque
+o navegador abortou o POST antes de enviá-lo (`ERR_UPLOAD_FILE_CHANGED`), e o serial não
+tinha como mostrar a diferença — em ambos os casos, silêncio.
+
+**Correção:** uma linha no `handleUpdateDone()` com o veredito e o tamanho recebido, nos
+dois desfechos. Barato; ficou de fora porque a fase fechou antes. Cuidado ao fazer: o débito
+13 já afoga o serial sob tráfego, então a linha tem que ser uma por requisição, não por
+bloco recebido.
