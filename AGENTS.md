@@ -38,7 +38,7 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 - `infra/` — wrappers finos sobre APIs ESP-IDF/Arduino (WiFi AP, PPP, NAT)
 - `main.cpp` — só orquestração/injeção, zero lógica de negócio
 
-**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). A Fase 7 (relógio por SNTP e fuso configurável) e a Fase 8 (atualização de firmware pela própria página, com rollback do bootloader) estão implementadas mas **ainda não rodaram em placa**. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
+**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). As Fases 7 (relógio por SNTP e fuso configurável) e 8 (atualização de firmware pela própria página, com rollback do bootloader) foram **validadas em placa em 20/09/2026**: relógio certo 17 s depois do reset, fuso trocando a quente, OTA trocando de slot e rollback revertendo de verdade um reset dentro da janela. Segue aberto um único critério de bancada — upload interrompido no meio. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
 
 A configuração persistida (chaves da NVS, defaults de fábrica, como consultar e apagar) está documentada em [docs/CONFIGURACAO_NVS.md](docs/CONFIGURACAO_NVS.md).
 
@@ -97,11 +97,26 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   conferida no `UPLOAD_FILE_START`, **não** no handler do POST: o `WebServer` chama o
   callback de upload dentro do parser da requisição, antes do handler, e checar depois
   gravaria a flash de quem não tem credencial. A imagem nova é confirmada no `loop()`
-  depois de **120 s** de pé (`kVerificationWindowMs`), não no `setup()` — confirmar no
+  depois de **300 s** de pé (`kVerificationWindowMs`), não no `setup()` — confirmar no
   `setup()` só pegaria firmware que morre antes do AP subir. O teto da janela é o
   `LinkSupervisor`, que só consegue reiniciar a placa depois de ~7 min; a janela tem que
-  fechar bem antes, ou falta de cobertura reverteria uma atualização boa.
+  fechar bem antes, ou falta de cobertura reverteria uma atualização boa. Subiu de 120 s
+  para 300 s em 20/09/2026, a pedido de quem testa: 2 min não dão tempo de abrir a página,
+  conferir e reiniciar, e o defeito que só aparece na primeira reconexão de PPP ficava fora
+  da janela. A folga contra o supervisor caiu de ~5 min para ~2 min — não esticar mais sem
+  mexer no supervisor junto.
   Justificativa completa em [docs/prd/11-atualizacao-ota.md](docs/prd/11-atualizacao-ota.md)
+- **O core do Arduino cancela o rollback antes do `setup()` se ninguém o impedir.** O
+  `initArduino()` (`esp32-hal-misc.c`) chama `esp_ota_mark_app_valid_cancel_rollback()`
+  quando `CONFIG_APP_ROLLBACK_ENABLE=y` — chave **diferente** da
+  `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` que o `sdkconfig.defaults` liga, e que vem ligada
+  na configuração gerada. Ele só não faz isso se o símbolo weak `verifyRollbackLater()`
+  devolver `true`, e o `main.cpp` sobrescreve esse símbolo exatamente por isso. Sem essa
+  linha a imagem chega ao `loop()` já em `Valid`: a página nasce dizendo "confirmado",
+  nenhum log sai e reset nenhum reverte — o rollback inteiro vira enfeite, sem erro em
+  lugar nenhum. Conferir com
+  `xtensa-esp32-elf-nm .pio/build/esp-wrover-kit/firmware.elf | grep verifyRollbackLater`:
+  `T` é a aplicação valendo, `W` é o core vencendo
 - Até 15 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — 15 é o teto do
   driver no ESP32 clássico (`ESP_WIFI_MAX_CONN_NUM`), não uma escolha de projeto
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico
@@ -116,6 +131,7 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
 - A porta serial reenumera após o reset do upload (`ttyACM0` → `ttyACM1`) — sempre usar o caminho estável `/dev/serial/by-id/...`, nunca o numerado
 - Pulso de PWRKEY do A7670E precisa de 1000 ms (`Ton(pwrkey)`) — 100 ms faz o handshake AT demorar ou falhar
 - `sdkconfig.<env>` é gerado e ignorado pelo git; o PlatformIO **não** reaplica `sdkconfig.defaults` enquanto ele existir — apagar o arquivo, limpar `.pio/build` não basta
+- **Ler serial sob tráfego exige filtro.** Medido em 20/09/2026: `E (…) esp-netif_lwip-ppp: pppos_input_tcpip failed with -1` chega a 89% das linhas, e o `HW FIFO Overflow` que vem junto corta linhas de outros módulos ao meio (`Bateria:` vira `ateria:`, `eria:`). Usar `grep -avE "pppos_input_tcpip|ateria:|^ria:|^eria:|^teria:"`. Causa e opções no débito 13
 
 ## Débitos técnicos conhecidos
 

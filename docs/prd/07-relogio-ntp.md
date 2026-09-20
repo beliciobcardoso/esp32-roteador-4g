@@ -1,6 +1,6 @@
 # PRD 07 — Relógio (NTP + fuso configurável)
 
-**Status: implementada em 19/09/2026 — validação em hardware pendente**
+**Status: concluída** (validada em hardware em 20/09/2026)
 
 Fonte: ideia do usuário, 18/09/2026.
 
@@ -122,13 +122,15 @@ qualquer jeito. A faixa `[1.4, 10.0]` sai da física, não de gosto — ver o co
 - [x] `pio test -e native` cobre a tabela de fusos e a faixa do divisor — 89 testes
 - [x] Boot com uplink → hora correta no fuso configurado, confirmado via serial —
       validado em hardware em 20/09/2026
-- [ ] Troca de fuso pela página vale a quente, sem reboot
-- [ ] Uplink cai e volta → relógio ressincroniza sozinho
+- [x] Troca de fuso pela página vale a quente, sem reboot — validado em hardware em
+      20/09/2026
+- [x] Uplink cai e volta → relógio ressincroniza sozinho — validado em hardware em
+      20/09/2026
 - [x] UDP 123 sai pelo NAT — é o primeiro tráfego originado pelo próprio ESP32, e pode
       revelar problema que o NAPT esconde no forward de cliente — validado em hardware em
       20/09/2026
 
-Os dois restantes são de bancada e ficam abertos.
+Todos fechados.
 
 ## Validação em hardware — 20/09/2026
 
@@ -162,5 +164,26 @@ Relogio: sincronizado — 20/09/2026 07:30:04
 Fecha também o critério do UDP 123: o SNTP é o primeiro tráfego que a própria placa origina,
 e saiu de primeira.
 
-Seguem em aberto a troca de fuso a quente (precisa de cliente na página) e a
-ressincronização depois de uma queda de uplink (precisa tirar o SIM ou blindar a antena).
+A troca de fuso a quente e a ressincronização fecharam no mesmo dia, pela página e pelo
+serial. O fuso foi movido de Brasília para Fernando de Noronha e de volta, e o `setenv`/
+`tzset()` valeu na sincronização seguinte sem nenhum reset entre as duas linhas:
+
+```
+Relogio: sincronizado — 20/09/2026 09:23:23   ← UTC−2
+Relogio: sincronizado — 20/09/2026 08:36:56   ← UTC−3, 13 min de relógio real depois
+```
+
+A ressincronização depois de queda de uplink não precisou de SIM removido: as quedas de
+PPP do próprio uso (`ERRORPEERDEAD`) já servem, e o padrão se repetiu sete vezes nas
+capturas do dia:
+
+```
+PPP: enlace caiu | NETIF_PPP_STATUS=ERRORPEERDEAD (9)
+Uplink: enlace caiu — reconectando
+Uplink: online — clientes do AP saem pelo 4G
+Relogio: sincronizado — 20/09/2026 09:17:43
+```
+
+Note que o gatilho é o `Online` do supervisor, não a passagem do tempo: a cadência normal
+do SNTP é de 1 h (`CONFIG_LWIP_SNTP_UPDATE_DELAY`), e toda linha acima saiu em intervalos
+bem menores que isso, logo após a reconexão.

@@ -147,7 +147,7 @@ Usuário abre 192.168.4.1
   [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md)
 - Acertos, erros e lições da fase: [prd/06-integracao-testes-carga.md](prd/06-integracao-testes-carga.md#retrospectiva-da-fase)
 
-### Fase 7 — Relógio (NTP + fuso) — implementada, validação em hardware pendente
+### Fase 7 — Relógio (NTP + fuso) — concluída, validada em hardware
 
 - `infra/clock`: SNTP com `a.st1.ntp.br` e `pool.ntp.org`, sincronizado quando o
   `LinkSupervisor` entra em `Online` — primeira conexão e cada reconexão. `esp_sntp_init()`
@@ -165,11 +165,18 @@ Usuário abre 192.168.4.1
 - **Consumidores da hora ficam fora do escopo**: histórico de quedas, agendamento de
   reboot, expiração de sessão e carimbo de OTA dependem disso, mas vêm depois. A página de
   config mostra o relógio só para dar como verificar que ele funciona
-- ⚠️ Nada disso rodou em placa ainda: hora correta no serial, troca de fuso a quente,
-  ressincronização após queda e UDP 123 saindo pelo NAT seguem por validar
+- **Validada em placa em 20/09/2026**, com um defeito encontrado e corrigido no caminho: o
+  `systemClock.begin()` rodava antes do `esp_netif_init()` (que quem chama é o `wifiAp.start()`),
+  e as funções do `esp_sntp` entram pela task tcpip do lwIP — a placa ficava em boot loop com
+  `assert failed: tcpip_callback ... (Invalid mbox)`, sem nunca subir o AP. A chamada passou
+  para dentro do `startRouting()`, depois do AP e antes do `linkSupervisor.begin()`
+- 17 s do reset até a hora certa; troca de fuso valendo a quente (UTC−2 → UTC−3 sem reset
+  entre as duas linhas de sincronização) e ressincronização após cada `ERRORPEERDEAD`, sete
+  vezes nas capturas do dia. UDP 123 sai pelo NAT — o SNTP é o primeiro tráfego originado
+  pela própria placa, e saiu de primeira
 - Detalhes em [prd/07-relogio-ntp.md](prd/07-relogio-ntp.md)
 
-### Fase 8 — Atualização de firmware pela página (OTA) — implementada, validação em hardware pendente
+### Fase 8 — Atualização de firmware pela página (OTA) — concluída, validada em hardware
 
 - `POST /update` no mesmo `WebServer`: upload de `firmware.bin` pelo AP, gravado direto no
   slot livre pelo `Update` do Arduino. Sem arquivo intermediário e sem a partição `spiffs`
@@ -181,9 +188,15 @@ Usuário abre 192.168.4.1
   valida de verdade é o `esp_image_verify()` dentro do `Update.end()`, que confere o
   SHA-256 da própria imagem — por isso não há campo de checksum no formulário
 - `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`, fechando o débito 6. A imagem nova é confirmada
-  pelo `loop()` depois de **120 s de pé**, não no `setup()`: ali o rollback só pegaria o
+  pelo `loop()` depois de **300 s de pé**, não no `setup()`: ali o rollback só pegaria o
   firmware que morre antes de o AP subir. O prazo tem teto — o `LinkSupervisor` pode
   reiniciar a placa após ~7 min por falta de sinal, e isso não pode disparar rollback
+- **O core do Arduino cancelava o rollback antes do `setup()`.** O `initArduino()` chama
+  `esp_ota_mark_app_valid_cancel_rollback()` quando `CONFIG_APP_ROLLBACK_ENABLE=y` — chave
+  diferente da do bootloader, e ligada na configuração gerada. Sem sobrescrever o símbolo
+  weak `verifyRollbackLater()`, a imagem chegava ao `loop()` já em `Valid` e o rollback
+  inteiro era enfeite. Corrigido em `main.cpp`; conferir com
+  `xtensa-esp32-elf-nm firmware.elf | grep verifyRollbackLater` (`T`, não `W`)
 - Bloco de firmware no `GET /`: slot em execução, versão, data de compilação e estado da
   imagem, com o aviso de não reiniciar durante a janela de verificação
 - O reboot sai do `loop()` e não do handler — `esp_restart()` lá dentro cortaria a resposta
@@ -191,8 +204,12 @@ Usuário abre 192.168.4.1
 - ⚠️ **A senha de admin passou a valer execução de código**, e a página continua em HTTP
   puro sobre PSK compartilhada. Aceitável em bancada, bloqueante para campo — registrado no
   débito 10 ao lado do TLS
-- ⚠️ Nada disso rodou em placa ainda: upload real, rollback por reset dentro da janela,
-  arquivo truncado e upload interrompido seguem por validar
+- **Validada em placa em 20/09/2026:** upload real trocando de slot (`0x20000` ↔ `0x1f0000`),
+  arquivo truncado recusado pelo `esp_image_verify()` sem reiniciar nada, formulário vazio
+  recusado com a frase do domínio, e rollback de verdade — reset dentro da janela voltou de
+  `0x1f0000` para `0x20000`, e a confirmação saiu em 300,9 s de uptime
+- ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar — é o único critério aberto
+  da fase
 - Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
 
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
