@@ -76,8 +76,17 @@ void test_a_tight_heap_says_so_instead() {
 }
 
 void test_a_single_drop_is_not_written_in_plural() {
+  // A primeira versao deste teste olhava so o "1 pacote " e passava enquanto a frase dizia
+  // "1 pacote descartados" — o verbo ficava de fora da asserção. Apareceu no log de campo,
+  // nao aqui. Agora cobre a frase ate o verbo.
   String text = describeDropWindow(1, 96000);
-  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "1 pacote "), text.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "1 pacote descartado na"), text.c_str());
+  TEST_ASSERT_FALSE_MESSAGE(mentions(text, "descartados"), text.c_str());
+}
+
+void test_more_than_one_drop_is_written_in_plural() {
+  String text = describeDropWindow(2, 96000);
+  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "2 pacotes descartados na"), text.c_str());
 }
 
 }  // namespace
@@ -96,5 +105,6 @@ int main(int, char**) {
   RUN_TEST(test_a_comfortable_heap_reads_as_queue_pressure);
   RUN_TEST(test_a_tight_heap_says_so_instead);
   RUN_TEST(test_a_single_drop_is_not_written_in_plural);
+  RUN_TEST(test_more_than_one_drop_is_written_in_plural);
   return UNITY_END();
 }

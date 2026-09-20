@@ -16,9 +16,10 @@ bool heapLooksTight(uint32_t freeInternalBytes) {
 }
 
 String describeDropWindow(uint32_t dropsInWindow, uint32_t freeInternalBytes) {
+  const bool singular = dropsInWindow == 1;
   String line = "PPP: " + numberToString(dropsInWindow);
-  line += dropsInWindow == 1 ? " pacote " : " pacotes ";
-  line += "descartados na entrada nos ultimos ";
+  line += singular ? " pacote descartado" : " pacotes descartados";
+  line += " na entrada nos ultimos ";
   line += numberToString(kDropReportIntervalMs / 1000);
   line += " s | heap interno livre ";
   line += numberToString(freeInternalBytes);
