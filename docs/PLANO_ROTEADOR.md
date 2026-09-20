@@ -208,8 +208,21 @@ Usuário abre 192.168.4.1
   arquivo truncado recusado pelo `esp_image_verify()` sem reiniciar nada, formulário vazio
   recusado com a frase do domínio, e rollback de verdade — reset dentro da janela voltou de
   `0x1f0000` para `0x20000`, e a confirmação saiu em 300,9 s de uptime
-- ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar — é o único critério aberto
-  da fase
+- **Confirmação manual validada em placa em 20/09/2026.** A confirmação automática por
+  tempo saiu: ficar de pé não prova que alguém consegue chegar na placa. Dois cenários
+  exercidos com builds de teste propositalmente quebrados:
+  - **`loop()` travado** (spin infinito): `task_wdt` disparou ~5 s depois, `Aborting.`,
+    reboot, e o bootloader voltou de `0x20000` para `0x1f0000`. Sem
+    `CONFIG_ESP_TASK_WDT_PANIC=y` o watchdog só imprimia o aviso e a placa ficava de pé,
+    muda e inalcançável — este era o caminho que perdia o dispositivo
+  - **SoftAP forçado a falhar**: `loop()` girou, o autocheck viu `ap_up = false` e o revert
+    ativo saiu em **589 ms**, sem esperar o prazo — `esp_ota_ops: Rollback to previously
+    worked partition. Restart.` Na primeira tentativa a placa tinha morrido antes disso,
+    num `assert failed: tcpip_send_msg_wait_sem (Invalid mbox)`, porque o
+    `httpConfigHandler.begin()` abria socket sem AP no ar; corrigido, e o mesmo caminho é
+    alcançável em produção pela NVS ilegível
+- ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar
+- ⚠️ Botão de confirmar e prazo de 600 s seguem por validar em placa
 - Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
 
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
