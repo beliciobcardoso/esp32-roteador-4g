@@ -234,6 +234,15 @@ void reportBattery(unsigned long now) {
   Serial.println("%");
 }
 
+// Sobrescreve o simbolo weak do core do Arduino (`esp32-hal-misc.c`). Sem isto o
+// `initArduino()` chama `esp_ota_mark_app_valid_cancel_rollback()` ANTES do setup(), e a
+// imagem chega ao loop() ja em Valid: a janela abaixo nunca tem o que confirmar, o estado
+// na pagina nasce "confirmado" e reset nenhum reverte. O rollback inteiro vira enfeite.
+//
+// Retornar true so adia a decisao — nao a cancela. Quem confirma passa a ser o
+// confirmFirmwareIfHealthy(), depois da janela, que e o ponto do PRD 11.
+extern "C" bool verifyRollbackLater() { return true; }
+
 // Fecha a janela de verificacao do firmware novo. Ate aqui a imagem esta em
 // PENDING_VERIFY e qualquer reboot a desfaz; confirmar e o que torna a atualizacao
 // definitiva.
