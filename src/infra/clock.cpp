@@ -24,8 +24,25 @@ const char* kSecondaryServer = "pool.ntp.org";
 // leitura-modificacao-escrita, entao volatile basta, como no link_supervisor.
 volatile bool gSynchronized = false;
 
+// Formata a hora corrente no fuso ja aplicado. Fora da classe porque o callback do lwIP
+// nao tem instancia, e os dois caminhos tem que imprimir exatamente o mesmo texto.
+String formatNow() {
+  time_t now = time(nullptr);
+  struct tm local = {};
+  localtime_r(&now, &local);
+
+  char text[20];
+  strftime(text, sizeof(text), "%d/%m/%Y %H:%M:%S", &local);
+  return String(text);
+}
+
 void onTimeSynchronized(struct timeval* /*received*/) {
   gSynchronized = true;
+
+  // A unica evidencia de relogio que existe sem um cliente associado. Em campo a placa fica
+  // sozinha com o cabo serial, e "a hora esta certa?" nao pode depender de abrir a pagina.
+  // Uma linha por sincronizacao: a cadencia e o CONFIG_LWIP_SNTP_UPDATE_DELAY, 1 h.
+  Serial.printf("Relogio: sincronizado — %s\n", formatNow().c_str());
 }
 
 }  // namespace
@@ -74,12 +91,5 @@ bool Clock::synchronized() const {
 
 String Clock::nowText() const {
   if (!gSynchronized) return "";
-
-  time_t now = time(nullptr);
-  struct tm local = {};
-  localtime_r(&now, &local);
-
-  char text[20];
-  strftime(text, sizeof(text), "%d/%m/%Y %H:%M:%S", &local);
-  return String(text);
+  return formatNow();
 }

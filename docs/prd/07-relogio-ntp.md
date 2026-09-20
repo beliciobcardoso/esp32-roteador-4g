@@ -120,10 +120,47 @@ qualquer jeito. A faixa `[1.4, 10.0]` sai da física, não de gosto — ver o co
 - [x] Sem uplink, o firmware sobe normalmente e a página diz que a hora não está
       sincronizada — nunca finge um horário
 - [x] `pio test -e native` cobre a tabela de fusos e a faixa do divisor — 89 testes
-- [ ] Boot com uplink → hora correta no fuso configurado, confirmado via serial
+- [x] Boot com uplink → hora correta no fuso configurado, confirmado via serial —
+      validado em hardware em 20/09/2026
 - [ ] Troca de fuso pela página vale a quente, sem reboot
 - [ ] Uplink cai e volta → relógio ressincroniza sozinho
-- [ ] UDP 123 sai pelo NAT — é o primeiro tráfego originado pelo próprio ESP32, e pode
-      revelar problema que o NAPT esconde no forward de cliente
+- [x] UDP 123 sai pelo NAT — é o primeiro tráfego originado pelo próprio ESP32, e pode
+      revelar problema que o NAPT esconde no forward de cliente — validado em hardware em
+      20/09/2026
 
-Os quatro últimos são de bancada e ficam abertos até a placa rodar esta versão.
+Os dois restantes são de bancada e ficam abertos.
+
+## Validação em hardware — 20/09/2026
+
+A primeira gravação desta versão não subiu: **boot loop**, com o log repetindo
+
+```
+assert failed: tcpip_callback IDF/components/lwip/lwip/src/api/tcpip.c:319 (Invalid mbox)
+```
+
+O backtrace apontava `Clock::begin()` → `esp_sntp_setoperatingmode()` → `tcpip_callback`.
+As funções do `esp_sntp` entram pela task tcpip do lwIP, que só existe depois do
+`esp_netif_init()` — e quem chama esse `init` é o `wifiAp.start()`, que rodava *depois* do
+`systemClock.begin()`. A ordem escolhida aqui ("antes do `startRouting()`, porque o
+supervisor pode entrar em `Online` logo depois de subir") acertou a corrida com o supervisor
+e errou a dependência com o lwIP. O defeito não era intermitente: a placa nunca chegava a
+subir o AP, então não sobrava nem a página para consertar — só o cabo.
+
+Correção: a chamada passou para dentro do `startRouting()`, depois do AP e antes do
+`linkSupervisor.begin()`, o que preserva a garantia original.
+
+A sincronização não deixava rastro no serial — o latch só alimentava a página, e o critério
+pedia confirmação por serial. O callback do SNTP agora imprime uma linha por sincronização
+(cadência do `CONFIG_LWIP_SNTP_UPDATE_DELAY`, 1 h). Com isso o boot mede:
+
+```
+Uplink: online — clientes do AP saem pelo 4G
+Relogio: sincronizado — 20/09/2026 07:30:04
+```
+
+17 s do reset até a hora certa, conferida contra o relógio do host, no fuso de Brasília.
+Fecha também o critério do UDP 123: o SNTP é o primeiro tráfego que a própria placa origina,
+e saiu de primeira.
+
+Seguem em aberto a troca de fuso a quente (precisa de cliente na página) e a
+ressincronização depois de uma queda de uplink (precisa tirar o SIM ou blindar a antena).
