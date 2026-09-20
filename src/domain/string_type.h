@@ -38,7 +38,9 @@ inline String numberToString(uint32_t value) {
 // bateria sairia diferente na placa e no teste. Quem chama diz quantas casas quer.
 inline String numberToString(float value, uint8_t decimals) {
 #ifdef ARDUINO
-  return String(value, decimals);
+  // O cast nao e enfeite: com uint8_t a chamada fica ambigua entre String(float, unsigned
+  // int) e String(long long, unsigned char) — nenhuma das duas vence nos dois argumentos.
+  return String(value, static_cast<unsigned int>(decimals));
 #else
   char buffer[32];
   std::snprintf(buffer, sizeof(buffer), "%.*f", static_cast<int>(decimals), value);

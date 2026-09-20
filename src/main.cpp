@@ -70,6 +70,16 @@ String currentClockText() {
   return systemClock.nowText();
 }
 
+// Ultima tensao medida pelo reportBattery(). Existe para a pagina nao provocar uma leitura
+// nova a cada polling: o readVoltage() bloqueia ~100 ms tirando a media do ruido do ADC, e
+// 100 ms dentro do handler HTTP atrasariam a resposta, o handleClient() e tudo que vem
+// depois dele no loop(). Zero ate a primeira medicao, que acontece nos primeiros segundos.
+float lastBatteryVoltage = 0.0f;
+
+float currentBatteryVoltage() {
+  return lastBatteryVoltage;
+}
+
 // Pedido de reboot vindo da pagina, depois de um firmware novo gravado. So marca a hora:
 // reiniciar aqui dentro seria reiniciar de dentro do handler HTTP, com a resposta ainda na
 // fila do socket — o navegador mostraria erro de conexao depois de uma atualizacao que deu
@@ -205,6 +215,7 @@ void setup() {
   httpConfigHandler.onUplinkStatusRequested(&currentUplinkStatus);
   httpConfigHandler.onLocalSettingsChanged(&onLocalSettingsChanged);
   httpConfigHandler.onClockTextRequested(&currentClockText);
+  httpConfigHandler.onBatteryVoltageRequested(&currentBatteryVoltage);
   httpConfigHandler.onRestartRequested(&onRestartRequested);
   httpConfigHandler.onFirmwareConfirmed(&onFirmwareConfirmed);
 
@@ -266,6 +277,7 @@ void reportBattery(unsigned long now) {
   // Ainda bloqueia ~100ms dentro do readVoltage(). Mantido: a media e o que tira o ruido
   // do ADC, e 100ms a cada 3s nao atrapalha nem o HTTP nem a supervisao do modem.
   float batteryVoltage = batteryAdc.readVoltage();
+  lastBatteryVoltage = batteryVoltage;
   int percent = voltageToPercent(batteryVoltage);
 
   Serial.print("Bateria: ");

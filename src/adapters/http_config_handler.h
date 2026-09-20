@@ -51,13 +51,30 @@ class HttpConfigHandler {
   // nao sincronizou — a pagina diz isso em vez de mostrar um horario inventado.
   using ClockTextProvider = String (*)();
   void onClockTextRequested(ClockTextProvider provider) { clockText_ = provider; }
+
+  // Ultima leitura da bateria, em volts. Provider e nao leitura direta pelo mesmo motivo
+  // dos outros: o adaptador nao conhece o ADC. E e a ULTIMA leitura, ja tirada pelo loop,
+  // nao uma nova — o readVoltage() bloqueia ~100 ms para tirar a media do ruido, e 100 ms
+  // dentro do handler atrasariam a resposta e o handleClient() inteiro a cada polling de
+  // status. Devolve zero enquanto nenhuma leitura aconteceu.
+  using BatteryVoltageProvider = float (*)();
+  void onBatteryVoltageRequested(BatteryVoltageProvider provider) { batteryVoltage_ = provider; }
   void onRestartRequested(RestartRequested callback) { restartRequested_ = callback; }
   void onFirmwareConfirmed(FirmwareConfirmed callback) { firmwareConfirmed_ = callback; }
 
  private:
-  void handleGetRoot();
-  void handlePostRoot();
+  // GET / — devolve a pagina embutida byte a byte, sem montar String nenhuma.
+  void handleGetPage();
+  void handleGetStatus();
+  void handleGetConfig();
+  void handlePostConfig();
   void handleNotFound();
+
+  // ETag da pagina: hash do conteudo embutido, calculado uma vez no primeiro pedido.
+  // Hash do conteudo e nao a versao do firmware porque os dois nao andam juntos durante o
+  // desenvolvimento — editar o HTML sem novo commit deixaria a versao igual e o navegador
+  // serviria a pagina velha do cache, com o sintoma de "minha alteracao nao apareceu".
+  const String& pageETag();
 
   // Os dois lados do POST /update. O de upload roda DENTRO do parser da requisicao, um
   // bloco por vez, antes de o handler de POST existir; o de fim roda depois, uma vez.
@@ -70,15 +87,22 @@ class HttpConfigHandler {
   void handleConfirmFirmware();
 
   String firmwareStateText() const;
-
-  // Botao de confirmar, ou nada. So aparece com a imagem em janela de verificacao: nos
-  // outros estados nao ha o que confirmar, e um botao que nao faz nada convida a clicar.
-  String firmwareConfirmHtml() const;
   String uplinkStatusText() const;
   String clockTextOrExcuse() const;
-  String timezoneOptionsHtml(const RouterSettings& current) const;
-  String adminNoticeHtml(const RouterSettings& current) const;
+
+  // Lista de fusos como array JSON. Montada aqui, com escape campo a campo, em vez de num
+  // JsonArray no dominio: e a unica lista que a API devolve, e abstracao com uma ocorrencia
+  // so custa mais do que a concatenacao que ela esconderia.
+  String timezoneOptionsJson() const;
   bool authenticate(const RouterSettings& current);
+
+  // Responde JSON e proibe cache. Sem o no-store o navegador reaproveitaria o status
+  // anterior no polling seguinte e a tela congelaria mostrando dado velho.
+  void sendJson(int code, const String& json);
+
+  // Erro como JSON, no mesmo formato que a pagina espera em toda rota de API: um objeto com
+  // "erro". Texto plano aqui obrigaria o JS a adivinhar o tipo do corpo pelo status.
+  void sendJsonError(int code, const String& message);
 
   LoadSettingsUseCase& loadUseCase_;
   SaveSettingsUseCase& saveUseCase_;
@@ -88,6 +112,8 @@ class HttpConfigHandler {
   UplinkStatusProvider uplinkStatus_ = nullptr;
   LocalSettingsChanged localChanged_ = nullptr;
   ClockTextProvider clockText_ = nullptr;
+  BatteryVoltageProvider batteryVoltage_ = nullptr;
+  String pageETag_;
   RestartRequested restartRequested_ = nullptr;
   FirmwareConfirmed firmwareConfirmed_ = nullptr;
 
