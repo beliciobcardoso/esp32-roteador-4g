@@ -61,6 +61,12 @@
             box-sizing: border-box;
         }
 
+        /* O header e sticky, entao qualquer rolagem ancorada precisa descontar a altura
+           dele — sem isso a primeira linha da tela nova aparece cortada por baixo da barra. */
+        html {
+            scroll-padding-top: 8rem;
+        }
+
         body {
             margin: 0;
             background: var(--bg);
@@ -225,6 +231,11 @@
             word-break: break-word;
         }
 
+        .readout.excuse {
+            font-size: 0.95rem;
+            color: var(--ink-dim);
+        }
+
         .readout .unit {
             font-size: 0.8rem;
             color: var(--ink-dim);
@@ -244,15 +255,33 @@
             font-size: 0.85rem;
         }
 
-        /* Grid 1fr/auto e nao flex com space-between: no flex o rotulo longo espremia o
-           valor ate "nao" quebrar em "na" e "o" numa tela de 360 px. Aqui o valor pede a
-           largura que precisa e quem quebra e o rotulo, que e prosa e aguenta. */
+        /* Rotulo e valor lado a lado enquanto couber. O minmax(0, ...) nas DUAS colunas
+           e o que impede o acidente que aconteceu na placa: com `auto`, a coluna do valor
+           nao encolhe abaixo do proprio min-content, e uma versao de firmware comprida
+           ("88d4901-dirty (Sep 20 2026 20:15:33) build d7385182") passou por cima do
+           rotulo, que virou "Vers".
+
+           O piso min-content na coluna do valor conserta o defeito oposto, que aparece
+           quando o card e estreito: sem ele um rotulo comprido espreme o valor ate "nao"
+           descer uma letra por linha. Quem cede e o rotulo, que e prosa; valor que nao
+           cabe nem assim vai para .longa. */
         .rows div {
             display: grid;
-            grid-template-columns: 1fr auto;
+            grid-template-columns: minmax(0, 1fr) minmax(min-content, auto);
             gap: 0.25rem 1rem;
             border-bottom: 1px dotted var(--line);
             padding-bottom: 0.3rem;
+        }
+
+        /* Valor que nao cabe ao lado do rotulo ocupa a linha de baixo inteira, alinhado a
+           esquerda. Espremer um identificador de build numa coluna de 8rem produz uma
+           escadinha de duas letras por linha, que e pior do que gastar a linha. */
+        .rows div.longa {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .rows div.longa dd {
+            text-align: left;
         }
 
         .rows dt {
@@ -264,6 +293,7 @@
            o que a versao do firmware precisa e "nao" nao. */
         .rows dd {
             margin: 0;
+            min-width: 0;
             text-align: right;
             overflow-wrap: anywhere;
         }
@@ -280,6 +310,18 @@
             height: 100%;
             background: var(--signal);
             transition: width 0.4s ease;
+        }
+
+        /* A cor acompanha o numero. Barra verde com 18% desmente o texto ao lado dela, e
+           quem olha de relance fica com a impressao errada — que e o unico jeito de olhar
+           um painel. Os cortes sao os mesmos do voltageToPercent do dominio: abaixo de 20%
+           a placa esta perto de desligar. */
+        .meter span[data-nivel="baixo"] {
+            background: var(--fail);
+        }
+
+        .meter span[data-nivel="medio"] {
+            background: var(--warn);
         }
 
         form {
@@ -445,8 +487,7 @@
             <p class="sub" id="bar-uplink">carregando…</p>
         </div>
         <nav>
-            <a href="#/" data-route="#/">Início</a>
-            <a href="#/status" data-route="#/status">Status</a>
+            <a href="#/" data-route="#/">Status</a>
             <a href="#/config" data-route="#/config">Configuração</a>
         </nav>
     </header>
@@ -457,30 +498,7 @@
                 do roteador depois que ela carrega.</p>
         </noscript>
 
-        <section id="view-home" hidden>
-            <h2>Início</h2>
-            <div class="grid">
-                <article class="card">
-                    <h3>Uplink 4G</h3>
-                    <p class="readout" id="home-uplink">—</p>
-                    <p class="note" id="home-uplink-note"></p>
-                </article>
-                <article class="card">
-                    <h3>Relógio</h3>
-                    <p class="readout" id="home-clock">—</p>
-                    <p class="note">Sincronizado por NTP quando o 4G está no ar.</p>
-                </article>
-                <article class="card">
-                    <h3>Bateria</h3>
-                    <p class="readout"><span id="home-battery">—</span><span class="unit">V</span></p>
-                    <div class="meter"><span id="home-battery-bar" style="width:0"></span></div>
-                    <p class="note" id="home-battery-note"></p>
-                </article>
-            </div>
-        </section>
-
         <section id="view-status" hidden>
-            <h2>Status</h2>
             <div class="grid">
                 <article class="card">
                     <h3>Uplink 4G</h3>
@@ -491,7 +509,7 @@
                             <dd id="status-failures">—</dd>
                         </div>
                         <div>
-                            <dt>Já reiniciou por falta de uplink</dt>
+                            <dt>Reiniciou sem uplink</dt>
                             <dd id="status-rebooted">—</dd>
                         </div>
                     </dl>
@@ -513,11 +531,11 @@
                             <dt>Slot</dt>
                             <dd id="status-slot">—</dd>
                         </div>
-                        <div>
+                        <div class="longa">
                             <dt>Versão</dt>
                             <dd id="status-version">—</dd>
                         </div>
-                        <div>
+                        <div class="longa">
                             <dt>Imagem</dt>
                             <dd id="status-image">—</dd>
                         </div>
@@ -527,8 +545,6 @@
         </section>
 
         <section id="view-config" hidden>
-            <h2>Configuração</h2>
-
             <p class="alert" id="admin-notice" hidden></p>
             <p class="alert" id="firmware-confirm-notice" hidden></p>
             <p hidden id="firmware-confirm-wrap">
@@ -587,7 +603,7 @@
                     </label>
                 </fieldset>
 
-                <p><button type="submit" id="config-submit">Salvar configuração</button></p>
+                <p><button type="submit" id="config-submit" disabled>Salvar configuração</button></p>
             </form>
 
             <h2>Atualização de firmware</h2>
@@ -606,10 +622,6 @@
         </section>
     </main>
 
-    <footer>
-        <span id="foot-version">—</span>
-    </footer>
-
     <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
 
     <script>
@@ -622,8 +634,10 @@
         const POLL_MS = 3000;
 
         const el = (id) => document.getElementById(id);
+        // '#/' e '#/status' mostram a mesma coisa: o link do nav usa '#/', e o
+        // '#/status' continua respondendo porque e o endereco que ja foi dado para alguem.
         const views = {
-            '#/': el('view-home'),
+            '#/': el('view-status'),
             '#/status': el('view-status'),
             '#/config': el('view-config'),
         };
@@ -668,16 +682,23 @@
 
         function route() {
             const wanted = views[location.hash] ? location.hash : '#/';
-            for (const [hash, section] of Object.entries(views)) {
-                section.hidden = hash !== wanted;
+            const alvo = views[wanted];
+            for (const section of new Set(Object.values(views))) {
+                section.hidden = section !== alvo;
             }
+            // '#/status' marca o mesmo link que '#/', senão nenhuma aba fica ativa para
+            // quem chegou por aquele endereço.
+            const ativo = wanted === '#/status' ? '#/' : wanted;
             for (const link of document.querySelectorAll('nav a')) {
-                if (link.dataset.route === wanted) {
+                if (link.dataset.route === ativo) {
                     link.setAttribute('aria-current', 'page');
                 } else {
                     link.removeAttribute('aria-current');
                 }
             }
+            // Trocar de aba volta ao topo. Sem isto a tela nova abre na altura em que a
+            // anterior estava, e a primeira linha aparece cortada sob o header grudado.
+            window.scrollTo(0, 0);
         }
 
         function renderStatus(data) {
@@ -687,28 +708,25 @@
             el('led').dataset.state = data.uplink_state;
             el('bar-uplink').textContent = data.uplink_text;
 
-            el('home-uplink').textContent = labelForState(data.uplink_state);
-            el('home-uplink-note').textContent = data.uplink_text;
             el('status-uplink').textContent = labelForState(data.uplink_state);
             el('status-failures').textContent = String(data.uplink_failures);
             el('status-rebooted').textContent = data.uplink_rebooted ? 'sim' : 'não';
 
-            el('home-clock').textContent = data.clock_text;
             el('status-clock').textContent = data.clock_text;
+            el('status-clock').classList.toggle('excuse', !data.clock_synced);
 
             const volts = data.battery_volts.toFixed(2);
             const percentText = data.battery_percent + '% estimado';
-            el('home-battery').textContent = volts;
             el('status-battery').textContent = volts;
-            el('home-battery-bar').style.width = data.battery_percent + '%';
-            el('status-battery-bar').style.width = data.battery_percent + '%';
-            el('home-battery-note').textContent = percentText;
+            const barra = el('status-battery-bar');
+            barra.style.width = data.battery_percent + '%';
+            barra.dataset.nivel = data.battery_percent < 20 ? 'baixo'
+                : data.battery_percent < 40 ? 'medio' : 'alto';
             el('status-battery-note').textContent = percentText;
 
             el('status-slot').textContent = data.firmware_slot;
             el('status-version').textContent = data.firmware_version;
             el('status-image').textContent = data.firmware_state;
-            el('foot-version').textContent = data.firmware_slot + ' · ' + data.firmware_version;
 
             const notice = el('admin-notice');
             notice.hidden = !data.admin_password_pending;
@@ -780,6 +798,7 @@
                     select.appendChild(option);
                 }
                 select.value = data.timezone;
+                el('config-submit').disabled = false;
             } catch (error) {
                 showToast('Não foi possível carregar a configuração: ' + error.message, 'erro');
             }
