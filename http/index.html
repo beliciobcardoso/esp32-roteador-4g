@@ -1,127 +1,911 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Config Roteador 4G</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="dark light">
+    <title>Roteador 4G</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #0056b3;
+        /* Sem @font-face e sem folha externa de proposito: a pagina tem que abrir com o
+           uplink 4G caido — e justamente quando ele cai que alguem vem olhar. Qualquer
+           recurso de fora vira espera de DNS que nunca resolve. A voz da tipografia sai da
+           monoespacada do sistema, que e o que um painel de equipamento pede. */
+        :root {
+            color-scheme: dark light;
+
+            --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+
+            --bg: #0b0f0e;
+            --bg-deep: #070a09;
+            --surface: #121917;
+            --surface-2: #18211e;
+            --line: #26332f;
+            --line-strong: #3a4b45;
+            --ink: #dfe9e5;
+            --ink-dim: #8ba098;
+            --ink-faint: #5d726b;
+
+            --signal: #7ee787;
+            --warn: #f0b429;
+            --fail: #ff6b5e;
+            --accent: #4dd4c0;
+
+            --pad: clamp(1rem, 0.6rem + 1.6vw, 2rem);
+            --gap: clamp(0.75rem, 0.5rem + 1vw, 1.25rem);
+            --tap: 44px;
         }
 
-        nav {
-            margin-bottom: 20px;
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #eceeec;
+                --bg-deep: #dfe3e0;
+                --surface: #f8faf9;
+                --surface-2: #eff3f1;
+                --line: #cdd6d2;
+                --line-strong: #a9b8b2;
+                --ink: #16211e;
+                --ink-dim: #4a5a55;
+                --ink-faint: #74857f;
+
+                --signal: #147a3d;
+                --warn: #8a5a00;
+                --fail: #b4241a;
+                --accent: #0e6f63;
+            }
         }
 
-        nav a {
-            text-decoration: none;
-            color: #007BFF;
-            background-color: #0056b3;
-            padding: 5px 10px;
-            margin-right: 10px;
-        }
-
-        nav a:hover {
-            text-decoration: underline;
-        }
-
-        form {
-            max-width: 400px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 10px;
-        }
-
-        input[type="text"],
-        input[type="password"],
-        input[type="number"],
-        input[type="file"],
-        select {
-            width: 100%;
-            padding: 8px;
-            margin-top: 4px;
+        *,
+        *::before,
+        *::after {
             box-sizing: border-box;
         }
 
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: var(--mono);
+            font-size: 15px;
+            line-height: 1.55;
+            -webkit-text-size-adjust: 100%;
+        }
+
+        /* Barra de topo: identidade do equipamento e o LED que responde a pergunta que
+           traz a pessoa aqui — o 4G esta de pe? Fica visivel em todas as telas. */
+        .bar {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--bg-deep);
+            border-bottom: 1px solid var(--line);
+            padding: var(--pad) var(--pad) 0;
+            padding-top: max(var(--pad), env(safe-area-inset-top));
+        }
+
+        .mark {
+            display: flex;
+            align-items: baseline;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        .mark h1 {
+            margin: 0;
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+        }
+
+        .mark .sub {
+            margin: 0;
+            color: var(--ink-dim);
+            font-size: 0.8rem;
+        }
+
+        /* O LED e o unico elemento decorativo com trabalho a fazer: a cor carrega o estado
+           e a pulsacao diz que o dado esta vivo, nao congelado numa tela velha. */
+        .led {
+            width: 0.7rem;
+            height: 0.7rem;
+            flex: none;
+            align-self: center;
+            border-radius: 50%;
+            background: var(--ink-faint);
+            box-shadow: 0 0 0 1px var(--line-strong);
+        }
+
+        .led[data-state="online"] {
+            background: var(--signal);
+            box-shadow: 0 0 0 1px var(--signal), 0 0 10px -1px var(--signal);
+        }
+
+        .led[data-state="connecting"] {
+            background: var(--warn);
+            box-shadow: 0 0 0 1px var(--warn), 0 0 10px -1px var(--warn);
+            animation: pulse 1.4s ease-in-out infinite;
+        }
+
+        .led[data-state="backoff"] {
+            background: var(--fail);
+            box-shadow: 0 0 0 1px var(--fail), 0 0 10px -1px var(--fail);
+        }
+
+        @keyframes pulse {
+            50% {
+                opacity: 0.25;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .led[data-state="connecting"] {
+                animation: none;
+            }
+        }
+
+        nav {
+            display: flex;
+            gap: 0.25rem;
+            margin-top: var(--gap);
+            overflow-x: auto;
+        }
+
+        nav a {
+            flex: none;
+            min-height: var(--tap);
+            display: inline-flex;
+            align-items: center;
+            padding: 0 1rem;
+            color: var(--ink-dim);
+            text-decoration: none;
+            font-size: 0.78rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            border-bottom: 2px solid transparent;
+        }
+
+        nav a:hover {
+            color: var(--ink);
+        }
+
+        nav a[aria-current="page"] {
+            color: var(--ink);
+            border-bottom-color: var(--accent);
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        main {
+            padding: var(--pad);
+            padding-bottom: max(var(--pad), env(safe-area-inset-bottom));
+            max-width: 68rem;
+            margin: 0 auto;
+        }
+
+        h2 {
+            margin: 0 0 var(--gap);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--ink-dim);
+        }
+
+        .grid {
+            display: grid;
+            gap: var(--gap);
+            grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            padding: var(--gap);
+        }
+
+        .card h3 {
+            margin: 0 0 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--ink-faint);
+        }
+
+        /* Numeros tabulares: sem isso a leitura da bateria dança horizontalmente a cada
+           atualizacao do polling, e o olho persegue o digito em vez de ler o valor. */
+        .readout {
+            font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2rem);
+            font-variant-numeric: tabular-nums;
+            line-height: 1.2;
+            word-break: break-word;
+        }
+
+        .readout .unit {
+            font-size: 0.8rem;
+            color: var(--ink-dim);
+            margin-left: 0.2rem;
+        }
+
+        .note {
+            margin: 0.4rem 0 0;
+            font-size: 0.8rem;
+            color: var(--ink-dim);
+        }
+
+        .rows {
+            margin: 0;
+            display: grid;
+            gap: 0.35rem;
+            font-size: 0.85rem;
+        }
+
+        /* Grid 1fr/auto e nao flex com space-between: no flex o rotulo longo espremia o
+           valor ate "nao" quebrar em "na" e "o" numa tela de 360 px. Aqui o valor pede a
+           largura que precisa e quem quebra e o rotulo, que e prosa e aguenta. */
+        .rows div {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 0.25rem 1rem;
+            border-bottom: 1px dotted var(--line);
+            padding-bottom: 0.3rem;
+        }
+
+        .rows dt {
+            color: var(--ink-faint);
+            min-width: 0;
+        }
+
+        /* anywhere e nao break-all: quebra dentro da palavra so quando nao ha outro jeito,
+           o que a versao do firmware precisa e "nao" nao. */
+        .rows dd {
+            margin: 0;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+
+        .meter {
+            margin-top: 0.6rem;
+            height: 0.35rem;
+            background: var(--bg-deep);
+            border: 1px solid var(--line);
+        }
+
+        .meter span {
+            display: block;
+            height: 100%;
+            background: var(--signal);
+            transition: width 0.4s ease;
+        }
+
+        form {
+            display: grid;
+            gap: var(--gap);
+        }
+
+        fieldset {
+            border: 1px solid var(--line);
+            background: var(--surface);
+            padding: var(--gap);
+            margin: 0;
+            display: grid;
+            gap: 0.85rem;
+        }
+
+        legend {
+            padding: 0 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--ink-faint);
+        }
+
+        label {
+            display: grid;
+            gap: 0.3rem;
+            font-size: 0.78rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--ink-dim);
+        }
+
+        input,
+        select {
+            min-height: var(--tap);
+            width: 100%;
+            padding: 0 0.7rem;
+            font: inherit;
+            font-size: 0.95rem;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--ink);
+            background: var(--bg-deep);
+            border: 1px solid var(--line-strong);
+            border-radius: 0;
+        }
+
+        input::placeholder {
+            color: var(--ink-faint);
+        }
+
+        input[type="file"] {
+            padding: 0.55rem 0.7rem;
+        }
+
+        .hint {
+            font-size: 0.72rem;
+            color: var(--ink-faint);
+            text-transform: none;
+            letter-spacing: normal;
+        }
+
         button {
-            padding: 10px 15px;
-            background-color: #007BFF;
-            color: white;
-            border: none;
+            min-height: var(--tap);
+            padding: 0 1.2rem;
+            font: inherit;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--bg-deep);
+            background: var(--accent);
+            border: 1px solid var(--accent);
+            border-radius: 0;
             cursor: pointer;
         }
 
-        button:hover {
-            background-color: #0056b3;
+        button:hover:not(:disabled) {
+            filter: brightness(1.12);
+        }
+
+        button:disabled {
+            opacity: 0.45;
+            cursor: progress;
+        }
+
+        button.ghost {
+            color: var(--ink);
+            background: transparent;
+            border-color: var(--line-strong);
         }
 
         .alert {
-            background-color: #ffdd57;
-            color: #3d3000;
-            padding: 10px;
-            max-width: 400px;
-            font-weight: bold;
+            border-left: 3px solid var(--warn);
+            background: var(--surface-2);
+            padding: 0.7rem var(--gap);
+            margin: 0 0 var(--gap);
+            font-size: 0.85rem;
+        }
+
+        .alert.danger {
+            border-left-color: var(--fail);
+        }
+
+        /* Mensagem de resultado ancorada no rodape da tela: no celular o topo do formulario
+           ja rolou para fora quando a resposta chega, e um aviso la em cima passaria batido. */
+        .toast {
+            position: fixed;
+            left: var(--pad);
+            right: var(--pad);
+            bottom: max(var(--pad), env(safe-area-inset-bottom));
+            z-index: 20;
+            margin: 0 auto;
+            max-width: 40rem;
+            background: var(--surface-2);
+            border: 1px solid var(--line-strong);
+            border-left: 3px solid var(--accent);
+            padding: 0.8rem var(--gap);
+            font-size: 0.85rem;
+            box-shadow: 0 8px 28px -12px rgba(0, 0, 0, 0.8);
+        }
+
+        .toast[data-kind="erro"] {
+            border-left-color: var(--fail);
+        }
+
+        .toast[hidden] {
+            display: none;
+        }
+
+        progress {
+            width: 100%;
+            height: 0.5rem;
+            accent-color: var(--accent);
+        }
+
+        footer {
+            padding: var(--pad);
+            padding-top: 0;
+            max-width: 68rem;
+            margin: 0 auto;
+            color: var(--ink-faint);
+            font-size: 0.72rem;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        .stale {
+            opacity: 0.45;
         }
     </style>
 </head>
 
 <body>
-    <nav>
-        <a href="/">Home</a> |
-        <a href="/status">Status</a> |
-        <a href="/config">Configuração</a>
-    </nav>
-    <div id="home">
-        <h1>Bem-vindo ao Roteador 4G</h1>
-        <p>Use o menu acima para navegar entre as páginas de status e configuração.</p>
-    </div>
-    <div id="status">
-        <h1>Status do Roteador 4G</h1>
-        <p>Uplink 4G: {{UPLINK_STATUS}}</p>
-        <p>SSID WiFi: {{SSID}}</p>
-        <p>APN: {{APN}}</p>
-        <p>Usuario APN: {{APN_USER}}</p>
-        <p>Usuario admin: {{ADMIN_USER}}</p>
-        <p>Relogio: {{CLOCK}}</p>
-    </div>
-    <div id="config">
-        <h1>Configuracao do Roteador 4G</h1>
-        {{ADMIN_NOTICE}}
-        <h2>Uplink 4G</h2>
-        <p>{{UPLINK_STATUS}}</p>
-        <form method="POST" action="/">
-            <label>SSID WiFi: <input type="text" name="wifi_ssid" value="{{SSID}}"></label><br>
-            <label>Senha WiFi: <input type="password" name="wifi_password"
-                    placeholder="deixe em branco para manter"></label><br>
-            <label>APN: <input type="text" name="apn" value="{{APN}}"></label><br>
-            <label>Usuario APN: <input type="text" name="apn_user" value="{{APN_USER}}"></label><br>
-            <label>Senha APN: <input type="password" name="apn_password"
-                    placeholder="deixe em branco para manter"></label><br>
-            <label>Usuario admin: <input type="text" name="admin_user" value="{{ADMIN_USER}}"></label><br>
-            <label>Senha admin: <input type="password" name="admin_password"
-                    placeholder="deixe em branco para manter"></label><br>
-            <label>Fuso horario: <select name="timezone">{{TIMEZONE_OPTIONS}}</select></label><br>
-            <label>Divisor da bateria: <input type="number" name="battery_ratio" step="0.01" min="1.4" max="10"
-                    value="{{BATTERY_RATIO}}"></label><br>
-            <button type="submit">Salvar</button>
-        </form>
-        <h2>Firmware</h2>
-        <p>Slot em execucao: {{FIRMWARE_SLOT}}</p>
-        <p>Versao: {{FIRMWARE_VERSION}}</p>
-        <p>Estado da imagem: {{FIRMWARE_STATE}}</p>
-        {{FIRMWARE_CONFIRM}}
-        <!-- enctype e obrigatorio: sem ele o navegador manda o nome do arquivo como texto e o
-         corpo chega sem um byte do firmware. -->
-        <form method="POST" action="/update" enctype="multipart/form-data">
-            <label>Arquivo firmware.bin: <input type="file" name="firmware" accept=".bin"></label><br>
-            <button type="submit">Enviar e reiniciar</button>
-        </form>
-    </div>
+    <header class="bar">
+        <div class="mark">
+            <span class="led" id="led" data-state=""></span>
+            <h1>Roteador 4G</h1>
+            <p class="sub" id="bar-uplink">carregando…</p>
+        </div>
+        <nav>
+            <a href="#/" data-route="#/">Início</a>
+            <a href="#/status" data-route="#/status">Status</a>
+            <a href="#/config" data-route="#/config">Configuração</a>
+        </nav>
+    </header>
+
+    <main>
+        <noscript>
+            <p class="alert danger">Esta página precisa de JavaScript. Os dados são buscados
+                do roteador depois que ela carrega.</p>
+        </noscript>
+
+        <section id="view-home" hidden>
+            <h2>Início</h2>
+            <div class="grid">
+                <article class="card">
+                    <h3>Uplink 4G</h3>
+                    <p class="readout" id="home-uplink">—</p>
+                    <p class="note" id="home-uplink-note"></p>
+                </article>
+                <article class="card">
+                    <h3>Relógio</h3>
+                    <p class="readout" id="home-clock">—</p>
+                    <p class="note">Sincronizado por NTP quando o 4G está no ar.</p>
+                </article>
+                <article class="card">
+                    <h3>Bateria</h3>
+                    <p class="readout"><span id="home-battery">—</span><span class="unit">V</span></p>
+                    <div class="meter"><span id="home-battery-bar" style="width:0"></span></div>
+                    <p class="note" id="home-battery-note"></p>
+                </article>
+            </div>
+        </section>
+
+        <section id="view-status" hidden>
+            <h2>Status</h2>
+            <div class="grid">
+                <article class="card">
+                    <h3>Uplink 4G</h3>
+                    <p class="readout" id="status-uplink">—</p>
+                    <dl class="rows">
+                        <div>
+                            <dt>Falhas seguidas</dt>
+                            <dd id="status-failures">—</dd>
+                        </div>
+                        <div>
+                            <dt>Já reiniciou por falta de uplink</dt>
+                            <dd id="status-rebooted">—</dd>
+                        </div>
+                    </dl>
+                </article>
+                <article class="card">
+                    <h3>Relógio</h3>
+                    <p class="readout" id="status-clock">—</p>
+                </article>
+                <article class="card">
+                    <h3>Bateria</h3>
+                    <p class="readout"><span id="status-battery">—</span><span class="unit">V</span></p>
+                    <div class="meter"><span id="status-battery-bar" style="width:0"></span></div>
+                    <p class="note" id="status-battery-note"></p>
+                </article>
+                <article class="card">
+                    <h3>Firmware</h3>
+                    <dl class="rows">
+                        <div>
+                            <dt>Slot</dt>
+                            <dd id="status-slot">—</dd>
+                        </div>
+                        <div>
+                            <dt>Versão</dt>
+                            <dd id="status-version">—</dd>
+                        </div>
+                        <div>
+                            <dt>Imagem</dt>
+                            <dd id="status-image">—</dd>
+                        </div>
+                    </dl>
+                </article>
+            </div>
+        </section>
+
+        <section id="view-config" hidden>
+            <h2>Configuração</h2>
+
+            <p class="alert" id="admin-notice" hidden></p>
+            <p class="alert" id="firmware-confirm-notice" hidden></p>
+            <p hidden id="firmware-confirm-wrap">
+                <button type="button" id="firmware-confirm">Confirmar atualização</button>
+            </p>
+
+            <form id="config-form" autocomplete="off">
+                <fieldset>
+                    <legend>Wi-Fi do roteador</legend>
+                    <label>SSID
+                        <input type="text" name="wifi_ssid" id="wifi_ssid" required maxlength="32">
+                    </label>
+                    <label>Senha
+                        <input type="password" name="wifi_password" autocomplete="new-password"
+                            placeholder="deixe em branco para manter">
+                        <span class="hint">Trocar SSID ou senha só vale depois de reiniciar a placa,
+                            e derruba todos os clientes associados — inclusive este.</span>
+                    </label>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Uplink 4G</legend>
+                    <label>APN
+                        <input type="text" name="apn" id="apn" required>
+                    </label>
+                    <label>Usuário do APN
+                        <input type="text" name="apn_user" id="apn_user" autocomplete="off">
+                    </label>
+                    <label>Senha do APN
+                        <input type="password" name="apn_password" autocomplete="new-password"
+                            placeholder="deixe em branco para manter">
+                        <span class="hint">Alterar o APN reconecta o 4G na hora. Pode levar até 1 minuto.</span>
+                    </label>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Acesso administrativo</legend>
+                    <label>Usuário
+                        <input type="text" name="admin_user" id="admin_user" required autocomplete="username">
+                    </label>
+                    <label>Senha
+                        <input type="password" name="admin_password" autocomplete="new-password"
+                            placeholder="deixe em branco para manter">
+                    </label>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Local</legend>
+                    <label>Fuso horário
+                        <select name="timezone" id="timezone" required></select>
+                    </label>
+                    <label>Divisor da bateria
+                        <input type="number" name="battery_ratio" id="battery_ratio" step="0.01" min="1.4"
+                            max="10" required inputmode="decimal">
+                        <span class="hint">Calibrado por multímetro, por placa. Use ponto, não vírgula.</span>
+                    </label>
+                </fieldset>
+
+                <p><button type="submit" id="config-submit">Salvar configuração</button></p>
+            </form>
+
+            <h2>Atualização de firmware</h2>
+            <form id="update-form">
+                <fieldset>
+                    <legend>Enviar imagem</legend>
+                    <label>Arquivo firmware.bin
+                        <input type="file" name="firmware" id="firmware-file" accept=".bin" required>
+                    </label>
+                    <progress id="update-progress" value="0" max="100" hidden></progress>
+                    <p><button type="submit" id="update-submit">Enviar e reiniciar</button></p>
+                    <span class="hint">O envio leva cerca de um minuto. Não feche esta página nem
+                        desligue a placa durante a gravação.</span>
+                </fieldset>
+            </form>
+        </section>
+    </main>
+
+    <footer>
+        <span id="foot-version">—</span>
+    </footer>
+
+    <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+
+    <script>
+        'use strict';
+
+        // credentials: 'same-origin' em toda chamada: as rotas de API são cobertas pelo
+        // mesmo Basic Auth da página, e sem isso o navegador não reenvia a credencial que
+        // ele já tem — o primeiro polling viria 401 e a tela ficaria vazia sem explicação.
+        const FETCH_OPTS = { credentials: 'same-origin', cache: 'no-store' };
+        const POLL_MS = 3000;
+
+        const el = (id) => document.getElementById(id);
+        const views = {
+            '#/': el('view-home'),
+            '#/status': el('view-status'),
+            '#/config': el('view-config'),
+        };
+
+        let pollTimer = null;
+        let lastStatus = null;
+
+        // SSID como o roteador respondeu, para saber se o formulário está mudando o Wi-Fi.
+        // Variável e não input.defaultValue: defaultValue reflete o atributo do HTML, que
+        // aqui nunca é escrito porque o campo é preenchido pela propriedade .value — ele
+        // ficaria sempre vazio e o aviso dispararia em toda gravação.
+        let loadedWifiSsid = null;
+
+        function showToast(message, kind) {
+            const toast = el('toast');
+            toast.textContent = message;
+            toast.dataset.kind = kind || 'ok';
+            toast.hidden = false;
+        }
+
+        function hideToast() {
+            el('toast').hidden = true;
+        }
+
+        // O corpo de erro do firmware é sempre {"erro": "..."}. Quando nem isso chega — 401
+        // do Basic Auth, conexão cortada no meio — a frase genérica diz o status, porque
+        // "falhou" sozinho não ajuda ninguém a decidir o que fazer em seguida.
+        async function apiFetch(url, options) {
+            const response = await fetch(url, Object.assign({}, FETCH_OPTS, options || {}));
+            let body = null;
+            try {
+                body = await response.json();
+            } catch (parseError) {
+                body = null;
+            }
+            if (!response.ok) {
+                const detail = body && body.erro ? body.erro : 'HTTP ' + response.status;
+                throw new Error(detail);
+            }
+            return body;
+        }
+
+        function route() {
+            const wanted = views[location.hash] ? location.hash : '#/';
+            for (const [hash, section] of Object.entries(views)) {
+                section.hidden = hash !== wanted;
+            }
+            for (const link of document.querySelectorAll('nav a')) {
+                if (link.dataset.route === wanted) {
+                    link.setAttribute('aria-current', 'page');
+                } else {
+                    link.removeAttribute('aria-current');
+                }
+            }
+        }
+
+        function renderStatus(data) {
+            lastStatus = data;
+            document.body.classList.remove('stale');
+
+            el('led').dataset.state = data.uplink_state;
+            el('bar-uplink').textContent = data.uplink_text;
+
+            el('home-uplink').textContent = labelForState(data.uplink_state);
+            el('home-uplink-note').textContent = data.uplink_text;
+            el('status-uplink').textContent = labelForState(data.uplink_state);
+            el('status-failures').textContent = String(data.uplink_failures);
+            el('status-rebooted').textContent = data.uplink_rebooted ? 'sim' : 'não';
+
+            el('home-clock').textContent = data.clock_text;
+            el('status-clock').textContent = data.clock_text;
+
+            const volts = data.battery_volts.toFixed(2);
+            const percentText = data.battery_percent + '% estimado';
+            el('home-battery').textContent = volts;
+            el('status-battery').textContent = volts;
+            el('home-battery-bar').style.width = data.battery_percent + '%';
+            el('status-battery-bar').style.width = data.battery_percent + '%';
+            el('home-battery-note').textContent = percentText;
+            el('status-battery-note').textContent = percentText;
+
+            el('status-slot').textContent = data.firmware_slot;
+            el('status-version').textContent = data.firmware_version;
+            el('status-image').textContent = data.firmware_state;
+            el('foot-version').textContent = data.firmware_slot + ' · ' + data.firmware_version;
+
+            const notice = el('admin-notice');
+            notice.hidden = !data.admin_password_pending;
+            notice.textContent = data.admin_notice;
+
+            // O bloco de confirmação só existe enquanto a imagem está em verificação. Fora
+            // dessa janela não há o que confirmar, e um botão que não faz nada convida a
+            // clicar e a desconfiar do resto da tela.
+            const confirmNotice = el('firmware-confirm-notice');
+            confirmNotice.hidden = !data.firmware_needs_confirmation;
+            el('firmware-confirm-wrap').hidden = !data.firmware_needs_confirmation;
+            if (data.firmware_needs_confirmation) {
+                confirmNotice.textContent = 'Esta atualização ainda não foi confirmada. Confira se '
+                    + 'tudo está funcionando e confirme em até ' + data.firmware_deadline_min
+                    + ' minutos. Sem confirmação, a placa reinicia sozinha no firmware anterior.';
+            }
+        }
+
+        function labelForState(state) {
+            if (state === 'online') return 'Online';
+            if (state === 'backoff') return 'Sem conexão';
+            return 'Conectando';
+        }
+
+        async function pollStatus() {
+            try {
+                renderStatus(await apiFetch('/api/status'));
+            } catch (error) {
+                // Marca a tela como velha em vez de apagar os números. Durante um reboot ou
+                // uma troca de APN o polling falha por segundos, e zerar tudo faria parecer
+                // que a placa perdeu o estado.
+                document.body.classList.add('stale');
+                el('bar-uplink').textContent = 'sem resposta do roteador';
+            }
+        }
+
+        // Polling parado com a aba escondida: uma aba esquecida aberta bateria no
+        // handleClient() a cada 3 s para sempre, no mesmo loop que roda a supervisão do
+        // uplink e a leitura da bateria.
+        function schedulePolling() {
+            if (pollTimer !== null) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+            if (document.hidden) return;
+            pollStatus();
+            pollTimer = setInterval(pollStatus, POLL_MS);
+        }
+
+        async function loadConfig() {
+            try {
+                const data = await apiFetch('/api/config');
+                el('wifi_ssid').value = data.wifi_ssid;
+                loadedWifiSsid = data.wifi_ssid;
+                el('apn').value = data.apn;
+                el('apn_user').value = data.apn_user;
+                el('admin_user').value = data.admin_user;
+                el('battery_ratio').value = data.battery_ratio;
+
+                const select = el('timezone');
+                select.textContent = '';
+                for (const zone of data.timezones) {
+                    const option = document.createElement('option');
+                    // textContent e não innerHTML: o rótulo vem do firmware, mas montar
+                    // marcação a partir de dado é o hábito que vira XSS no dia em que a
+                    // origem do dado mudar.
+                    option.value = zone.posix;
+                    option.textContent = zone.label;
+                    select.appendChild(option);
+                }
+                select.value = data.timezone;
+            } catch (error) {
+                showToast('Não foi possível carregar a configuração: ' + error.message, 'erro');
+            }
+        }
+
+        async function submitConfig(event) {
+            event.preventDefault();
+            hideToast();
+
+            const form = event.target;
+            const button = el('config-submit');
+            const body = new URLSearchParams(new FormData(form));
+
+            // O aviso vem antes da gravação, não depois: trocar SSID ou senha derruba quem
+            // está enviando o formulário, e o fetch() não tem a desculpa do navegador de
+            // mostrar uma página de erro de conexão — a tela simplesmente pararia.
+            const mudaWifi = (loadedWifiSsid !== null && body.get('wifi_ssid') !== loadedWifiSsid)
+                || Boolean(body.get('wifi_password'));
+            if (mudaWifi) {
+                const ok = confirm('Mudar o Wi-Fi derruba todos os clientes do AP quando a placa '
+                    + 'reiniciar, incluindo este dispositivo. Continuar?');
+                if (!ok) return;
+            }
+
+            button.disabled = true;
+            try {
+                const result = await apiFetch('/api/config', { method: 'POST', body: body });
+                showToast(result.mensagem, 'ok');
+                for (const field of form.querySelectorAll('input[type="password"]')) {
+                    field.value = '';
+                }
+                loadedWifiSsid = body.get('wifi_ssid');
+                pollStatus();
+            } catch (error) {
+                showToast(error.message, 'erro');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        // XMLHttpRequest e não fetch(): o fetch() não expõe progresso de upload, e sem
+        // progresso um envio de quase um megabyte parece uma página travada. O submit cego
+        // era exatamente isso.
+        function submitUpdate(event) {
+            event.preventDefault();
+            hideToast();
+
+            const file = el('firmware-file').files[0];
+            if (!file) {
+                showToast('Escolha o arquivo firmware.bin.', 'erro');
+                return;
+            }
+
+            const button = el('update-submit');
+            const bar = el('update-progress');
+            button.disabled = true;
+            bar.hidden = false;
+            bar.value = 0;
+
+            const body = new FormData();
+            body.append('firmware', file);
+
+            const request = new XMLHttpRequest();
+            request.open('POST', '/update');
+            request.withCredentials = true;
+
+            request.upload.onprogress = (progress) => {
+                if (!progress.lengthComputable) return;
+                bar.value = Math.round((progress.loaded / progress.total) * 100);
+            };
+
+            request.onload = () => {
+                button.disabled = false;
+                let payload = null;
+                try {
+                    payload = JSON.parse(request.responseText);
+                } catch (parseError) {
+                    payload = null;
+                }
+                if (request.status >= 200 && request.status < 300) {
+                    bar.value = 100;
+                    showToast(payload && payload.mensagem ? payload.mensagem : 'Firmware gravado.', 'ok');
+                } else {
+                    bar.hidden = true;
+                    const detail = payload && payload.erro ? payload.erro : 'HTTP ' + request.status;
+                    showToast('Falha na atualização: ' + detail, 'erro');
+                }
+            };
+
+            // Conexão cortada no meio do envio. A placa trata isso sozinha (aborta a
+            // gravação e o slot não fica bootável), mas quem enviou precisa saber que não
+            // adianta esperar o reboot.
+            request.onerror = () => {
+                button.disabled = false;
+                bar.hidden = true;
+                showToast('O envio foi interrompido antes do fim. Nada foi gravado.', 'erro');
+            };
+
+            request.send(body);
+        }
+
+        async function confirmFirmware() {
+            const button = el('firmware-confirm');
+            button.disabled = true;
+            try {
+                const result = await apiFetch('/firmware/confirmar', { method: 'POST' });
+                showToast(result.mensagem, 'ok');
+                pollStatus();
+            } catch (error) {
+                showToast(error.message, 'erro');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        window.addEventListener('hashchange', route);
+        document.addEventListener('visibilitychange', schedulePolling);
+        el('config-form').addEventListener('submit', submitConfig);
+        el('update-form').addEventListener('submit', submitUpdate);
+        el('firmware-confirm').addEventListener('click', confirmFirmware);
+        el('toast').addEventListener('click', hideToast);
+
+        route();
+        loadConfig();
+        schedulePolling();
+    </script>
 </body>
 
 </html>

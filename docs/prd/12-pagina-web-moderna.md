@@ -52,9 +52,16 @@ seja trocado pelo replace seguinte. Some a interpolação, some a classe de bug.
 - `GET /api/config` — o que o formulário edita. **Nunca devolve senha**, nem mascarada: o
   campo vem ausente e a página mostra o placeholder "deixe em branco para manter", igual
   ao comportamento atual do POST.
-- `POST /api/config` — grava. Aceita `application/json`, reaproveitando o
-  `SaveSettingsUseCase` e o `validate()` do domínio sem mudança. Erro volta como JSON com
-  a mensagem de `to_string(SettingsValidationError)`, que já existe.
+- `POST /api/config` — grava, reaproveitando o `SaveSettingsUseCase` e o `validate()` do
+  domínio sem mudança. Erro volta como JSON com a mensagem de
+  `to_string(SettingsValidationError)`, que já existe.
+
+  **O corpo do POST continua `application/x-www-form-urlencoded`, não JSON** — desvio do
+  que este PRD dizia antes da implementação. O `WebServer` já parseia esse formato em
+  `server_.arg()`, enquanto aceitar JSON exigiria escrever um parser no firmware
+  (aninhamento, escapes, `\uXXXX`) para oito campos planos que o navegador codifica com
+  `URLSearchParams` em uma linha. Escrever um parser aqui seria superfície de bug nova em
+  troca de simetria. As respostas são JSON em todas as rotas.
 - `POST /update` e `POST /firmware/confirmar` — ficam como estão no protocolo
   (`multipart/form-data` e form POST). O que muda é o cliente: a página passa a enviar por
   `XMLHttpRequest` para ter `upload.onprogress`, que o `fetch()` não expõe.
@@ -148,6 +155,36 @@ uma falha de upload aparece como página em branco.
 8. Página legível em 360 px de largura e em desktop, nos dois esquemas de cor
 9. `pio test -e native` passando, com teste novo cobrindo a serialização JSON
 10. Tamanho final do `.rodata` embutido medido e registrado aqui
+
+## Tamanho medido
+
+`http/index.html` ficou em **32.491 bytes**, dentro do orçamento de 40 KB. Confirmado no
+binário: `_binary_index_html_end - _binary_index_html_start` = 32.492, os bytes do arquivo
+mais o terminador. A flash do app saiu de 49,4% para **51,1%** de 1,9 MB — +27 KB, que é o
+tamanho da página nova menos os 4 KB da antiga. RAM estática inalterada em 10,6%.
+
+## Validação fora da placa
+
+Feita em 20/09/2026 contra um servidor de mentira que devolve as mesmas rotas e os mesmos
+campos do firmware. Cobre o que não depende de hardware:
+
+- Renderização em 360 px e em desktop, nos dois esquemas de cor, sem scroll horizontal
+- Gravação: `POST` sai, mensagem do firmware aparece, campos de senha são limpos
+- Aviso de troca de Wi-Fi: não aparece numa gravação comum, aparece ao mudar o SSID
+- OTA: progresso chega a 100% e mostra a mensagem; erro 400 esconde a barra e mostra o
+  motivo que veio do firmware
+- Confirmação de firmware: mostra a resposta
+- Queda do polling: a tela é marcada como velha e **mantém** os números em vez de zerá-los,
+  e se recupera sozinha quando as respostas voltam
+
+Dois defeitos foram encontrados e corrigidos nessa passagem:
+
+1. O aviso de troca de Wi-Fi disparava em toda gravação. `input.defaultValue` reflete o
+   atributo do HTML, que nunca é escrito quando o campo é preenchido pela propriedade
+   `.value` — ficava sempre vazio, e cancelar o aviso abortava um salvamento legítimo
+2. Em 360 px o valor "não" quebrava em "nã" e "o". As linhas de `dt`/`dd` eram um flex com
+   `space-between` e `word-break: break-all`; viraram grid `1fr auto` com
+   `overflow-wrap: anywhere`, onde quem quebra é o rótulo e não o valor
 
 ## Validação em hardware
 
