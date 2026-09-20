@@ -15,11 +15,19 @@ documentada ali. Recalibrar é trocar um valor num arquivo que já existe para i
 
 **Em aberto — a metade que importa:** sobrescrever por configuração. Exige campo em
 `RouterSettings`, `putFloat`/`getFloat` na NVS, campo no formulário e faixa aceitável no
-`validate()`. O que segura não é o trabalho, é o efeito: campo novo obriga subir o schema
-de 2 para 3, e `load()` trata schema menor que o atual como registro ausente — ou seja, a
-placa cai nos defaults e **perde SSID, senha e APN salvos**. A Fase 7 já prevê schema 3
-reescrevendo todos os campos; juntar ali custa um wipe em vez de dois. Fazer antes disso é
-possível, só não é de graça.
+`validate()`.
+
+**O que destravou em 19/09/2026:** o bloqueio não era o trabalho, era o efeito. Campo novo
+obriga subir o schema de 2 para 3, e `load()` tratava schema menor que o atual como
+registro ausente — a placa caía nos defaults e perdia SSID, senha e APN. Pior depois do
+débito 10: `load()` falso faz o `ProvisionSettingsUseCase` **sortear senha nova**, então o
+bump não custava só a configuração, custava o acesso à unidade.
+
+Isso acabou. `domain/settings_migration` migra registro antigo em vez de descartar, e subir
+o schema passou a ser acrescentar um degrau com teste nativo — ver
+[PRD 10](prd/10-migracao-de-schema.md). O campo do divisor pode entrar sozinho ou junto com
+a Fase 7; nos dois casos a unidade em campo preserva o que já tinha. Continua em aberto
+porque ninguém escreveu o campo, não porque sai caro.
 
 ## 2. Perda de precisão silenciosa em `voltageToPercent` — RESOLVIDO em 19/09/2026
 
@@ -214,8 +222,11 @@ justo na janela em que `esp_random()` não é confiável.
   é a decisão de queimar, que não se desfaz.
 
 **Unidade de bancada já gravada continua com `admin1234`** — provisionamento novo só roda em
-NVS vazia, de propósito (subir o schema apagaria a configuração de todo mundo). Para
-reprovisionar, apagar a partição: ver [CONFIGURACAO_NVS.md](CONFIGURACAO_NVS.md).
+NVS vazia, de propósito. Para reprovisionar, apagar a partição: ver
+[CONFIGURACAO_NVS.md](CONFIGURACAO_NVS.md). Desde 19/09/2026 existe migração de schema
+([PRD 10](prd/10-migracao-de-schema.md)), mas ela não muda isto: migrar preserva o registro
+justamente para não re-sortear, então quem já tem `admin1234` gravado continua com ele até
+apagar a NVS ou trocar a senha pela página.
 
 ## 11. Tabela NAPT não é limpa entre sessões PPP
 
