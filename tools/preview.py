@@ -31,7 +31,7 @@ VERSAO_LONGA = "88d4901-dirty (Sep 20 2026 20:15:33) build d7385182"
 CENARIOS = {
     "online": {
         "uplink_state": "online",
-        "uplink_text": "Conectado. Os clientes do Wi-Fi saem pela rede 4G.",
+        "uplink_text": "Conexão 4G ativa",
         "uplink_failures": 0,
         "uplink_rebooted": False,
         "uplink_exhausted": False,

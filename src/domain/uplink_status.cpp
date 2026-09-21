@@ -13,9 +13,13 @@ String describeUplinkStatus(const UplinkStatus& status) {
 
   switch (status.state) {
     case UplinkState::Online:
-      // Sem contagem de falha aqui de proposito: o campo guarda o valor da ultima queda
-      // ate a proxima falha, e exibi-lo diria que algo esta errado agora.
-      return "Conectado. Os clientes do Wi-Fi saem pela rede 4G.";
+      // Curta de proposito, ao contrario das outras: esta frase fica na barra do topo da
+      // pagina, visivel em todas as telas, e no unico estado em que nao ha nada a fazer.
+      // As demais sao compridas porque explicam o que esperar ou o que corrigir.
+      //
+      // Sem contagem de falha aqui: o campo guarda o valor da ultima queda ate a proxima
+      // falha, e exibi-lo diria que algo esta errado agora.
+      return "Conexão 4G ativa";
 
     case UplinkState::Connecting:
       if (status.consecutive_failures == 0) {

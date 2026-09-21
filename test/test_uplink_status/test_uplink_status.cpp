@@ -30,7 +30,9 @@ UplinkStatus backoff(uint32_t failures, bool exhausted) {
 
 void test_online_says_it_is_connected() {
   const String text = describeUplinkStatus(online());
-  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "onectado"), text.c_str());
+  // Fragmento sem acento e sem a primeira letra: o teste amarra a distincao que a frase
+  // faz, nao a redacao dela. "Conex" sobrevive a "Conexao", "Conexão" e "Conexao ativa".
+  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "onex"), text.c_str());
 }
 
 // Online nao pode arrastar contagem de falha nenhuma: o campo continua preenchido com o
