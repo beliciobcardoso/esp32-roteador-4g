@@ -642,6 +642,11 @@
         const FETCH_OPTS = { credentials: 'same-origin', cache: 'no-store' };
         const POLL_MS = 3000;
 
+        // Tempo de leitura da frase mais longa que sai daqui, com folga. Curto demais tira
+        // a confirmação da frente de quem ainda está lendo; sem limite nenhum ela fica na
+        // tela até alguém perceber que aquilo é clicável.
+        const TOAST_MS = 8000;
+
         const el = (id) => document.getElementById(id);
         // '#/' e '#/status' mostram a mesma coisa: o link do nav usa '#/', e o
         // '#/status' continua respondendo porque e o endereco que ja foi dado para alguem.
@@ -652,6 +657,7 @@
         };
 
         let pollTimer = null;
+        let toastTimer = null;
         let lastStatus = null;
 
         // SSID como o roteador respondeu, para saber se o formulário está mudando o Wi-Fi.
@@ -660,14 +666,29 @@
         // ficaria sempre vazio e o aviso dispararia em toda gravação.
         let loadedWifiSsid = null;
 
-        function showToast(message, kind) {
+        // `persistente` é para a mensagem que instrui em vez de confirmar: o prazo de
+        // confirmação do firmware, o aviso de que o Wi-Fi só muda no reboot. Essas a pessoa
+        // precisa reler enquanto age, e sumir sozinha levaria junto a única instrução que
+        // ela tinha. Erro nunca some pelo mesmo motivo.
+        function showToast(message, kind, persistente) {
             const toast = el('toast');
             toast.textContent = message;
             toast.dataset.kind = kind || 'ok';
             toast.hidden = false;
+
+            if (toastTimer !== null) {
+                clearTimeout(toastTimer);
+                toastTimer = null;
+            }
+            if (kind === 'erro' || persistente) return;
+            toastTimer = setTimeout(hideToast, TOAST_MS);
         }
 
         function hideToast() {
+            if (toastTimer !== null) {
+                clearTimeout(toastTimer);
+                toastTimer = null;
+            }
             el('toast').hidden = true;
         }
 
@@ -838,7 +859,9 @@
             button.disabled = true;
             try {
                 const result = await apiFetch('/api/config', { method: 'POST', body: body });
-                showToast(result.mensagem, 'ok');
+                // O flag vem do firmware junto com a frase. Trocar SSID ou senha só vale no
+                // próximo boot, e quem acabou de fazer isso precisa da instrução na tela.
+                showToast(result.mensagem, 'ok', result.wifi_exige_reboot);
                 for (const field of form.querySelectorAll('input[type="password"]')) {
                     field.value = '';
                 }
@@ -909,7 +932,7 @@
                 }
                 if (request.status >= 200 && request.status < 300) {
                     bar.value = 100;
-                    showToast(payload && payload.mensagem ? payload.mensagem : 'Firmware gravado.', 'ok');
+                    showToast(payload && payload.mensagem ? payload.mensagem : 'Firmware gravado.', 'ok', true);
                 } else {
                     bar.hidden = true;
                     const detail = payload && payload.erro ? payload.erro : 'HTTP ' + request.status;
@@ -932,7 +955,7 @@
                     // depois que o AP voltar.
                     showToast('Envio concluído, mas a placa não respondeu — ela provavelmente '
                         + 'reiniciou já com o firmware novo. Reconecte ao Wi-Fi, reabra esta '
-                        + 'página e confira o slot e o estado da imagem em Status.', 'ok');
+                        + 'página e confira o slot e o estado da imagem em Status.', 'ok', true);
                     return;
                 }
 

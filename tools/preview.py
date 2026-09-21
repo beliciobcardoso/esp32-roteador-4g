@@ -120,14 +120,14 @@ def construir_handler(cenario):
             elif caminho == "/api/config":
                 self._json(CONFIG)
             else:
-                self._json({"erro": "nao encontrado"}, 404)
+                self._json({"erro": "não encontrado"}, 404)
 
         def do_POST(self):
             self.rfile.read(int(self.headers.get("Content-Length", 0)))
             caminho = self._caminho()
             if caminho == "/api/config":
                 self._json({
-                    "mensagem": "Configuracao salva. Fuso e calibracao da bateria ja valem.",
+                    "mensagem": "Configuração salva. Fuso e calibração da bateria já valem.",
                     "uplink_reconectando": False,
                     "wifi_exige_reboot": False,
                     "local_ja_vale": True,
@@ -135,7 +135,7 @@ def construir_handler(cenario):
             elif caminho == "/update":
                 # ?falha=1 exercita o caminho de erro, que e o que ninguem testa a mao.
                 if "falha=1" in self.path:
-                    self._json({"erro": "a imagem enviada nao passou na verificacao"}, 400)
+                    self._json({"erro": "a imagem enviada não passou na verificação"}, 400)
                 elif "reboot=1" in self.path:
                     # Corpo inteiro recebido e conexao cortada sem resposta: e o que a placa
                     # faz de verdade quando reinicia logo depois de gravar, e o caso em que a
@@ -143,11 +143,11 @@ def construir_handler(cenario):
                     self.close_connection = True
                     self.wfile.close()
                 else:
-                    self._json({"mensagem": "Firmware gravado. A placa reinicia agora."})
+                    self._json({"mensagem": "Firmware gravado. A placa reinicia agora e a página volta assim que o AP subir. Abra esta página de novo e clique em Confirmar atualização em até 10 minutos. Sem confirmação a placa volta sozinha para o firmware anterior."})
             elif caminho == "/firmware/confirmar":
-                self._json({"mensagem": "Atualizacao confirmada."})
+                self._json({"mensagem": "Atualização confirmada."})
             else:
-                self._json({"erro": "nao encontrado"}, 404)
+                self._json({"erro": "não encontrado"}, 404)
 
     return Handler
 
