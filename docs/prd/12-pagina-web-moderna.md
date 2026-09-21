@@ -66,9 +66,17 @@ seja trocado pelo replace seguinte. Some a interpolação, some a classe de bug.
   (`multipart/form-data` e form POST). O que muda é o cliente: a página passa a enviar por
   `XMLHttpRequest` para ter `upload.onprogress`, que o `fetch()` não expõe.
 
-Navegação vira client-side por hash (`#/`, `#/status`, `#/config`), com os links do `<nav>`
-apontando para o hash. Isso resolve o 404 sem inventar rotas no servidor que devolveriam a
-mesma página.
+Navegação vira client-side por hash, com os links do `<nav>` apontando para o hash. Isso
+resolve o 404 sem inventar rotas no servidor que devolveriam a mesma página.
+
+As telas são `#/` (status), `#/config` e `#/firmware`. O firmware ganhou aba própria porque
+enviar imagem é a única ação da página que pode deixar a unidade inacessível — dividir a
+tela com "trocar o fuso horário" nivelava as duas. O estado da imagem em execução foi junto:
+slot, versão e estado ficam ao lado do botão que os resolve, e não numa terceira tela.
+
+Enquanto a imagem espera confirmação, o link do `<nav>` carrega um ponto. Sem ele, quem está
+no status não teria como descobrir que a placa volta sozinha para a imagem anterior em
+minutos.
 
 ### Por que não manter os placeholders
 

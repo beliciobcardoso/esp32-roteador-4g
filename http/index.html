@@ -197,6 +197,28 @@
             border-bottom-color: var(--accent);
         }
 
+        /* Ponto ao lado do rótulo, e não um contador: enquanto a imagem espera confirmação
+           a placa volta sozinha para a anterior em minutos, e quem está no Status não teria
+           como descobrir isso sem abrir a aba. */
+        .badge {
+            margin-left: 0.4rem;
+            color: var(--warn);
+            font-size: 1.4em;
+            line-height: 0;
+        }
+
+        /* Três abas com o espaçamento largo não cabem em 320 px, e o nav rolava para o
+           lado. Rolar seria aceitável para qualquer outra aba, mas a que saía da vista era
+           Firmware — a que carrega o ponto de pendência que a pessoa precisa notar sem
+           procurar. Em tela estreita o rótulo aperta em vez de sair de cena. */
+        @media (max-width: 26rem) {
+            nav a {
+                padding: 0 0.5rem;
+                font-size: 0.7rem;
+                letter-spacing: 0.04em;
+            }
+        }
+
         :focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 2px;
@@ -216,6 +238,18 @@
             letter-spacing: 0.2em;
             text-transform: uppercase;
             color: var(--ink-dim);
+        }
+
+        /* Espaçamento entre blocos irmãos de uma tela mora aqui, e não em cada bloco. Antes
+           cada um trazia a própria margem, e quem não trazia — o grid de cards — encostava
+           no que viesse depois: na aba de firmware o card ficava colado no formulário de
+           envio. Definir no pai vale também para o bloco que ainda não existe. */
+        main section > * {
+            margin: 0;
+        }
+
+        main section > * + * {
+            margin-top: var(--gap);
         }
 
         .grid {
@@ -432,7 +466,6 @@
             border-left: 3px solid var(--warn);
             background: var(--surface-2);
             padding: 0.7rem var(--gap);
-            margin: 0 0 var(--gap);
             font-size: 0.85rem;
         }
 
@@ -502,6 +535,8 @@
         <nav>
             <a href="#/" data-route="#/">Status</a>
             <a href="#/config" data-route="#/config">Configuração</a>
+            <a href="#/firmware" data-route="#/firmware">Firmware<span class="badge" id="nav-firmware-badge" hidden
+                    aria-label="atualização aguardando confirmação">•</span></a>
         </nav>
     </header>
 
@@ -533,32 +568,11 @@
                     <div class="meter"><span id="status-battery-bar" style="width:0"></span></div>
                     <p class="note" id="status-battery-note"></p>
                 </article>
-                <article class="card">
-                    <h3>Firmware</h3>
-                    <dl class="rows">
-                        <div>
-                            <dt>Slot</dt>
-                            <dd id="status-slot">—</dd>
-                        </div>
-                        <div class="longa">
-                            <dt>Versão</dt>
-                            <dd id="status-version">—</dd>
-                        </div>
-                        <div class="longa">
-                            <dt>Imagem</dt>
-                            <dd id="status-image">—</dd>
-                        </div>
-                    </dl>
-                </article>
             </div>
         </section>
 
         <section id="view-config" hidden>
             <p class="alert" id="admin-notice" hidden></p>
-            <p class="alert" id="firmware-confirm-notice" hidden></p>
-            <p hidden id="firmware-confirm-wrap">
-                <button type="button" id="firmware-confirm">Confirmar atualização</button>
-            </p>
 
             <form id="config-form" autocomplete="off">
                 <fieldset>
@@ -615,17 +629,41 @@
                 <p><button type="submit" id="config-submit" disabled>Salvar configuração</button></p>
             </form>
 
-            <h2>Atualização de firmware</h2>
+        </section>
+
+        <section id="view-firmware" hidden>
+            <p class="alert" id="firmware-confirm-notice" hidden></p>
+            <p hidden id="firmware-confirm-wrap">
+                <button type="button" id="firmware-confirm">Confirmar atualização</button>
+            </p>
+
+            <div class="grid">
+                <article class="card">
+                    <h3>Imagem em execução</h3>
+                    <p class="readout" id="firmware-readout">—</p>
+                    <dl class="rows">
+                        <div>
+                            <dt>Slot</dt>
+                            <dd id="status-slot">—</dd>
+                        </div>
+                        <div class="longa">
+                            <dt>Versão</dt>
+                            <dd id="status-version">—</dd>
+                        </div>
+                    </dl>
+                </article>
+            </div>
+
             <form id="update-form">
                 <fieldset>
-                    <legend>Enviar imagem</legend>
+                    <legend>Enviar imagem nova</legend>
                     <label>Arquivo firmware.bin
                         <input type="file" name="firmware" id="firmware-file" accept=".bin" required>
                     </label>
                     <progress id="update-progress" value="0" max="100" hidden></progress>
                     <p><button type="submit" id="update-submit">Enviar e reiniciar</button></p>
-                    <span class="hint">O envio leva cerca de um minuto. Não feche esta página nem
-                        desligue a placa durante a gravação.</span>
+                    <span class="hint">O envio leva cerca de um minuto e a placa reinicia no fim,
+                        derrubando o Wi-Fi. Não desligue a placa durante a gravação.</span>
                 </fieldset>
             </form>
         </section>
@@ -654,6 +692,7 @@
             '#/': el('view-status'),
             '#/status': el('view-status'),
             '#/config': el('view-config'),
+            '#/firmware': el('view-firmware'),
         };
 
         let pollTimer = null;
@@ -756,7 +795,7 @@
 
             el('status-slot').textContent = data.firmware_slot;
             el('status-version').textContent = data.firmware_version;
-            el('status-image').textContent = data.firmware_state;
+            el('firmware-readout').textContent = labelForImageState(data.firmware_image_state);
 
             const notice = el('admin-notice');
             notice.hidden = !data.admin_password_pending;
@@ -765,13 +804,18 @@
             // O bloco de confirmação só existe enquanto a imagem está em verificação. Fora
             // dessa janela não há o que confirmar, e um botão que não faz nada convida a
             // clicar e a desconfiar do resto da tela.
+            el('nav-firmware-badge').hidden = !data.firmware_needs_confirmation;
+
             const confirmNotice = el('firmware-confirm-notice');
             confirmNotice.hidden = !data.firmware_needs_confirmation;
             el('firmware-confirm-wrap').hidden = !data.firmware_needs_confirmation;
             if (data.firmware_needs_confirmation) {
-                confirmNotice.textContent = 'Esta atualização ainda não foi confirmada. Confira se '
-                    + 'tudo está funcionando e confirme em até ' + data.firmware_deadline_min
-                    + ' minutos. Sem confirmação, a placa reinicia sozinha no firmware anterior.';
+                // Duas metades com papéis diferentes: a frase do domínio diz o risco e é a
+                // mesma que o firmware usa em qualquer outro lugar; o prazo vem do JSON e é
+                // o mesmo número que o loop() aplica. Nenhuma das duas é redigida aqui.
+                confirmNotice.textContent = 'Imagem ' + data.firmware_state
+                    + '. Confira se tudo está funcionando e confirme em até '
+                    + data.firmware_deadline_min + ' minutos.';
             }
         }
 
@@ -779,6 +823,16 @@
             if (state === 'online') return 'Online';
             if (state === 'backoff') return 'Sem conexão';
             return 'Conectando';
+        }
+
+        // Mesmo par do uplink: rótulo curto em destaque, frase completa do firmware logo
+        // abaixo. Sem isto o card de firmware era o único que não respondia nada de relance
+        // — obrigava a ler três linhas de detalhe para saber se estava tudo bem.
+        function labelForImageState(state) {
+            if (state === 'valid') return 'Confirmado';
+            if (state === 'pending') return 'Em verificação';
+            if (state === 'unmarked') return 'Gravado por serial';
+            return 'Desconhecido';
         }
 
         async function pollStatus() {
