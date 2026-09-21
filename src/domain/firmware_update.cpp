@@ -23,9 +23,9 @@ const char* to_string(FirmwareUpdateError error) {
     case FirmwareUpdateError::TooShortToBeAnImage:
       return "arquivo pequeno demais para ser um firmware";
     case FirmwareUpdateError::NotAnEspImage:
-      return "arquivo nao e uma imagem de firmware do ESP32 (envie o firmware.bin)";
+      return "arquivo não é uma imagem de firmware do ESP32 (envie o firmware.bin)";
     case FirmwareUpdateError::TooLargeForSlot:
-      return "firmware maior do que a particao de destino";
+      return "firmware maior do que a partição de destino";
   }
   return "erro desconhecido";
 }
@@ -50,7 +50,7 @@ String describeFirmwareImageState(FirmwareImageState state) {
     case FirmwareImageState::PendingVerify:
       // O aviso e o ponto da frase: quem reinicia aqui perde a atualizacao e nao entende
       // por que a placa voltou com a versao velha.
-      return "em verificacao — nao reinicie ainda, reiniciar agora volta para o firmware anterior";
+      return "em verificação — não reinicie ainda, reiniciar agora volta para o firmware anterior";
     case FirmwareImageState::Unmarked:
       return "gravado por serial (sem rollback)";
     case FirmwareImageState::Unknown:

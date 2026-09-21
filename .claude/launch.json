@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pagina-config",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["tools/preview.py"],
+      "port": 8765
+    },
+    {
+      "name": "pagina-config-caindo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["tools/preview.py", "--porta", "8766", "--cenario", "caindo"],
+      "port": 8766
+    }
+  ]
+}
