@@ -186,6 +186,34 @@ Dois defeitos foram encontrados e corrigidos nessa passagem:
    `space-between` e `word-break: break-all`; viraram grid `1fr auto` com
    `overflow-wrap: anywhere`, onde quem quebra é o rótulo e não o valor
 
-## Validação em hardware
+## Validação em hardware — 20/09/2026
 
-Pendente.
+Feita na unidade de bancada, com o celular associado ao AP.
+
+Confirmado na placa:
+
+- Página carrega e renderiza no celular; os dois links do `<nav>` funcionam, nenhum 404
+- Campos vêm preenchidos do `/api/config` e a gravação persiste
+- Status atualiza sozinho: o relógio avança na tela sem recarregar a página
+- Acentos corretos ponta a ponta — `Brasília (UTC-3)`, `CONFIGURAÇÃO`, `não vírgula`
+- Relógio no cabeçalho, visível também na aba de configuração
+- OTA recusa as duas imagens inválidas com a mensagem certa de cada regra: arquivo de
+  10 bytes cai em `TooShortToBeAnImage`, arquivo com magic errado em `NotAnEspImage`, e
+  nada é gravado nos dois casos
+- OTA com imagem válida grava, troca de slot e reinicia; a confirmação pela página cancelou
+  o rollback, registrado no serial às 21:51:32 como
+  `Firmware: confirmado pelo operador, rollback cancelado`
+
+**O upload interrompido no meio saiu de graça** — o celular perdeu o AP quando a placa
+reiniciou. Era o único critério de bancada que a Fase 8 tinha deixado aberto (PRD 11), e o
+caminho de abort do `handleUpdateUpload()` se comportou como projetado. Mas expôs um defeito
+da página, corrigido em seguida: o `onerror` do XHR tratava qualquer queda como envio
+interrompido e dizia "Nada foi gravado" para uma gravação bem-sucedida, convidando a
+reenviar o firmware que já estava na flash.
+
+Ainda não conferido em placa, por não aparecer na tela:
+
+- O `304` do `ETag` na segunda visita
+- A ausência de senha no corpo de `GET /api/config`
+- A recusa de valor inválido com a mensagem do domínio
+- O polling parando com a aba escondida
