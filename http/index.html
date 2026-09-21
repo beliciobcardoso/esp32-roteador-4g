@@ -775,11 +775,14 @@
         // Polling parado com a aba escondida: uma aba esquecida aberta bateria no
         // handleClient() a cada 3 s para sempre, no mesmo loop que roda a supervisão do
         // uplink e a leitura da bateria.
+        function pararPolling() {
+            if (pollTimer === null) return;
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+
         function schedulePolling() {
-            if (pollTimer !== null) {
-                clearInterval(pollTimer);
-                pollTimer = null;
-            }
+            pararPolling();
             if (document.hidden) return;
             pollStatus();
             pollTimer = setInterval(pollStatus, POLL_MS);
@@ -870,6 +873,17 @@
             const body = new FormData();
             body.append('firmware', file);
 
+            // O polling para enquanto o arquivo sobe. O WebServer da placa atende uma
+            // conexao por vez, e disputar com ele a cada 3 s durante um envio de quase um
+            // megabyte so atrasa o envio e pinta a tela de "sem resposta" sem motivo.
+            pararPolling();
+
+            // A placa reinicia logo depois de gravar, e o reboot derruba o AP. Se isso
+            // acontecer antes de a resposta chegar, o XHR cai em onerror mesmo tendo dado
+            // tudo certo. Este flag e o que separa "a conexao caiu no meio do envio" de "a
+            // conexao caiu depois do envio inteiro", que sao diagnosticos opostos.
+            let corpoEnviado = false;
+
             const request = new XMLHttpRequest();
             request.open('POST', '/update');
             request.withCredentials = true;
@@ -879,8 +893,14 @@
                 bar.value = Math.round((progress.loaded / progress.total) * 100);
             };
 
+            request.upload.onload = () => {
+                corpoEnviado = true;
+                bar.value = 100;
+            };
+
             request.onload = () => {
                 button.disabled = false;
+                schedulePolling();
                 let payload = null;
                 try {
                     payload = JSON.parse(request.responseText);
@@ -897,11 +917,28 @@
                 }
             };
 
-            // Conexão cortada no meio do envio. A placa trata isso sozinha (aborta a
-            // gravação e o slot não fica bootável), mas quem enviou precisa saber que não
-            // adianta esperar o reboot.
             request.onerror = () => {
                 button.disabled = false;
+                schedulePolling();
+
+                if (corpoEnviado) {
+                    // O arquivo inteiro chegou e a resposta não voltou. O caso de longe mais
+                    // comum é a placa ter gravado e reiniciado, derrubando o AP antes de
+                    // responder. Dizer "nada foi gravado" aqui é mentira, e uma mentira cara:
+                    // convida a reenviar um firmware que já está na flash.
+                    //
+                    // Também não se afirma sucesso: sem a resposta não dá para saber se a
+                    // imagem passou na verificação. Quem responde isso é o card Firmware
+                    // depois que o AP voltar.
+                    showToast('Envio concluído, mas a placa não respondeu — ela provavelmente '
+                        + 'reiniciou já com o firmware novo. Reconecte ao Wi-Fi, reabra esta '
+                        + 'página e confira o slot e o estado da imagem em Status.', 'ok');
+                    return;
+                }
+
+                // Aqui sim a conexão caiu com o envio pela metade. A placa aborta a gravação
+                // sozinha e o slot não fica bootável, mas quem enviou precisa saber que
+                // esperar um reboot não vai adiantar.
                 bar.hidden = true;
                 showToast('O envio foi interrompido antes do fim. Nada foi gravado.', 'erro');
             };

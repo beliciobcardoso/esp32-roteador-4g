@@ -136,6 +136,12 @@ def construir_handler(cenario):
                 # ?falha=1 exercita o caminho de erro, que e o que ninguem testa a mao.
                 if "falha=1" in self.path:
                     self._json({"erro": "a imagem enviada nao passou na verificacao"}, 400)
+                elif "reboot=1" in self.path:
+                    # Corpo inteiro recebido e conexao cortada sem resposta: e o que a placa
+                    # faz de verdade quando reinicia logo depois de gravar, e o caso em que a
+                    # pagina dizia "nada foi gravado" para uma gravacao bem-sucedida.
+                    self.close_connection = True
+                    self.wfile.close()
                 else:
                     self._json({"mensagem": "Firmware gravado. A placa reinicia agora."})
             elif caminho == "/firmware/confirmar":
