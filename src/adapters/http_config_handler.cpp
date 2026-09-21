@@ -1,12 +1,27 @@
 #include "http_config_handler.h"
 
+#include "../domain/battery.h"
 #include "../domain/firmware_update.h"
+#include "../domain/json.h"
 #include "../domain/timezone.h"
 #include "html_page.h"
 
 namespace {
 const int kServerPort = 80;
 const char* kAuthRealm = "roteador-4g";
+const char* kJsonType = "application/json";
+
+// Nome curto do estado, para o CSS da pagina escolher a cor do indicador. Separado da
+// frase do describeUplinkStatus(): a frase e para a pessoa ler e muda de redacao, o nome
+// e contrato com o JS e nao pode mudar sem quebrar a folha de estilo.
+const char* uplinkStateName(UplinkState state) {
+  switch (state) {
+    case UplinkState::Online: return "online";
+    case UplinkState::Backoff: return "backoff";
+    case UplinkState::Connecting: return "connecting";
+  }
+  return "connecting";
+}
 }  // namespace
 
 HttpConfigHandler::HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase,
@@ -17,8 +32,14 @@ HttpConfigHandler::HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSetti
       server_(kServerPort) {}
 
 void HttpConfigHandler::begin() {
-  server_.on("/", HTTP_GET, [this]() { handleGetRoot(); });
-  server_.on("/", HTTP_POST, [this]() { handlePostRoot(); });
+  server_.on("/", HTTP_GET, [this]() { handleGetPage(); });
+  server_.on("/api/status", HTTP_GET, [this]() { handleGetStatus(); });
+  server_.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
+  // POST continua chegando urlencoded, e nao JSON: o WebServer ja parseia esse formato em
+  // server_.arg(), enquanto JSON exigiria um parser escrito a mao no firmware — aninhamento,
+  // escapes e unicode — para oito campos planos que o navegador monta com URLSearchParams
+  // em uma linha. A resposta e JSON; o pedido nao precisa ser.
+  server_.on("/api/config", HTTP_POST, [this]() { handlePostConfig(); });
   // Duas funcoes para a mesma rota: a segunda roda durante a leitura do corpo, bloco a
   // bloco, e a primeira so depois que o corpo inteiro acabou.
   server_.on("/update", HTTP_POST, [this]() { handleUpdateDone(); },
@@ -26,6 +47,11 @@ void HttpConfigHandler::begin() {
   server_.on("/firmware/confirmar", HTTP_POST, [this]() { handleConfirmFirmware(); });
   server_.onNotFound([this]() { handleNotFound(); });
   server_.begin();
+  // Depois do begin(), nao antes: o begin() chama collectHeaders(0, 0) e apagaria a lista.
+  // O WebServer so guarda cabecalho que foi pedido — sem isto o If-None-Match chega vazio,
+  // o 304 nunca acontece e a pagina inteira desce a cada visita sem ninguem notar.
+  const char* collected[] = {"If-None-Match"};
+  server_.collectHeaders(collected, 1);
 }
 
 void HttpConfigHandler::handleClient() {
@@ -57,7 +83,7 @@ bool HttpConfigHandler::authenticate(const RouterSettings& current) {
 // Sem Basic Auth de proposito — exigir credencial aqui faria o navegador abrir o popup de
 // senha por causa de um favicon.
 void HttpConfigHandler::handleNotFound() {
-  server_.send(404, "text/plain", "nao encontrado");
+  server_.send(404, "text/plain", "não encontrado");
 }
 
 // Texto do bloco de status. Sem provider registrado a pagina diz isso em vez de omitir o
@@ -65,21 +91,9 @@ void HttpConfigHandler::handleNotFound() {
 // montagem em vez de deixar quem le achando que o 4G esta bem.
 String HttpConfigHandler::uplinkStatusText() const {
   if (uplinkStatus_ == nullptr) {
-    return "Estado do uplink indisponivel: nenhuma fonte de status foi registrada.";
+    return "Estado do uplink indisponível: nenhuma fonte de status foi registrada.";
   }
   return describeUplinkStatus(uplinkStatus_());
-}
-
-// Aviso da troca obrigatoria. Devolve string vazia quando nao ha pendencia — a alternativa
-// (esconder por CSS) deixaria o texto no fonte da pagina de quem ja trocou.
-//
-// A mensagem sai do to_string() do dominio, a mesma que o POST recusado devolve: duas
-// fontes de texto para a mesma regra divergem na primeira vez que uma delas e editada.
-String HttpConfigHandler::adminNoticeHtml(const RouterSettings& current) const {
-  if (!current.admin_password_pending) return "";
-  return String("<p class=\"alert\">") +
-         escapeForHtmlAttribute(to_string(SettingsValidationError::AdminPasswordMustChange)) +
-         "</p>";
 }
 
 // Linha do relogio. Sem provider registrado, ou com o NTP ainda sem sincronizar, a pagina
@@ -87,54 +101,37 @@ String HttpConfigHandler::adminNoticeHtml(const RouterSettings& current) const {
 // 7 e que o firmware nunca finge um horario.
 String HttpConfigHandler::clockTextOrExcuse() const {
   if (clockText_ == nullptr) {
-    return "indisponivel: nenhuma fonte de hora foi registrada.";
+    return "indisponível: nenhuma fonte de hora foi registrada.";
   }
   String text = clockText_();
-  if (text.length() == 0) return "ainda nao sincronizado (precisa do uplink 4G).";
+  if (text.length() == 0) return "ainda não sincronizado (precisa do uplink 4G).";
   return text;
 }
 
-// As <option> saem da tabela do dominio, nao de uma lista repetida aqui: duas listas para
-// o mesmo conjunto divergem na primeira vez que uma for editada, e a que o validate() usa
-// e a do dominio — a pagina e que ficaria oferecendo um fuso recusado na gravacao.
+// A lista sai da tabela do dominio, nao de uma lista repetida aqui: duas listas para o
+// mesmo conjunto divergem na primeira vez que uma for editada, e a que o validate() usa e a
+// do dominio — a pagina e que ficaria oferecendo um fuso recusado na gravacao.
 //
-// O `selected` compara com o valor gravado. Registro cujo fuso nao esta na tabela (POST
-// forjado antes desta validacao existir, downgrade de firmware) nao seleciona nada, e o
-// navegador mostra a primeira opcao — gravar a pagina como esta conserta o registro.
-String HttpConfigHandler::timezoneOptionsHtml(const RouterSettings& current) const {
-  String html;
+// Quem marca a opcao escolhida e o JS, comparando com o campo `timezone` da mesma resposta.
+// Registro cujo fuso nao esta na tabela (POST forjado, downgrade de firmware) nao casa com
+// nenhuma opcao e o <select> fica na primeira — gravar a pagina como esta conserta.
+String HttpConfigHandler::timezoneOptionsJson() const {
+  String json = "[";
   for (size_t i = 0; i < timezoneOptionCount(); ++i) {
     const TimezoneOption& option = timezoneOptions()[i];
-    html += "<option value=\"";
-    html += escapeForHtmlAttribute(option.posix);
-    html += "\"";
-    if (current.timezone == option.posix) html += " selected";
-    html += ">";
-    html += escapeForHtmlAttribute(option.label);
-    html += "</option>";
+    if (i > 0) json += ",";
+    JsonObject entry;
+    entry.text("posix", option.posix).text("label", option.label);
+    json += entry.finish();
   }
-  return html;
+  json += "]";
+  return json;
 }
 
 // Frase do estado da imagem em execucao. Sai do dominio para nao haver duas redacoes da
 // mesma regra — e a frase do PendingVerify e um aviso, nao enfeite.
 String HttpConfigHandler::firmwareStateText() const {
   return describeFirmwareImageState(firmwareWriter_.runningImageState());
-}
-
-String HttpConfigHandler::firmwareConfirmHtml() const {
-  if (!needsHealthConfirmation(firmwareWriter_.runningImageState())) return String();
-
-  // O texto diz o prazo porque a pagina e o unico lugar onde o operador pode descobrir que
-  // existe um: sem clique, a placa volta sozinha para a imagem anterior.
-  String block = "<p><strong>Esta atualizacao ainda nao foi confirmada.</strong> Confira se ";
-  block += "tudo esta funcionando e confirme em ate ";
-  block += numberToString(kConfirmationDeadlineMs / 60000);
-  block += " minutos. Sem confirmacao, a placa reinicia sozinha no firmware anterior.</p>";
-  block += "<form method=\"POST\" action=\"/firmware/confirmar\">";
-  block += "<button type=\"submit\">Confirmar atualizacao</button>";
-  block += "</form>";
-  return block;
 }
 
 void HttpConfigHandler::handleConfirmFirmware() {
@@ -145,47 +142,138 @@ void HttpConfigHandler::handleConfirmFirmware() {
   // desde antes de a imagem ser confirmada por outro caminho, e o POST chegaria para uma
   // janela que ja fechou.
   if (!needsHealthConfirmation(firmwareWriter_.runningImageState())) {
-    server_.send(409, "text/plain", "Nao ha atualizacao pendente de confirmacao.");
+    sendJsonError(409, "Não há atualização pendente de confirmação.");
     return;
   }
 
   if (firmwareConfirmed_ != nullptr) firmwareConfirmed_();
 
-  // 303 e nao 200: sem ele um F5 na pagina de resposta reenviaria o POST. O destino e a
-  // raiz, onde o operador ve o estado ja atualizado.
-  server_.sendHeader("Location", "/");
-  server_.send(303, "text/plain", "Atualizacao confirmada.");
+  // 200 com JSON, e nao mais o 303 para a raiz: quem faz este POST agora e o fetch() da
+  // propria pagina, que seguiria o redirect e baixaria a pagina inteira so para descartar.
+  // O F5 que o 303 evitava tambem deixou de existir — nao ha navegacao para recarregar.
+  JsonObject body;
+  body.text("mensagem", "Atualização confirmada.");
+  sendJson(200, body.finish());
 }
 
-void HttpConfigHandler::handleGetRoot() {
+// FNV-1a sobre o conteudo embutido. Nao e hash criptografico e nao precisa ser: o que se
+// quer e um rotulo que muda quando a pagina muda, para o navegador perguntar "ainda vale?"
+// e receber 304 em vez dos KB inteiros pelo link 4G. Calculado uma vez e guardado — o
+// conteudo esta na flash e nao muda enquanto a placa roda.
+const String& HttpConfigHandler::pageETag() {
+  if (pageETag_.length() > 0) return pageETag_;
+
+  uint32_t hash = 2166136261u;
+  size_t length = 0;
+  for (const char* cursor = kConfigPageTemplate; *cursor != '\0'; ++cursor, ++length) {
+    hash ^= static_cast<uint8_t>(*cursor);
+    hash *= 16777619u;
+  }
+
+  // Comprimento junto do hash: duas paginas diferentes com o mesmo hash de 32 bits sao
+  // improvaveis, mas custa nada tornar a coincidencia ainda menos provavel.
+  pageETag_ = "\"" + numberToString(hash) + "-" + numberToString(static_cast<uint32_t>(length)) + "\"";
+  return pageETag_;
+}
+
+// A pagina sai da flash direto para o socket. Nenhum replace, nenhuma String de conteudo:
+// o send_P escreve o cabecalho e depois streama o ponteiro, entao os KB da pagina nunca
+// existem no heap. Era esse custo — uma copia por request mais uma realocacao por
+// placeholder — que inviabilizava crescer a pagina.
+void HttpConfigHandler::handleGetPage() {
   RouterSettings current = loadUseCase_.execute();
   if (!authenticate(current)) return;
 
-  String page = kConfigPageTemplate;
-  page.replace("{{SSID}}", escapeForHtmlAttribute(current.wifi_ssid));
-  page.replace("{{APN}}", escapeForHtmlAttribute(current.apn));
-  page.replace("{{APN_USER}}", escapeForHtmlAttribute(current.apn_user));
-  page.replace("{{ADMIN_USER}}", escapeForHtmlAttribute(current.admin_user));
-  // O status sai de literais nossos e de um numero, entao nao ha o que escapar hoje. Passa
-  // pelo escape mesmo assim: no dia em que a mensagem incluir um valor gravado — APN, por
-  // exemplo — a defesa ja esta no caminho, em vez de depender de alguem lembrar dela.
-  page.replace("{{UPLINK_STATUS}}", escapeForHtmlAttribute(uplinkStatusText()));
-  page.replace("{{ADMIN_NOTICE}}", adminNoticeHtml(current));
-  page.replace("{{CLOCK}}", escapeForHtmlAttribute(clockTextOrExcuse()));
-  page.replace("{{BATTERY_RATIO}}", escapeForHtmlAttribute(String(current.battery_divider_ratio, 2)));
-  page.replace("{{FIRMWARE_SLOT}}", escapeForHtmlAttribute(firmwareWriter_.runningSlotLabel()));
-  page.replace("{{FIRMWARE_VERSION}}", escapeForHtmlAttribute(firmwareWriter_.runningVersionText()));
-  page.replace("{{FIRMWARE_STATE}}", escapeForHtmlAttribute(firmwareStateText()));
-  // Depois dos outros replaces, e sem passar pelo escape: aqui o valor E marcacao, montada
-  // por nos a partir de literais do dominio. Os textos que vao dentro dela ja foram
-  // escapados um a um no timezoneOptionsHtml().
-  page.replace("{{TIMEZONE_OPTIONS}}", timezoneOptionsHtml(current));
-  // Marcacao nossa, de literais: nao passa pelo escape pelo mesmo motivo do bloco acima.
-  page.replace("{{FIRMWARE_CONFIRM}}", firmwareConfirmHtml());
-  server_.send(200, "text/html", page);
+  const String& etag = pageETag();
+  // no-cache e nao no-store: o navegador PODE guardar, mas tem que perguntar antes de usar.
+  // E a pergunta que vira 304 e economiza o download inteiro na segunda visita.
+  server_.sendHeader("Cache-Control", "no-cache");
+  server_.sendHeader("ETag", etag);
+
+  if (server_.header("If-None-Match") == etag) {
+    server_.send(304, "text/plain", "");
+    return;
+  }
+
+  server_.send_P(200, "text/html", kConfigPageTemplate);
 }
 
-void HttpConfigHandler::handlePostRoot() {
+// Tudo que muda sozinho. O polling da pagina bate aqui; o que nao muda sem gravacao mora no
+// /api/config e nao e reenviado a cada 3 s.
+void HttpConfigHandler::handleGetStatus() {
+  RouterSettings current = loadUseCase_.execute();
+  if (!authenticate(current)) return;
+
+  const UplinkStatus uplink = uplinkStatus_ != nullptr ? uplinkStatus_() : UplinkStatus();
+  const FirmwareImageState imageState = firmwareWriter_.runningImageState();
+  const float volts = batteryVoltage_ != nullptr ? batteryVoltage_() : 0.0f;
+
+  JsonObject body;
+  body.text("uplink_state", uplinkStateName(uplink.state))
+      .text("uplink_text", uplinkStatusText())
+      .number("uplink_failures", uplink.consecutive_failures)
+      .boolean("uplink_rebooted", uplink.rebooted_for_uplink)
+      .boolean("uplink_exhausted", uplink.reboot_budget_exhausted)
+      .text("clock_text", clockTextOrExcuse())
+      .boolean("clock_synced", clockText_ != nullptr && clockText_().length() > 0)
+      .number("battery_volts", volts, 2)
+      // O percentual sai da regra do dominio e nao de uma conta no JS: a curva da bateria e
+      // regra de negocio, e duplicada no navegador ela envelhece sozinha.
+      .number("battery_percent", static_cast<uint32_t>(voltageToPercent(volts)))
+      .text("firmware_slot", firmwareWriter_.runningSlotLabel())
+      .text("firmware_version", firmwareWriter_.runningVersionText())
+      .text("firmware_state", firmwareStateText())
+      .boolean("firmware_needs_confirmation", needsHealthConfirmation(imageState))
+      // O prazo vem do dominio, o mesmo numero que o loop() usa para decidir. A pagina e o
+      // unico lugar onde o operador descobre que existe um prazo — sem clique, a placa volta
+      // sozinha para a imagem anterior.
+      .number("firmware_deadline_min",
+              static_cast<uint32_t>(kConfirmationDeadlineMs / 60000))
+      .boolean("admin_password_pending", current.admin_password_pending)
+      // A mensagem sai do to_string() do dominio, a mesma que o POST recusado devolve: duas
+      // fontes de texto para a mesma regra divergem na primeira vez que uma delas e editada.
+      .text("admin_notice", current.admin_password_pending
+                                ? String(to_string(SettingsValidationError::AdminPasswordMustChange))
+                                : String(""));
+
+  sendJson(200, body.finish());
+}
+
+// O que o formulario edita. Nenhuma senha sai daqui, nem mascarada: mascara e devolvida ao
+// servidor no POST seguinte e viraria a senha nova, e o comprimento sozinho ja diz mais do
+// que precisa ser dito. Os campos de senha nascem vazios na pagina, com o mesmo
+// "deixe em branco para manter" que o POST ja implementa.
+void HttpConfigHandler::handleGetConfig() {
+  RouterSettings current = loadUseCase_.execute();
+  if (!authenticate(current)) return;
+
+  JsonObject body;
+  body.text("wifi_ssid", current.wifi_ssid)
+      .text("apn", current.apn)
+      .text("apn_user", current.apn_user)
+      .text("admin_user", current.admin_user)
+      .text("timezone", current.timezone)
+      .number("battery_ratio", current.battery_divider_ratio, 2)
+      .raw("timezones", timezoneOptionsJson());
+
+  sendJson(200, body.finish());
+}
+
+void HttpConfigHandler::sendJson(int code, const String& json) {
+  // no-store e nao no-cache: status reaproveitado do cache no polling seguinte congelaria a
+  // tela mostrando dado velho, e aqui nao ha o que economizar — a resposta tem centenas de
+  // bytes, nao KB.
+  server_.sendHeader("Cache-Control", "no-store");
+  server_.send(code, kJsonType, json);
+}
+
+void HttpConfigHandler::sendJsonError(int code, const String& message) {
+  JsonObject body;
+  body.text("erro", message);
+  sendJson(code, body.finish());
+}
+
+void HttpConfigHandler::handlePostConfig() {
   RouterSettings current = loadUseCase_.execute();
   if (!authenticate(current)) return;
 
@@ -210,7 +298,7 @@ void HttpConfigHandler::handlePostRoot() {
   // navegador: um POST direto manda o que quiser.
   String rawRatio = server_.arg("battery_ratio");
   if (rawRatio.indexOf(',') >= 0) {
-    server_.send(400, "text/plain", "use ponto e nao virgula no divisor da bateria");
+    sendJsonError(400, "use ponto e não vírgula no divisor da bateria");
     return;
   }
   updated.battery_divider_ratio = rawRatio.toFloat();
@@ -220,13 +308,13 @@ void HttpConfigHandler::handlePostRoot() {
   // o validate() ve uma sozinha.
   updated.admin_password_pending = adminPasswordChangeStillRequired(current, updated);
   if (updated.admin_password_pending) {
-    server_.send(400, "text/plain", to_string(SettingsValidationError::AdminPasswordMustChange));
+    sendJsonError(400, to_string(SettingsValidationError::AdminPasswordMustChange));
     return;
   }
 
   SaveSettingsResult result = saveUseCase_.execute(updated);
   if (!result.success) {
-    server_.send(400, "text/plain", to_string(result.error));
+    sendJsonError(400, to_string(result.error));
     return;
   }
 
@@ -239,26 +327,34 @@ void HttpConfigHandler::handlePostRoot() {
   bool localChanged = updated.timezone != current.timezone ||
                       updated.battery_divider_ratio != current.battery_divider_ratio;
 
-  String message = "Configuracao salva.";
+  String message = "Configuração salva.";
   if (uplinkChanged) {
     // Derrubar e resubir o PPP nao afeta a associacao dos clientes ao AP, entao isso
     // pode ser feito sem reboot. Ate um minuto porque inclui o power-on do modem, o
     // registro na rede e o IPCP.
-    message += " APN alterado: reconectando o 4G agora, pode levar ate 1 minuto.";
+    message += " APN alterado: reconectando o 4G agora, pode levar até 1 minuto.";
   }
   if (apChanged) {
     // Mudar SSID/senha derruba todo mundo que esta associado — inclusive quem acabou de
     // enviar este formulario. Fazer isso aqui cortaria a resposta antes dela chegar.
-    message += " SSID e senha do Wi-Fi so valem apos reiniciar a placa.";
+    message += " SSID e senha do Wi-Fi só valem após reiniciar a placa.";
   }
 
   if (localChanged) {
     // Fuso e divisor valem na proxima leitura, sem reconectar nem reiniciar nada. Dizer
     // isso evita que a pessoa fique esperando um efeito que ja aconteceu.
-    message += " Fuso e calibracao da bateria ja valem.";
+    message += " Fuso e calibração da bateria já valem.";
   }
 
-  server_.send(200, "text/plain", message);
+  // Os flags acompanham a frase em vez de a pagina reler a frase: quem muda SSID precisa de
+  // um aviso visivel de que a propria conexao vai cair no reboot, e procurar substring numa
+  // mensagem em portugues para decidir isso quebra na primeira revisao do texto.
+  JsonObject body;
+  body.text("mensagem", message)
+      .boolean("uplink_reconectando", uplinkChanged)
+      .boolean("wifi_exige_reboot", apChanged)
+      .boolean("local_ja_vale", localChanged);
+  sendJson(200, body.finish());
 
   if (localChanged && localChanged_ != nullptr) {
     localChanged_(updated);
@@ -296,7 +392,7 @@ void HttpConfigHandler::handleUpdateUpload() {
 
     if (!firmwareWriter_.begin()) {
       Serial.printf("OTA: abertura do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
-      updateError_ = "nao foi possivel abrir a particao de destino";
+      updateError_ = "não foi possível abrir a partição de destino";
     }
     return;
   }
@@ -351,7 +447,7 @@ void HttpConfigHandler::handleUpdateUpload() {
     // arquivo truncado ou corrompido morre neste ponto, sem trocar o slot de boot.
     if (!firmwareWriter_.finish()) {
       Serial.printf("OTA: ativacao do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
-      updateError_ = "a imagem enviada nao passou na verificacao";
+      updateError_ = "a imagem enviada não passou na verificação";
     }
   }
 }
@@ -364,7 +460,7 @@ void HttpConfigHandler::handleUpdateDone() {
     // nao foi conferida.
     RouterSettings current = loadUseCase_.execute();
     if (!authenticate(current)) return;
-    server_.send(400, "text/plain", to_string(FirmwareUpdateError::EmptyImage));
+    sendJsonError(400, to_string(FirmwareUpdateError::EmptyImage));
     return;
   }
 
@@ -379,18 +475,20 @@ void HttpConfigHandler::handleUpdateDone() {
   if (!authorized) return;
 
   if (error.length() > 0) {
-    server_.send(400, "text/plain", error);
+    sendJsonError(400, error);
     return;
   }
 
   // O prazo vem do dominio e nao de um numero digitado aqui: e o mesmo que o loop() usa
   // para decidir, e duas redacoes do mesmo prazo divergem na primeira vez que uma delas
   // mudar.
-  String message = "Firmware gravado. A placa reinicia agora e a pagina volta assim que o AP subir. ";
-  message += "Abra esta pagina de novo e clique em Confirmar atualizacao em ate ";
+  String message = "Firmware gravado. A placa reinicia agora e a página volta assim que o AP subir. ";
+  message += "Abra esta página de novo e clique em Confirmar atualização em até ";
   message += numberToString(kConfirmationDeadlineMs / 60000);
-  message += " minutos. Sem confirmacao a placa volta sozinha para o firmware anterior.";
-  server_.send(200, "text/plain", message);
+  message += " minutos. Sem confirmação a placa volta sozinha para o firmware anterior.";
+  JsonObject done;
+  done.text("mensagem", message);
+  sendJson(200, done.finish());
 
   // Depois do send, e de fora: um esp_restart() aqui dentro cortaria a resposta antes de
   // ela sair da fila do socket.

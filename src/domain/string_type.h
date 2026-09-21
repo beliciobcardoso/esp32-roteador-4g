@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 
 // O dominio precisa de String, e na placa String e a do core Arduino. Fora dela o
 // Arduino.h nao existe, e sem este desvio a camada "pura" nao compila no host — que era
@@ -29,5 +30,20 @@ inline String numberToString(uint32_t value) {
   return String(value);
 #else
   return std::to_string(value);
+#endif
+}
+
+// Mesma historia para float, e o motivo do decimals explicito: `String(valor)` no Arduino
+// arredonda em 2 casas por padrao e `std::to_string` imprime 6, entao a mesma leitura de
+// bateria sairia diferente na placa e no teste. Quem chama diz quantas casas quer.
+inline String numberToString(float value, uint8_t decimals) {
+#ifdef ARDUINO
+  // O cast nao e enfeite: com uint8_t a chamada fica ambigua entre String(float, unsigned
+  // int) e String(long long, unsigned char) — nenhuma das duas vence nos dois argumentos.
+  return String(value, static_cast<unsigned int>(decimals));
+#else
+  char buffer[32];
+  std::snprintf(buffer, sizeof(buffer), "%.*f", static_cast<int>(decimals), value);
+  return String(buffer);
 #endif
 }

@@ -44,15 +44,15 @@ SettingsValidationError validate(const RouterSettings& settings) {
 const char* to_string(SettingsValidationError error) {
   switch (error) {
     case SettingsValidationError::None: return "ok";
-    case SettingsValidationError::EmptySsid: return "SSID nao pode ser vazio";
-    case SettingsValidationError::SsidTooLong: return "SSID nao pode passar de 32 caracteres";
-    case SettingsValidationError::WifiPasswordTooShort: return "senha WiFi precisa ter no minimo 8 caracteres";
-    case SettingsValidationError::WifiPasswordTooLong: return "senha WiFi nao pode passar de 63 caracteres";
-    case SettingsValidationError::EmptyApn: return "APN nao pode ser vazio";
-    case SettingsValidationError::EmptyAdminUser: return "usuario admin nao pode ser vazio";
-    case SettingsValidationError::AdminPasswordTooShort: return "senha admin precisa ter no minimo 8 caracteres";
-    case SettingsValidationError::AdminPasswordMustChange: return "troque a senha de admin sorteada no primeiro boot antes de salvar qualquer configuracao";
-    case SettingsValidationError::UnknownTimezone: return "fuso horario precisa ser um dos da lista";
+    case SettingsValidationError::EmptySsid: return "SSID não pode ser vazio";
+    case SettingsValidationError::SsidTooLong: return "SSID não pode passar de 32 caracteres";
+    case SettingsValidationError::WifiPasswordTooShort: return "senha Wi-Fi precisa ter no mínimo 8 caracteres";
+    case SettingsValidationError::WifiPasswordTooLong: return "senha Wi-Fi não pode passar de 63 caracteres";
+    case SettingsValidationError::EmptyApn: return "APN não pode ser vazio";
+    case SettingsValidationError::EmptyAdminUser: return "usuário admin não pode ser vazio";
+    case SettingsValidationError::AdminPasswordTooShort: return "senha admin precisa ter no mínimo 8 caracteres";
+    case SettingsValidationError::AdminPasswordMustChange: return "troque a senha de admin sorteada no primeiro boot antes de salvar qualquer configuração";
+    case SettingsValidationError::UnknownTimezone: return "fuso horário precisa ser um dos da lista";
     case SettingsValidationError::BatteryDividerOutOfRange: return "divisor da bateria precisa ficar entre 1.4 e 10.0";
   }
   return "erro desconhecido";

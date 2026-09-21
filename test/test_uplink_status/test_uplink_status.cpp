@@ -30,7 +30,9 @@ UplinkStatus backoff(uint32_t failures, bool exhausted) {
 
 void test_online_says_it_is_connected() {
   const String text = describeUplinkStatus(online());
-  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "onectado"), text.c_str());
+  // Fragmento sem acento e sem a primeira letra: o teste amarra a distincao que a frase
+  // faz, nao a redacao dela. "Conex" sobrevive a "Conexao", "Conexão" e "Conexao ativa".
+  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "onex"), text.c_str());
 }
 
 // Online nao pode arrastar contagem de falha nenhuma: o campo continua preenchido com o
@@ -63,7 +65,9 @@ void test_exhausted_budget_points_at_an_external_cause() {
   const String text = describeUplinkStatus(backoff(24, true));
   TEST_ASSERT_TRUE_MESSAGE(mentions(text, "SIM"), text.c_str());
   TEST_ASSERT_TRUE_MESSAGE(mentions(text, "cobertura"), text.c_str());
-  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "credito"), text.c_str());
+  // "plano de dados" e nao "credito": o fragmento precisa sobreviver a acentuacao da
+  // frase, e e a causa que o teste quer amarrar de qualquer jeito.
+  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "plano de dados"), text.c_str());
 }
 
 // Sem orcamento de reinicio a placa segue tentando, entao o estado corrente alterna entre
