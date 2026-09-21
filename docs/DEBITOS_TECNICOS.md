@@ -861,3 +861,52 @@ tinha como mostrar a diferença — em ambos os casos, silêncio.
 dois desfechos. Barato; ficou de fora porque a fase fechou antes. Cuidado ao fazer: o débito
 13 já afoga o serial sob tráfego, então a linha tem que ser uma por requisição, não por
 bloco recebido.
+
+## 24. Atualização remota de verdade não existe, e o procedimento de campo esconde isso
+
+**Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) —
+`begin()`; [docs/ATUALIZACAO_EM_PRODUCAO.md](ATUALIZACAO_EM_PRODUCAO.md)
+
+O OTA pela página tirou o cabo serial do caminho, e é fácil ler isso como "dá para atualizar
+a unidade de qualquer lugar". Não dá. A página só responde no AP: o `WebServer` escuta em
+`0.0.0.0` e em tese atenderia pelo PPP, mas dados móveis saem por CGNAT e não há porta
+alcançável da internet. O que o OTA eliminou foi o cabo e o notebook, não a viagem.
+
+**Por que incomoda:** o custo de uma correção de campo continua sendo uma visita por
+unidade, e é esse número que decide se vale corrigir um defeito pequeno. Planejar em cima
+de "atualização remota" que na verdade é presencial erra o custo de todo o roadmap.
+
+Junto disso, dois buracos menores que a mesma fase resolveria:
+
+- **Não há inventário.** A única fonte do que roda em cada unidade é a página daquela
+  unidade. Descobrir quais estão desatualizadas exige visitar todas
+- **Não há assinatura.** Sem secure boot nem OTA assinado, quem tiver a senha de admin grava
+  qualquer imagem. Hoje isso está atrás do AP e de um Basic Auth; numa via remota passa a
+  ser a única barreira
+
+**Correção:** inverter a conexão — a placa consultando periodicamente um servidor nosso por
+uma imagem nova, verificando assinatura antes de gravar. Resolve os três de uma vez: alcance,
+inventário (quem consulta se identifica) e integridade. É fase própria com PRD, não ajuste.
+
+Enquanto não existir, o procedimento de campo registra o alcance real logo no início, em vez
+de deixar a limitação implícita.
+
+## 25. Nada impede um binário de árvore suja de ir para campo
+
+**Onde:** [platformio.ini](../platformio.ini); [docs/ATUALIZACAO_EM_PRODUCAO.md](ATUALIZACAO_EM_PRODUCAO.md)
+
+A versão que o firmware reporta na página sai do `git describe`, e com a árvore suja ela vira
+`<hash>-dirty`. Esse sufixo não identifica código nenhum: não diz o que estava modificado,
+então a imagem não é reproduzível a partir do repositório.
+
+**Por que incomoda:** o sintoma aparece tarde e longe. Uma unidade em campo rodando `-dirty`
+só vira problema quando alguém precisa reproduzir um defeito dela, e aí não há de onde
+partir. Aconteceu nesta bancada: a placa passou boa parte do dia 20/09/2026 reportando
+`88d4901-dirty` sem que isso chamasse atenção de ninguém.
+
+**Correção:** o build do env de release recusa árvore suja, ou ao menos grita — um
+`extra_scripts` de pre-build conferindo `git status --porcelain` resolve. Não fazer isso no
+env de desenvolvimento, onde build sujo é o caso normal e travar seria atrito puro.
+
+Por enquanto a disciplina é manual e está escrita no procedimento de campo, que começa por
+`git status --porcelain` ter que sair vazio.
