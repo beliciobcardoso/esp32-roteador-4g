@@ -150,6 +150,23 @@
             }
         }
 
+        /* Linha propria e nao mais um card: o relogio responde "este dado e de agora?",
+           que e a pergunta de fundo de toda a tela, e nao so do card em que ele estava.
+           No topo ele tambem data o que se ve na aba de configuracao. */
+        .bar .clock {
+            margin: 0.35rem 0 0;
+            font-size: 0.95rem;
+            font-variant-numeric: tabular-nums;
+            color: var(--ink);
+        }
+
+        /* Sem sincronia o campo nao tem hora nenhuma para mostrar, so a explicacao — que e
+           prosa, e em corpo de leitura fica maior que o nome do equipamento ao lado. */
+        .bar .clock.excuse {
+            font-size: 0.8rem;
+            color: var(--ink-dim);
+        }
+
         nav {
             display: flex;
             gap: 0.25rem;
@@ -229,11 +246,6 @@
             font-variant-numeric: tabular-nums;
             line-height: 1.2;
             word-break: break-word;
-        }
-
-        .readout.excuse {
-            font-size: 0.95rem;
-            color: var(--ink-dim);
         }
 
         .readout .unit {
@@ -486,6 +498,7 @@
             <h1>Roteador 4G</h1>
             <p class="sub" id="bar-uplink">carregando…</p>
         </div>
+        <p class="clock" id="bar-clock">—</p>
         <nav>
             <a href="#/" data-route="#/">Status</a>
             <a href="#/config" data-route="#/config">Configuração</a>
@@ -513,10 +526,6 @@
                             <dd id="status-rebooted">—</dd>
                         </div>
                     </dl>
-                </article>
-                <article class="card">
-                    <h3>Relógio</h3>
-                    <p class="readout" id="status-clock">—</p>
                 </article>
                 <article class="card">
                     <h3>Bateria</h3>
@@ -712,8 +721,8 @@
             el('status-failures').textContent = String(data.uplink_failures);
             el('status-rebooted').textContent = data.uplink_rebooted ? 'sim' : 'não';
 
-            el('status-clock').textContent = data.clock_text;
-            el('status-clock').classList.toggle('excuse', !data.clock_synced);
+            el('bar-clock').textContent = data.clock_text;
+            el('bar-clock').classList.toggle('excuse', !data.clock_synced);
 
             const volts = data.battery_volts.toFixed(2);
             const percentText = data.battery_percent + '% estimado';
