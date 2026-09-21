@@ -163,6 +163,12 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
 - `sdkconfig.<env>` é gerado e ignorado pelo git; o PlatformIO **não** reaplica `sdkconfig.defaults` enquanto ele existir — apagar o arquivo, limpar `.pio/build` não basta
 - **Ler serial sob tráfego exige filtro.** Medido em 20/09/2026: `E (…) esp-netif_lwip-ppp: pppos_input_tcpip failed with -1` chega a 89% das linhas, e o `HW FIFO Overflow` que vem junto corta linhas de outros módulos ao meio (`Bateria:` vira `ateria:`, `eria:`). Usar `grep -avE "pppos_input_tcpip|ateria:|^ria:|^eria:|^teria:"`. Causa e opções no débito 13
 
+## Testes manuais
+
+- Atualização de firmware pela página: [docs/TESTE_OTA.md](docs/TESTE_OTA.md) — como gerar os
+  arquivos que exercitam cada regra de recusa e o caminho do sucesso, com o que cada um tem
+  que mostrar na tela.
+
 ## Débitos técnicos conhecidos
 
 Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
