@@ -861,3 +861,74 @@ tinha como mostrar a diferença — em ambos os casos, silêncio.
 dois desfechos. Barato; ficou de fora porque a fase fechou antes. Cuidado ao fazer: o débito
 13 já afoga o serial sob tráfego, então a linha tem que ser uma por requisição, não por
 bloco recebido.
+
+## 24. A página só é alcançável de dentro do AP
+
+**Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) —
+`begin()`; [docs/ATUALIZACAO_EM_PRODUCAO.md](ATUALIZACAO_EM_PRODUCAO.md)
+
+O OTA pela página tirou o cabo serial do caminho, e é fácil ler isso como "dá para atualizar
+a unidade de qualquer lugar". Não dá. O `WebServer` escuta em `0.0.0.0` e em tese atenderia
+pelo PPP, mas dados móveis saem por CGNAT: não há porta alcançável da internet. O que o OTA
+eliminou foi o cabo e o notebook, não a viagem.
+
+**Por que incomoda:** o custo de qualquer intervenção continua sendo uma visita por unidade,
+e é esse número que decide se vale corrigir um defeito pequeno. Planejar em cima de
+"atualização remota" que na verdade é presencial erra o custo de todo o roadmap.
+
+**Direção escolhida (21/09/2026): acesso remoto à própria página.** Não um canal só de
+firmware. A página já faz status, configuração e atualização; alcançá-la de fora resolve as
+três de uma vez, e o procedimento de campo continua sendo o mesmo que já foi testado — muda
+só de onde o operador abre o navegador.
+
+A alternativa considerada era a placa consultar um servidor por uma imagem assinada e gravar
+sozinha. É mais barata e mais segura, mas cobre só firmware: continuaria exigindo visita para
+ler status ou corrigir um APN errado, que são justamente os casos mais comuns. Fica
+registrada aqui como comparação, não como recomendação concorrente.
+
+**O que a fase vai ter que resolver, e nenhum é pequeno:**
+
+- **Entrada não existe.** Sob CGNAT a conexão tem que partir da placa e ficar de pé: túnel
+  reverso persistente contra um servidor nosso com IP público. Isso é um componente novo na
+  placa e uma VPS a manter
+- **Hoje é HTTP puro.** O Basic Auth manda usuário e senha em base64, que é reversível.
+  Dentro do AP isso já é discutível; exposto à internet é senha em claro. Ou o túnel cifra
+  (WireGuard resolve), ou entra TLS na placa — e o handshake do mbedTLS custa dezenas de KB
+  de heap num ESP32 que já roda PPP, NAT, DNS e o servidor
+- **Dado móvel é pago e a subida é lenta.** Um túnel permanente gasta keepalive o tempo
+  todo, e cada atualização sobe ~1 MB pelo pior sentido do enlace
+- **Identidade por unidade.** O túnel precisa saber qual placa é qual, o que esbarra no
+  provisionamento — hoje cada unidade sorteia o próprio segredo no primeiro boot e ninguém
+  guarda isso em lugar nenhum
+- **Inventário.** Com as unidades se conectando a um servidor, saber o que roda em cada uma
+  deixa de exigir visita. É consequência da fase, não trabalho extra
+- **Assinatura da imagem.** Sem secure boot, quem chegar na página grava qualquer firmware.
+  Hoje isso está atrás do AP; numa via remota o Basic Auth passa a ser a única barreira
+
+**Desenhado em 21/09/2026:** [PRD 13](prd/13-acesso-remoto.md) — túnel WireGuard partindo
+da placa, assinatura de imagem sem eFuse, e o servidor como pré-requisito da fase. O PRD
+registra as sete camadas de segurança e os cinco riscos, sendo o primeiro deles a convivência
+de uma terceira interface lwIP com o NAT que já roteia os clientes do AP.
+
+**Enquanto não for implementado**, o procedimento de campo declara o alcance real logo no
+início, em vez de deixar a limitação implícita.
+
+## 25. Nada impede um binário de árvore suja de ir para campo
+
+**Onde:** [platformio.ini](../platformio.ini); [docs/ATUALIZACAO_EM_PRODUCAO.md](ATUALIZACAO_EM_PRODUCAO.md)
+
+A versão que o firmware reporta na página sai do `git describe`, e com a árvore suja ela vira
+`<hash>-dirty`. Esse sufixo não identifica código nenhum: não diz o que estava modificado,
+então a imagem não é reproduzível a partir do repositório.
+
+**Por que incomoda:** o sintoma aparece tarde e longe. Uma unidade em campo rodando `-dirty`
+só vira problema quando alguém precisa reproduzir um defeito dela, e aí não há de onde
+partir. Aconteceu nesta bancada: a placa passou boa parte do dia 20/09/2026 reportando
+`88d4901-dirty` sem que isso chamasse atenção de ninguém.
+
+**Correção:** o build do env de release recusa árvore suja, ou ao menos grita — um
+`extra_scripts` de pre-build conferindo `git status --porcelain` resolve. Não fazer isso no
+env de desenvolvimento, onde build sujo é o caso normal e travar seria atrito puro.
+
+Por enquanto a disciplina é manual e está escrita no procedimento de campo, que começa por
+`git status --porcelain` ter que sair vazio.
