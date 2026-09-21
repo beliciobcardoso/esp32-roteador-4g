@@ -905,8 +905,13 @@ registrada aqui como comparação, não como recomendação concorrente.
 - **Assinatura da imagem.** Sem secure boot, quem chegar na página grava qualquer firmware.
   Hoje isso está atrás do AP; numa via remota o Basic Auth passa a ser a única barreira
 
-**Enquanto não existir**, o procedimento de campo declara o alcance real logo no início, em
-vez de deixar a limitação implícita.
+**Desenhado em 21/09/2026:** [PRD 13](prd/13-acesso-remoto.md) — túnel WireGuard partindo
+da placa, assinatura de imagem sem eFuse, e o servidor como pré-requisito da fase. O PRD
+registra as sete camadas de segurança e os cinco riscos, sendo o primeiro deles a convivência
+de uma terceira interface lwIP com o NAT que já roteia os clientes do AP.
+
+**Enquanto não for implementado**, o procedimento de campo declara o alcance real logo no
+início, em vez de deixar a limitação implícita.
 
 ## 25. Nada impede um binário de árvore suja de ir para campo
 
