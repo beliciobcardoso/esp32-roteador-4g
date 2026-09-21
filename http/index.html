@@ -240,6 +240,18 @@
             color: var(--ink-dim);
         }
 
+        /* Espaçamento entre blocos irmãos de uma tela mora aqui, e não em cada bloco. Antes
+           cada um trazia a própria margem, e quem não trazia — o grid de cards — encostava
+           no que viesse depois: na aba de firmware o card ficava colado no formulário de
+           envio. Definir no pai vale também para o bloco que ainda não existe. */
+        main section > * {
+            margin: 0;
+        }
+
+        main section > * + * {
+            margin-top: var(--gap);
+        }
+
         .grid {
             display: grid;
             gap: var(--gap);
@@ -454,7 +466,6 @@
             border-left: 3px solid var(--warn);
             background: var(--surface-2);
             padding: 0.7rem var(--gap);
-            margin: 0 0 var(--gap);
             font-size: 0.85rem;
         }
 
@@ -629,6 +640,7 @@
             <div class="grid">
                 <article class="card">
                     <h3>Imagem em execução</h3>
+                    <p class="readout" id="firmware-readout">—</p>
                     <dl class="rows">
                         <div>
                             <dt>Slot</dt>
@@ -637,10 +649,6 @@
                         <div class="longa">
                             <dt>Versão</dt>
                             <dd id="status-version">—</dd>
-                        </div>
-                        <div class="longa">
-                            <dt>Estado</dt>
-                            <dd id="status-image">—</dd>
                         </div>
                     </dl>
                 </article>
@@ -787,7 +795,7 @@
 
             el('status-slot').textContent = data.firmware_slot;
             el('status-version').textContent = data.firmware_version;
-            el('status-image').textContent = data.firmware_state;
+            el('firmware-readout').textContent = labelForImageState(data.firmware_image_state);
 
             const notice = el('admin-notice');
             notice.hidden = !data.admin_password_pending;
@@ -802,9 +810,12 @@
             confirmNotice.hidden = !data.firmware_needs_confirmation;
             el('firmware-confirm-wrap').hidden = !data.firmware_needs_confirmation;
             if (data.firmware_needs_confirmation) {
-                confirmNotice.textContent = 'Esta atualização ainda não foi confirmada. Confira se '
-                    + 'tudo está funcionando e confirme em até ' + data.firmware_deadline_min
-                    + ' minutos. Sem confirmação, a placa reinicia sozinha no firmware anterior.';
+                // Duas metades com papéis diferentes: a frase do domínio diz o risco e é a
+                // mesma que o firmware usa em qualquer outro lugar; o prazo vem do JSON e é
+                // o mesmo número que o loop() aplica. Nenhuma das duas é redigida aqui.
+                confirmNotice.textContent = 'Imagem ' + data.firmware_state
+                    + '. Confira se tudo está funcionando e confirme em até '
+                    + data.firmware_deadline_min + ' minutos.';
             }
         }
 
@@ -812,6 +823,16 @@
             if (state === 'online') return 'Online';
             if (state === 'backoff') return 'Sem conexão';
             return 'Conectando';
+        }
+
+        // Mesmo par do uplink: rótulo curto em destaque, frase completa do firmware logo
+        // abaixo. Sem isto o card de firmware era o único que não respondia nada de relance
+        // — obrigava a ler três linhas de detalhe para saber se estava tudo bem.
+        function labelForImageState(state) {
+            if (state === 'valid') return 'Confirmado';
+            if (state === 'pending') return 'Em verificação';
+            if (state === 'unmarked') return 'Gravado por serial';
+            return 'Desconhecido';
         }
 
         async function pollStatus() {

@@ -22,6 +22,20 @@ const char* uplinkStateName(UplinkState state) {
   }
   return "connecting";
 }
+
+// Mesmo desenho do uplink, e pelo mesmo motivo: a frase do describeFirmwareImageState() e
+// para a pessoa ler e muda de redacao, o nome e contrato com o JS. Sem ele a pagina teria
+// que adivinhar o estado por substring na frase, ou se contentar com o booleano de
+// confirmacao — que nao distingue "gravado por serial" de "confirmado".
+const char* firmwareImageStateName(FirmwareImageState state) {
+  switch (state) {
+    case FirmwareImageState::Valid: return "valid";
+    case FirmwareImageState::PendingVerify: return "pending";
+    case FirmwareImageState::Unmarked: return "unmarked";
+    case FirmwareImageState::Unknown: return "unknown";
+  }
+  return "unknown";
+}
 }  // namespace
 
 HttpConfigHandler::HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase,
@@ -222,6 +236,7 @@ void HttpConfigHandler::handleGetStatus() {
       .number("battery_percent", static_cast<uint32_t>(voltageToPercent(volts)))
       .text("firmware_slot", firmwareWriter_.runningSlotLabel())
       .text("firmware_version", firmwareWriter_.runningVersionText())
+      .text("firmware_image_state", firmwareImageStateName(imageState))
       .text("firmware_state", firmwareStateText())
       .boolean("firmware_needs_confirmation", needsHealthConfirmation(imageState))
       // O prazo vem do dominio, o mesmo numero que o loop() usa para decidir. A pagina e o
