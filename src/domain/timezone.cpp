@@ -7,7 +7,7 @@ namespace {
 // A ordem e a do <select>: Brasilia primeiro porque e o fuso da maioria das unidades, e a
 // primeira entrada tambem e o default de fabrica.
 const TimezoneOption kOptions[] = {
-    {"<-03>3", "Brasilia (UTC-3)"},
+    {"<-03>3", "Brasília (UTC-3)"},
     {"<-04>4", "Manaus (UTC-4)"},
     {"<-05>5", "Acre (UTC-5)"},
     {"<-02>2", "Fernando de Noronha (UTC-2)"},

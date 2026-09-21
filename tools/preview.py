@@ -49,21 +49,21 @@ CENARIOS = {
     },
     "caindo": {
         "uplink_state": "backoff",
-        "uplink_text": "Sem conexao apos 4 tentativas. Nova tentativa em instantes.",
+        "uplink_text": "Sem conexão 4G. 4 tentativa(s) malsucedida(s) até agora; a próxima tentativa é automática, em até um minuto.",
         "uplink_failures": 4,
         "uplink_rebooted": True,
         "uplink_exhausted": False,
-        "clock_text": "ainda nao sincronizado (precisa do uplink 4G).",
+        "clock_text": "ainda não sincronizado (precisa do uplink 4G).",
         "clock_synced": False,
         "battery_volts": 3.42,
         "battery_percent": 18,
         "firmware_slot": "app1",
         "firmware_version": VERSAO_LONGA,
-        "firmware_state": "Imagem em verificacao: aguardando confirmacao.",
+        "firmware_state": "em verificação — não reinicie ainda, reiniciar agora volta para o firmware anterior",
         "firmware_needs_confirmation": True,
         "firmware_deadline_min": 10,
         "admin_password_pending": True,
-        "admin_notice": "A senha de admin precisa ser trocada antes de qualquer outra gravacao.",
+        "admin_notice": "troque a senha de admin sorteada no primeiro boot antes de salvar qualquer configuração",
     },
 }
 
@@ -78,9 +78,9 @@ CONFIG = {
     "battery_ratio": 2.19,
     "timezones": [
         {"posix": "<-02>2", "label": "Fernando de Noronha (UTC-2)"},
-        {"posix": "<-03>3", "label": "Brasilia (UTC-3)"},
+        {"posix": "<-03>3", "label": "Brasília (UTC-3)"},
         {"posix": "<-04>4", "label": "Manaus (UTC-4)"},
-        {"posix": "<-05>5", "label": "Rio Branco (UTC-5)"},
+        {"posix": "<-05>5", "label": "Acre (UTC-5)"},
     ],
 }
 

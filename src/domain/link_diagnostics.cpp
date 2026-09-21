@@ -27,6 +27,11 @@ String describeDropWindow(uint32_t dropsInWindow, uint32_t freeInternalBytes) {
 
   // A leitura do heap e o que separa as duas hipoteses do debito 13. Sem ela o total
   // sozinho nao decide entre aumentar a fila e caçar consumo de memoria.
+  //
+  // Esta linha segue sem acento enquanto as da pagina foram acentuadas, e a diferenca e de
+  // destino: ela sai no serial, nao na interface. Terminal em campo nem sempre esta em
+  // UTF-8, e o valor dela e ser greppavel — o AGENTS.md ate documenta os filtros de grep
+  // para ler o serial sob trafego. "nao ser da fila" com acento quebraria esses filtros.
   line += heapLooksTight(freeInternalBytes)
               ? " — heap no talo, o descarte pode nao ser da fila"
               : " — heap folgado, descarte e pressao de fila";

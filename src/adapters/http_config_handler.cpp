@@ -83,7 +83,7 @@ bool HttpConfigHandler::authenticate(const RouterSettings& current) {
 // Sem Basic Auth de proposito — exigir credencial aqui faria o navegador abrir o popup de
 // senha por causa de um favicon.
 void HttpConfigHandler::handleNotFound() {
-  server_.send(404, "text/plain", "nao encontrado");
+  server_.send(404, "text/plain", "não encontrado");
 }
 
 // Texto do bloco de status. Sem provider registrado a pagina diz isso em vez de omitir o
@@ -91,7 +91,7 @@ void HttpConfigHandler::handleNotFound() {
 // montagem em vez de deixar quem le achando que o 4G esta bem.
 String HttpConfigHandler::uplinkStatusText() const {
   if (uplinkStatus_ == nullptr) {
-    return "Estado do uplink indisponivel: nenhuma fonte de status foi registrada.";
+    return "Estado do uplink indisponível: nenhuma fonte de status foi registrada.";
   }
   return describeUplinkStatus(uplinkStatus_());
 }
@@ -101,10 +101,10 @@ String HttpConfigHandler::uplinkStatusText() const {
 // 7 e que o firmware nunca finge um horario.
 String HttpConfigHandler::clockTextOrExcuse() const {
   if (clockText_ == nullptr) {
-    return "indisponivel: nenhuma fonte de hora foi registrada.";
+    return "indisponível: nenhuma fonte de hora foi registrada.";
   }
   String text = clockText_();
-  if (text.length() == 0) return "ainda nao sincronizado (precisa do uplink 4G).";
+  if (text.length() == 0) return "ainda não sincronizado (precisa do uplink 4G).";
   return text;
 }
 
@@ -142,7 +142,7 @@ void HttpConfigHandler::handleConfirmFirmware() {
   // desde antes de a imagem ser confirmada por outro caminho, e o POST chegaria para uma
   // janela que ja fechou.
   if (!needsHealthConfirmation(firmwareWriter_.runningImageState())) {
-    sendJsonError(409, "Nao ha atualizacao pendente de confirmacao.");
+    sendJsonError(409, "Não há atualização pendente de confirmação.");
     return;
   }
 
@@ -152,7 +152,7 @@ void HttpConfigHandler::handleConfirmFirmware() {
   // propria pagina, que seguiria o redirect e baixaria a pagina inteira so para descartar.
   // O F5 que o 303 evitava tambem deixou de existir — nao ha navegacao para recarregar.
   JsonObject body;
-  body.text("mensagem", "Atualizacao confirmada.");
+  body.text("mensagem", "Atualização confirmada.");
   sendJson(200, body.finish());
 }
 
@@ -298,7 +298,7 @@ void HttpConfigHandler::handlePostConfig() {
   // navegador: um POST direto manda o que quiser.
   String rawRatio = server_.arg("battery_ratio");
   if (rawRatio.indexOf(',') >= 0) {
-    sendJsonError(400, "use ponto e nao virgula no divisor da bateria");
+    sendJsonError(400, "use ponto e não vírgula no divisor da bateria");
     return;
   }
   updated.battery_divider_ratio = rawRatio.toFloat();
@@ -327,23 +327,23 @@ void HttpConfigHandler::handlePostConfig() {
   bool localChanged = updated.timezone != current.timezone ||
                       updated.battery_divider_ratio != current.battery_divider_ratio;
 
-  String message = "Configuracao salva.";
+  String message = "Configuração salva.";
   if (uplinkChanged) {
     // Derrubar e resubir o PPP nao afeta a associacao dos clientes ao AP, entao isso
     // pode ser feito sem reboot. Ate um minuto porque inclui o power-on do modem, o
     // registro na rede e o IPCP.
-    message += " APN alterado: reconectando o 4G agora, pode levar ate 1 minuto.";
+    message += " APN alterado: reconectando o 4G agora, pode levar até 1 minuto.";
   }
   if (apChanged) {
     // Mudar SSID/senha derruba todo mundo que esta associado — inclusive quem acabou de
     // enviar este formulario. Fazer isso aqui cortaria a resposta antes dela chegar.
-    message += " SSID e senha do Wi-Fi so valem apos reiniciar a placa.";
+    message += " SSID e senha do Wi-Fi só valem após reiniciar a placa.";
   }
 
   if (localChanged) {
     // Fuso e divisor valem na proxima leitura, sem reconectar nem reiniciar nada. Dizer
     // isso evita que a pessoa fique esperando um efeito que ja aconteceu.
-    message += " Fuso e calibracao da bateria ja valem.";
+    message += " Fuso e calibração da bateria já valem.";
   }
 
   // Os flags acompanham a frase em vez de a pagina reler a frase: quem muda SSID precisa de
@@ -392,7 +392,7 @@ void HttpConfigHandler::handleUpdateUpload() {
 
     if (!firmwareWriter_.begin()) {
       Serial.printf("OTA: abertura do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
-      updateError_ = "nao foi possivel abrir a particao de destino";
+      updateError_ = "não foi possível abrir a partição de destino";
     }
     return;
   }
@@ -447,7 +447,7 @@ void HttpConfigHandler::handleUpdateUpload() {
     // arquivo truncado ou corrompido morre neste ponto, sem trocar o slot de boot.
     if (!firmwareWriter_.finish()) {
       Serial.printf("OTA: ativacao do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
-      updateError_ = "a imagem enviada nao passou na verificacao";
+      updateError_ = "a imagem enviada não passou na verificação";
     }
   }
 }
@@ -482,10 +482,10 @@ void HttpConfigHandler::handleUpdateDone() {
   // O prazo vem do dominio e nao de um numero digitado aqui: e o mesmo que o loop() usa
   // para decidir, e duas redacoes do mesmo prazo divergem na primeira vez que uma delas
   // mudar.
-  String message = "Firmware gravado. A placa reinicia agora e a pagina volta assim que o AP subir. ";
-  message += "Abra esta pagina de novo e clique em Confirmar atualizacao em ate ";
+  String message = "Firmware gravado. A placa reinicia agora e a página volta assim que o AP subir. ";
+  message += "Abra esta página de novo e clique em Confirmar atualização em até ";
   message += numberToString(kConfirmationDeadlineMs / 60000);
-  message += " minutos. Sem confirmacao a placa volta sozinha para o firmware anterior.";
+  message += " minutos. Sem confirmação a placa volta sozinha para o firmware anterior.";
   JsonObject done;
   done.text("mensagem", message);
   sendJson(200, done.finish());

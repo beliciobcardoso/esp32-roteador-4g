@@ -65,7 +65,9 @@ void test_exhausted_budget_points_at_an_external_cause() {
   const String text = describeUplinkStatus(backoff(24, true));
   TEST_ASSERT_TRUE_MESSAGE(mentions(text, "SIM"), text.c_str());
   TEST_ASSERT_TRUE_MESSAGE(mentions(text, "cobertura"), text.c_str());
-  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "credito"), text.c_str());
+  // "plano de dados" e nao "credito": o fragmento precisa sobreviver a acentuacao da
+  // frase, e e a causa que o teste quer amarrar de qualquer jeito.
+  TEST_ASSERT_TRUE_MESSAGE(mentions(text, "plano de dados"), text.c_str());
 }
 
 // Sem orcamento de reinicio a placa segue tentando, entao o estado corrente alterna entre

@@ -5,10 +5,10 @@ String describeUplinkStatus(const UplinkStatus& status) {
     // Nao diz "aguarde": e o unico caso em que aguardar e a acao errada. Nomeia as tres
     // causas externas plausiveis porque todas as tres se resolvem longe da placa, e sem
     // elas a frase vira so um erro sem saida.
-    return "Sem conexao 4G apos " + numberToString(status.consecutive_failures) +
-           " tentativas e reinicios que nao resolveram. A causa provavel esta fora da placa: "
-           "SIM mal encaixado ou sem servico, area sem cobertura, ou credito/plano de dados "
-           "esgotado. A placa continua tentando, mas so esperar nao deve resolver.";
+    return "Sem conexão 4G após " + numberToString(status.consecutive_failures) +
+           " tentativas e reinícios que não resolveram. A causa provável está fora da placa: "
+           "SIM mal encaixado ou sem serviço, área sem cobertura, ou crédito/plano de dados "
+           "esgotado. A placa continua tentando, mas só esperar não deve resolver.";
   }
 
   switch (status.state) {
@@ -26,19 +26,19 @@ String describeUplinkStatus(const UplinkStatus& status) {
         if (status.rebooted_for_uplink) {
           // "Primeira vez" seria mentira aqui: a contagem de falhas zerou junto com o
           // restart que a propria falta de uplink disparou.
-          return "Reconectando depois de a placa reiniciar por falta de conexao 4G. Pode "
-                 "levar ate um minuto.";
+          return "Reconectando depois de a placa reiniciar por falta de conexão 4G. Pode "
+                 "levar até um minuto.";
         }
-        return "Conectando pela primeira vez. Pode levar ate um minuto: inclui ligar o "
+        return "Conectando pela primeira vez. Pode levar até um minuto: inclui ligar o "
                "modem, registrar na operadora e negociar o IP.";
       }
-      return "Reconectando apos " + numberToString(status.consecutive_failures) +
-             " tentativa(s) malsucedida(s). Pode levar ate um minuto.";
+      return "Reconectando após " + numberToString(status.consecutive_failures) +
+             " tentativa(s) malsucedida(s). Pode levar até um minuto.";
 
     case UplinkState::Backoff:
-      return "Sem conexao 4G. " + numberToString(status.consecutive_failures) +
-             " tentativa(s) malsucedida(s) ate agora; a proxima tentativa e automatica, em "
-             "ate um minuto. Se o APN estiver errado, corrigi-lo aqui dispara uma tentativa "
+      return "Sem conexão 4G. " + numberToString(status.consecutive_failures) +
+             " tentativa(s) malsucedida(s) até agora; a próxima tentativa é automática, em "
+             "até um minuto. Se o APN estiver errado, corrigi-lo aqui dispara uma tentativa "
              "na hora.";
   }
 
