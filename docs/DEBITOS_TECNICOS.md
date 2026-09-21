@@ -862,34 +862,51 @@ dois desfechos. Barato; ficou de fora porque a fase fechou antes. Cuidado ao faz
 13 já afoga o serial sob tráfego, então a linha tem que ser uma por requisição, não por
 bloco recebido.
 
-## 24. Atualização remota de verdade não existe, e o procedimento de campo esconde isso
+## 24. A página só é alcançável de dentro do AP
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) —
 `begin()`; [docs/ATUALIZACAO_EM_PRODUCAO.md](ATUALIZACAO_EM_PRODUCAO.md)
 
 O OTA pela página tirou o cabo serial do caminho, e é fácil ler isso como "dá para atualizar
-a unidade de qualquer lugar". Não dá. A página só responde no AP: o `WebServer` escuta em
-`0.0.0.0` e em tese atenderia pelo PPP, mas dados móveis saem por CGNAT e não há porta
-alcançável da internet. O que o OTA eliminou foi o cabo e o notebook, não a viagem.
+a unidade de qualquer lugar". Não dá. O `WebServer` escuta em `0.0.0.0` e em tese atenderia
+pelo PPP, mas dados móveis saem por CGNAT: não há porta alcançável da internet. O que o OTA
+eliminou foi o cabo e o notebook, não a viagem.
 
-**Por que incomoda:** o custo de uma correção de campo continua sendo uma visita por
-unidade, e é esse número que decide se vale corrigir um defeito pequeno. Planejar em cima
-de "atualização remota" que na verdade é presencial erra o custo de todo o roadmap.
+**Por que incomoda:** o custo de qualquer intervenção continua sendo uma visita por unidade,
+e é esse número que decide se vale corrigir um defeito pequeno. Planejar em cima de
+"atualização remota" que na verdade é presencial erra o custo de todo o roadmap.
 
-Junto disso, dois buracos menores que a mesma fase resolveria:
+**Direção escolhida (21/09/2026): acesso remoto à própria página.** Não um canal só de
+firmware. A página já faz status, configuração e atualização; alcançá-la de fora resolve as
+três de uma vez, e o procedimento de campo continua sendo o mesmo que já foi testado — muda
+só de onde o operador abre o navegador.
 
-- **Não há inventário.** A única fonte do que roda em cada unidade é a página daquela
-  unidade. Descobrir quais estão desatualizadas exige visitar todas
-- **Não há assinatura.** Sem secure boot nem OTA assinado, quem tiver a senha de admin grava
-  qualquer imagem. Hoje isso está atrás do AP e de um Basic Auth; numa via remota passa a
-  ser a única barreira
+A alternativa considerada era a placa consultar um servidor por uma imagem assinada e gravar
+sozinha. É mais barata e mais segura, mas cobre só firmware: continuaria exigindo visita para
+ler status ou corrigir um APN errado, que são justamente os casos mais comuns. Fica
+registrada aqui como comparação, não como recomendação concorrente.
 
-**Correção:** inverter a conexão — a placa consultando periodicamente um servidor nosso por
-uma imagem nova, verificando assinatura antes de gravar. Resolve os três de uma vez: alcance,
-inventário (quem consulta se identifica) e integridade. É fase própria com PRD, não ajuste.
+**O que a fase vai ter que resolver, e nenhum é pequeno:**
 
-Enquanto não existir, o procedimento de campo registra o alcance real logo no início, em vez
-de deixar a limitação implícita.
+- **Entrada não existe.** Sob CGNAT a conexão tem que partir da placa e ficar de pé: túnel
+  reverso persistente contra um servidor nosso com IP público. Isso é um componente novo na
+  placa e uma VPS a manter
+- **Hoje é HTTP puro.** O Basic Auth manda usuário e senha em base64, que é reversível.
+  Dentro do AP isso já é discutível; exposto à internet é senha em claro. Ou o túnel cifra
+  (WireGuard resolve), ou entra TLS na placa — e o handshake do mbedTLS custa dezenas de KB
+  de heap num ESP32 que já roda PPP, NAT, DNS e o servidor
+- **Dado móvel é pago e a subida é lenta.** Um túnel permanente gasta keepalive o tempo
+  todo, e cada atualização sobe ~1 MB pelo pior sentido do enlace
+- **Identidade por unidade.** O túnel precisa saber qual placa é qual, o que esbarra no
+  provisionamento — hoje cada unidade sorteia o próprio segredo no primeiro boot e ninguém
+  guarda isso em lugar nenhum
+- **Inventário.** Com as unidades se conectando a um servidor, saber o que roda em cada uma
+  deixa de exigir visita. É consequência da fase, não trabalho extra
+- **Assinatura da imagem.** Sem secure boot, quem chegar na página grava qualquer firmware.
+  Hoje isso está atrás do AP; numa via remota o Basic Auth passa a ser a única barreira
+
+**Enquanto não existir**, o procedimento de campo declara o alcance real logo no início, em
+vez de deixar a limitação implícita.
 
 ## 25. Nada impede um binário de árvore suja de ir para campo
 

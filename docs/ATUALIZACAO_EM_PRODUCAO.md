@@ -13,8 +13,9 @@ Para gerar os arquivos que exercitam as recusas do upload, ver
 por CGNAT e não há porta alcançável da internet.
 
 O que este procedimento elimina é o cabo e o notebook, não a viagem. Atualizar de outro
-município exigiria a placa buscando a imagem sozinha num servidor, e isso não existe — está
-registrado como débito 24.
+município depende de alcançar esta mesma página de fora, o que exige um túnel partindo da
+placa — não existe hoje, e está registrado como débito 24. Quando existir, este procedimento
+vale igual: muda só de onde o operador abre o navegador.
 
 Se alguma unidade receber IP público de operadora, a conta muda e piora: a página de
 configuração passaria a estar exposta na internet, protegida só por Basic Auth. Confirmar
