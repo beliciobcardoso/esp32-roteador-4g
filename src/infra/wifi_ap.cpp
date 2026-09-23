@@ -4,8 +4,23 @@
 #include <esp_wifi.h>
 
 namespace {
-const IPAddress kApIp(192, 168, 4, 1);
-const IPAddress kApGateway(192, 168, 4, 1);
+// Faixa do AP. 192.168.10.0/24 e nao a 192.168.4.0/24 do default do core: a .4 e a faixa
+// que metade dos roteadores de mesa e dos exemplos de ESP32 usa, e colidir com a rede onde
+// a unidade e configurada faz a pagina responder de outro aparelho sem erro nenhum — foi o
+// que aconteceu em 23/09/2026 numa bancada, onde http://192.168.4.1/ devolveu um nginx da
+// rede da empresa em vez da placa.
+//
+// Valor fixo em codigo, nao na NVS: existe uma faixa em uso, nao duas. Enderecar isso pela
+// pagina seria a abstracao antes da segunda ocorrencia real, e ainda daria a quem configura
+// a chance de se trancar para fora da propria unidade.
+//
+// Trocar este valor arrasta o DHCP junto e nao exige mais nada: set_esp_interface_ip()
+// (core Arduino, WiFiGeneric.cpp) deriva o lease do proprio IP do AP — inicio em ap_ip + 1,
+// fim em inicio + 10. O DnsForwarder e o NatBridge leem de WiFi.softAPIP(), entao tambem
+// seguem sozinhos. A mascara precisa continuar entre /24 e /28, que e a faixa que aquela
+// funcao aceita.
+const IPAddress kApIp(192, 168, 10, 1);
+const IPAddress kApGateway(192, 168, 10, 1);
 const IPAddress kApSubnet(255, 255, 255, 0);
 const uint8_t kApChannel = 1;
 // Teto do driver no ESP32 classico: ESP_WIFI_MAX_CONN_NUM vale 15

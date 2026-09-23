@@ -58,7 +58,7 @@ Regras de validação em [src/domain/router_settings.cpp](../src/domain/router_s
 | `battery_divider_ratio` | [src/infra/battery_adc.cpp](../src/infra/battery_adc.cpp) | multiplica a tensão do pino; trocar pela página vale na leitura seguinte |
 | `admin_password_pending` | [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) | enquanto `true`, o `GET /` mostra o aviso e o `POST /` recusa gravação que mantenha a senha sorteada |
 
-Valores fixos em código, **não** configuráveis pela NVS: IP do AP (192.168.4.1/24),
+Valores fixos em código, **não** configuráveis pela NVS: IP do AP (192.168.10.1/24),
 canal Wi-Fi (1), limite de clientes, porta HTTP (80), pinagem do modem, baud da UART.
 
 ## `configured` e `schema` — por que existem duas chaves de controle
@@ -134,7 +134,7 @@ pelo menos o registro nunca fica marcado como válido antes dos dados estarem l�
 Ler a configuração atual sem serial — pela página de config, com o AP no ar:
 
 ```bash
-curl -u admin:<a senha sorteada no primeiro boot> http://192.168.4.1/
+curl -u admin:<a senha sorteada no primeiro boot> http://192.168.10.1/
 ```
 
 O HTML devolve SSID, APN, usuário do APN e usuário admin preenchidos. **Senhas nunca são

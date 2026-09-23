@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-// INFRA — resolvedor que os clientes do AP enxergam em 192.168.4.1. Nao resolve nada
+// INFRA — resolvedor que os clientes do AP enxergam em 192.168.10.1. Nao resolve nada
 // sozinho: repassa a pergunta para o DNS que a operadora entregou no IPCP e devolve a
 // resposta ao cliente.
 //
@@ -14,7 +14,7 @@
 // proprio AP como DNS sempre que a opcao 6 nao esta configurada (dhcpserver.c, montagem
 // das opcoes do OFFER), e ate aqui nao havia ninguem escutando nesse endereco — o
 // NatBridge corrigia isso reescrevendo a opcao 6 com o DNS da operadora a cada sessao
-// PPP. Com um resolvedor de verdade em 192.168.4.1, o endereco entregue no lease vale
+// PPP. Com um resolvedor de verdade em 192.168.10.1, o endereco entregue no lease vale
 // para sempre: cliente associado durante uma reconexao nao fica sem DNS ate renovar, e o
 // DHCP nao precisa mais parar e subir a cada sessao (debitos 9 e 12).
 class DnsForwarder {
