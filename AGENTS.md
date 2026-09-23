@@ -38,7 +38,7 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 - `infra/` — wrappers finos sobre APIs ESP-IDF/Arduino (WiFi AP, PPP, NAT)
 - `main.cpp` — só orquestração/injeção, zero lógica de negócio
 
-**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). As Fases 7 (relógio por SNTP e fuso configurável) e 8 (atualização de firmware pela própria página, com rollback do bootloader) foram **validadas em placa em 20/09/2026**: relógio certo 17 s depois do reset, fuso trocando a quente, OTA trocando de slot e rollback revertendo de verdade um reset dentro da janela. Segue aberto um único critério de bancada — upload interrompido no meio. **Nada da Fase 9 em diante está implementado**: as Fases 9 (telemetria MQTT e painéis no Grafana, [PRD 14](docs/prd/14-telemetria-mqtt.md)), 10 (acesso remoto à página, [PRD 13](docs/prd/13-acesso-remoto.md)) e 11 (posição por GNSS, [PRD 15](docs/prd/15-gps-posicao.md)) são propostas. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
+**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). As Fases 7 (relógio por SNTP e fuso configurável) e 8 (atualização de firmware pela própria página, com rollback do bootloader) foram **validadas em placa em 20/09/2026**: relógio certo 17 s depois do reset, fuso trocando a quente, OTA trocando de slot e rollback revertendo de verdade um reset dentro da janela. Segue aberto um único critério de bancada — upload interrompido no meio. Da Fase 9 (telemetria MQTT, [PRD 14](docs/prd/14-telemetria-mqtt.md)) **só o domínio existe** — `domain/telemetry`, `domain/telemetry_buffer` e `domain/mqtt_backoff`, concluídos e testados no host em 23/09/2026; nada ainda fala com o mundo, e nenhuma linha rodou em placa. As Fases 10 (acesso remoto à página, [PRD 13](docs/prd/13-acesso-remoto.md)) e 11 (posição por GNSS, [PRD 15](docs/prd/15-gps-posicao.md)) seguem só propostas. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
 
 A configuração persistida (chaves da NVS, defaults de fábrica, como consultar e apagar) está documentada em [docs/CONFIGURACAO_NVS.md](docs/CONFIGURACAO_NVS.md).
 
@@ -225,6 +225,12 @@ Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
 - Toda rota HTTP sensível (config): Basic Auth obrigatório, erro sem vazar detalhe interno
 - Seguir padrão do arquivo existente ao editar, não impor estilo novo
 - Não criar abstração antes de duas ocorrências reais a justificarem
+- **Instante de tempo no domínio é `uint32_t`, não `unsigned long`.** `unsigned long` tem
+  4 bytes na placa e 8 no host, então a subtracão que atravessa a virada de `millis()` nunca
+  vira no teste nativo — o teste passa por não exercitar nada. `millis()` cabe exato em
+  `uint32_t`, então nada se perde na placa. Vale para código novo; `dropReportDue` em
+  `domain/link_diagnostics` é anterior a esta regra e tem um teste de virada que hoje é
+  verde pelo motivo errado
 - Referência de documentação para código **deste** repositório cita arquivo + símbolo
   (`http_config_handler.cpp` → `begin()`), nunca número de linha — linha envelhece em
   silêncio a cada refatoração, e este erro já apareceu em duas revisões seguidas (débito 21).

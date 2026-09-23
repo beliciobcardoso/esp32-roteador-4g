@@ -235,7 +235,7 @@ Usuário abre 192.168.4.1
 - ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar — unico criterio aberto
 - Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
 
-### Fase 9 — Telemetria MQTT e painéis no Grafana — proposta
+### Fase 9 — Telemetria MQTT e painéis no Grafana — em andamento (domínio concluído)
 
 - A unidade publica o próprio estado num broker MQTT sobre TLS, **só de subida**, e esse
   estado vira série temporal de longo prazo na stack Prometheus + Grafana que já roda em
@@ -262,6 +262,15 @@ Usuário abre 192.168.4.1
   interna. Encolher os buffers TLS vem primeiro; medir vem depois, com o cliente carregado
 - Sensores externos ficam **fora de escopo**, mas a fase fixa os nomes, o formato e o
   armazenamento que eles vão usar
+- **Domínio concluído em 23/09/2026**, com 50 testes nativos, sem tocar em hardware:
+  `domain/mqtt_backoff` (progressão, jitter, gate por uplink, patamar de estabilidade),
+  `domain/telemetry` (amostra de 20 B, payload, decisão de publicar) e
+  `domain/telemetry_buffer` (anel, as três guardas do cabeçalho, correção de timestamp).
+  Fecha os critérios de aceite 11 e 15 do PRD
+- **Falta tudo o que toca o mundo:** `infra/mqtt_client`, o acumulado do
+  `infra/ppp_drop_counter`, os campos de broker em `RouterSettings` e na página, os buffers
+  do mbedTLS no `sdkconfig.defaults`, o broker com TLS e ACL, o Telegraf, os painéis e a
+  medição de heap com TLS carregado
 - Detalhes em [prd/14-telemetria-mqtt.md](prd/14-telemetria-mqtt.md)
 
 ### Fase 10 — Acesso remoto à página de configuração — proposta
