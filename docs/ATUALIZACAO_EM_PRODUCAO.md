@@ -23,7 +23,7 @@ antes de contratar qualquer plano diferente do atual.
 
 ## Antes de gerar o binário
 
-Três perguntas que decidem se o OTA serve. Qualquer "sim" nas duas primeiras exige cabo
+Quatro perguntas que decidem se o OTA serve. Qualquer "sim" nas duas primeiras exige cabo
 serial, e nenhum OTA resolve.
 
 1. **`partitions.csv` mudou?** A tabela de partições não viaja no `firmware.bin`. Uma
@@ -37,6 +37,30 @@ serial, e nenhum OTA resolve.
 3. **O binário cabe?** O slot é de 1.900.544 bytes (`0x1D0000` em `partitions.csv`). O
    `pio run` imprime a ocupação no fim; se passar de 100%, o upload é recusado pela placa,
    mas descobrir isso em campo é tarde.
+4. **A faixa do AP mudou?** Ela é fixa em `infra/wifi_ap` (`kApIp`), e trocá-la derruba o
+   endereçamento de **todos** os clientes daquela unidade de uma vez. Não impede o OTA nem
+   exige cabo, mas muda o que o operador vê depois do reboot — ver a seção seguinte.
+
+### Se esta imagem troca a faixa do AP
+
+Aconteceu uma vez, em 23/09/2026: `192.168.4.0/24` → `192.168.10.0/24`. Se voltar a
+acontecer, o operador precisa saber **antes** de subir a imagem.
+
+O lease que cada cliente tem é da faixa antiga, e o servidor DHCP da placa passa a responder
+na nova. O aparelho continua associado ao Wi-Fi e para de navegar até renovar o lease — o
+que, dependendo do sistema, leva minutos ou só acontece quando alguém desliga e religa o
+Wi-Fi. O sintoma é **"conectou e não tem internet"**, que é exatamente como uma queda de
+uplink 4G se parece.
+
+Consequências práticas para a visita:
+
+- O passo 1 de "Na unidade" passa a valer no endereço novo. Abrir o antigo não dá erro
+  claro: pode não responder, ou pior, responder de outro aparelho da rede onde você estiver
+- O passo 7 (testar a unidade de verdade antes de confirmar) exige **desassociar e associar
+  de novo** o celular, senão o teste falha pelo lease velho e não pelo firmware. Confirmar
+  ou reverter por causa disso seria decidir pelo motivo errado
+- Quem ficar sem confirmar dentro do prazo por estar brigando com o lease perde a imagem: a
+  placa reverte sozinha. Renove o lease primeiro, teste depois, confirme por último
 
 ## Gerar o binário de release
 
@@ -64,7 +88,7 @@ justamente caído.
 
 ## Na unidade
 
-1. Associe ao AP e abra `http://192.168.4.1/`
+1. Associe ao AP e abra `http://192.168.10.1/`
 2. Anote o que está lá **antes**: aba Firmware, slot e versão. É o que permite dizer depois
    se a atualização pegou
 3. Aba **Firmware** → escolha o arquivo → **Enviar e reiniciar**. Cerca de um minuto

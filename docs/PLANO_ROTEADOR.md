@@ -64,7 +64,7 @@ esp32-roteador-4g/
 ## Fluxo de dados da configuração
 
 ```
-Usuário abre 192.168.4.1
+Usuário abre 192.168.10.1
    → http_config_handler (adapters) exige Basic Auth
    → GET: renderiza html_page com valores atuais (via load_settings usecase)
    → POST: valida payload → save_settings usecase → valida via domain/router_settings
@@ -85,7 +85,7 @@ Usuário abre 192.168.4.1
   sem deixar placas já gravadas subirem com campos vazios
 
 ### Fase 2 — WiFi AP — ✅ concluída (com ressalvas)
-- `infra/wifi_ap`: sobe SoftAP com SSID/senha vindos do `load_settings`, IP fixo (ex: `192.168.4.1`)
+- `infra/wifi_ap`: sobe SoftAP com SSID/senha vindos do `load_settings`, IP fixo (ex: `192.168.10.1`)
 - Teste: conectar um celular no AP e confirmar que recebe IP por DHCP
 - **Validado em campo:** celular conecta e recebe IP por DHCP
 - ⚠️ Dois critérios originais não se sustentaram, descobertos na Fase 4:
@@ -96,7 +96,7 @@ Usuário abre 192.168.4.1
 ### Fase 3 — Servidor de configuração HTTP — ✅ concluída
 - `adapters/html_page`: formulário simples (SSID, senha WiFi, APN, usuário/senha admin)
 - `adapters/http_config_handler`: rotas GET/POST, Basic Auth, chama `save_settings`
-- Teste: acessar `192.168.4.1` do celular conectado no AP, editar e salvar configs, confirmar persistência após reboot
+- Teste: acessar `192.168.10.1` do celular conectado no AP, editar e salvar configs, confirmar persistência após reboot
 - **Validado em campo:** GET renderiza o formulário, POST persiste, configs sobrevivem ao reboot
 - Evoluiu na Fase 4: formulário ganhou `apn_user`/`apn_password` (senha em branco mantém a atual)
 - ⚠️ `loop()` bloqueia `handleClient()` por ~3 s por ciclo — débito 4 em [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md)
@@ -110,7 +110,7 @@ Usuário abre 192.168.4.1
 ### Fase 5 — NAT / roteamento — ✅ concluída
 - `infra/nat_bridge`: habilita NAPT na interface **AP** (não na PPP — ver PRD 05)
   - Entregava também o DNS da operadora pela opção 6 do DHCP; desde 19/09/2026 não mexe
-    mais no DHCP — quem resolve é o `infra/dns_forwarder` em `192.168.4.1:53` (PRD 09)
+    mais no DHCP — quem resolve é o `infra/dns_forwarder` em `192.168.10.1:53` (PRD 09)
 - Orquestração (settings → AP → modem → espera IP → NAT) ficou em `main.cpp`, não em
   `usecases/start_routing` — decisão registrada no PRD 05
 - Validado em hardware: celular conectado no AP navegou pelo 4G

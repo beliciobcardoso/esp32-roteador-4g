@@ -72,13 +72,29 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   inicializar RF/ADC/I2S. Justificativa completa em
   [docs/prd/08-segredos-por-unidade.md](docs/prd/08-segredos-por-unidade.md)
 - O DNS dos clientes do AP é resolvido localmente. `DnsForwarder` (`infra/dns_forwarder`)
-  escuta em `192.168.4.1:53` e repassa para o DNS da operadora lido de `dns_getserver(0)`.
+  escuta em `192.168.10.1:53` e repassa para o DNS da operadora lido de `dns_getserver(0)`.
   O `NatBridge` **não mexe mais no DHCP do AP**: a opção 6 já sai com o IP do próprio AP
   por padrão (`dhcpserver.c`), e com um resolvedor nesse endereço o valor do lease vale
-  para sempre. O bind é explicitamente em `192.168.4.1`, nunca `INADDR_ANY` — com
+  para sempre. O bind é explicitamente em `192.168.10.1`, nunca `INADDR_ANY` — com
   `INADDR_ANY` o socket atenderia a interface PPP e o roteador viraria resolvedor aberto
   para a rede da operadora. Encurtar o lease foi rejeitado: agravaria a janela de DHCP.
   Justificativa completa em [docs/prd/09-dns-local.md](docs/prd/09-dns-local.md)
+- **A faixa do AP é `192.168.10.0/24`, com a placa em `192.168.10.1`** — trocada em
+  23/09/2026, antes era `192.168.4.0/24`. O motivo é colisão: a `192.168.4.0/24` é o default
+  do core Arduino e de metade dos exemplos de ESP32, e numa bancada `http://192.168.4.1/`
+  respondeu com um nginx da rede da empresa em vez da placa, **sem erro nenhum** — a rota
+  saiu pela interface cabeada e a página simplesmente era de outro aparelho. Falha que se
+  parece com "a placa está no ar", e não com "você está falando com a coisa errada", custa
+  caro para diagnosticar.
+  O valor é fixo em `infra/wifi_ap` (`kApIp`/`kApGateway`/`kApSubnet`), não vai para a NVS:
+  existe uma faixa em uso, não duas, e editar isso pela página daria a quem configura a
+  chance de se trancar para fora da unidade. Trocar as três constantes basta — o lease do
+  DHCP sai do próprio IP do AP dentro do `set_esp_interface_ip()` do core (início em
+  `ap_ip + 1`, fim em `início + 10`), e `DnsForwarder` e `NatBridge` leem de
+  `WiFi.softAPIP()`. A máscara precisa ficar entre `/24` e `/28`, limite daquela função.
+  **PRD 05, PRD 06, PRD 09 e os débitos 9 e 12 continuam dizendo `192.168.4.x`**: são
+  registro do que foi medido na data, não instrução — quem for operar a unidade usa a faixa
+  desta seção
 - O relógio vem de SNTP, não do `AT+CCLK?`/NITZ do modem — NITZ depende de a operadora
   entregar, NTP não depende de operadora nenhuma. A sincronização é disparada pelo
   `LinkSupervisor` ao entrar em `Online`, e "já sincronizou alguma vez" é um latch ligado
