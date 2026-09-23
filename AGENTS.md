@@ -38,7 +38,7 @@ Clean Architecture — ver [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md) pra 
 - `infra/` — wrappers finos sobre APIs ESP-IDF/Arduino (WiFi AP, PPP, NAT)
 - `main.cpp` — só orquestração/injeção, zero lógica de negócio
 
-**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). As Fases 7 (relógio por SNTP e fuso configurável) e 8 (atualização de firmware pela própria página, com rollback do bootloader) foram **validadas em placa em 20/09/2026**: relógio certo 17 s depois do reset, fuso trocando a quente, OTA trocando de slot e rollback revertendo de verdade um reset dentro da janela. Segue aberto um único critério de bancada — upload interrompido no meio. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
+**Estado atual:** Fases 1-6 implementadas e validadas em hardware — storage NVS, SoftAP, config HTTP, modem PPP, NAT/roteamento e supervisão do uplink com reconexão automática. Um celular conectado no AP navega pelo 4G, e o enlace se recupera sozinho de queda de RF (~16 s) e de perda do SIM (backoff até reboot). As Fases 7 (relógio por SNTP e fuso configurável) e 8 (atualização de firmware pela própria página, com rollback do bootloader) foram **validadas em placa em 20/09/2026**: relógio certo 17 s depois do reset, fuso trocando a quente, OTA trocando de slot e rollback revertendo de verdade um reset dentro da janela. Segue aberto um único critério de bancada — upload interrompido no meio. **Nada da Fase 9 em diante está implementado**: as Fases 9 (telemetria MQTT e painéis no Grafana, [PRD 14](docs/prd/14-telemetria-mqtt.md)) e 10 (acesso remoto à página, [PRD 13](docs/prd/13-acesso-remoto.md)) são propostas, nessa ordem. PRDs em [docs/prd/](docs/prd/), ressalvas por fase em [docs/PLANO_ROTEADOR.md](docs/PLANO_ROTEADOR.md).
 
 A configuração persistida (chaves da NVS, defaults de fábrica, como consultar e apagar) está documentada em [docs/CONFIGURACAO_NVS.md](docs/CONFIGURACAO_NVS.md).
 
@@ -152,6 +152,23 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   navegador mostra os `{{PLACEHOLDER}}` crus, porque agora é o template de verdade, não uma
   maquete. Renomear ou mover o arquivo quebra o link com `undefined reference to
   _binary_index_html_start`, não em silêncio
+- **A telemetria sai por MQTT, só de subida, e vem antes do túnel.** Fase 9 antes da 10: as
+  duas contornam o CGNAT pelo mesmo princípio — a conexão nasce na placa —, mas o WireGuard
+  põe uma terceira interface no mesmo lwIP que já faz NAT dos clientes do AP, e MQTT é um
+  socket TCP de saída. Quatro decisões dessa fase valem **antes** de existir código, porque
+  reabri-las depois é caro:
+  - **Só publish, nunca subscribe.** Broker comprometido vê dado, não manda comando
+  - **Duas famílias de nome de métrica**, fixadas antes da primeira série ir para o banco:
+    `router_*` para a placa, `sensor_*` para grandeza de ambiente. Renomear métrica depois
+    quebra painel e histórico ao mesmo tempo
+  - **Payload JSON plano.** Sensores externos seriam o "segundo caso" que justificaria
+    aninhamento em `domain/json`, e não são: objeto plano carrega N sensores e é o formato
+    que o parser genérico do Telegraf repassa sem conhecer os nomes
+  - **O anel de backfill em `RTC_NOINIT` tem cabeçalho versionado** (`magic` + `layout` +
+    `sample_size`). Sem ele, depois de um OTA o firmware novo lê o layout antigo no mesmo
+    endereço e publica lixo como amostra válida — pior que perder o histórico, porque dado
+    falso vira decisão
+  Justificativa completa em [docs/prd/14-telemetria-mqtt.md](docs/prd/14-telemetria-mqtt.md)
 
 ## Hardware — cuidados obrigatórios
 
@@ -160,8 +177,10 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
 - Só um processo por vez na porta serial — upload falha com `Device or resource busy` se o monitor estiver aberto
 - A porta serial reenumera após o reset do upload (`ttyACM0` → `ttyACM1`) — sempre usar o caminho estável `/dev/serial/by-id/...`, nunca o numerado
 - Pulso de PWRKEY do A7670E precisa de 1000 ms (`Ton(pwrkey)`) — 100 ms faz o handshake AT demorar ou falhar
+- **ADC2 não funciona com o Wi-Fi ligado no ESP32.** O driver do rádio toma o periférico e a leitura passa a falhar ou devolver lixo. Como o AP nunca desliga nesta placa, entrada analógica só em **ADC1** — GPIO 32–39, dos quais 34/36/39 são só entrada. GPIO35 já é a bateria e GPIO32 é o LED de teste. Orçamento de pinos: o modem ocupa 4, 5, 12, 25, 26 e 27, e o GPIO12 (`BOARD_POWERON`) é strapping que ainda alimenta o cartão SD
+- **A PSRAM da placa não está compilada.** São 8 MB no hardware e `# CONFIG_ESP32_SPIRAM_SUPPORT is not set` no `sdkconfig` gerado, então todo o heap é DRAM interna. Qualquer raciocínio de memória — TLS, buffer, biblioteca nova — parte de ~320 KB compartilhados com WiFi, lwIP, PPP, NAT, DNS e WebServer, não dos 8 MB. `MALLOC_CAP_INTERNAL` e o heap total são o mesmo número hoje
 - `sdkconfig.<env>` é gerado e ignorado pelo git; o PlatformIO **não** reaplica `sdkconfig.defaults` enquanto ele existir — apagar o arquivo, limpar `.pio/build` não basta
-- **Ler serial sob tráfego exige filtro.** Medido em 20/09/2026: `E (…) esp-netif_lwip-ppp: pppos_input_tcpip failed with -1` chega a 89% das linhas, e o `HW FIFO Overflow` que vem junto corta linhas de outros módulos ao meio (`Bateria:` vira `ateria:`, `eria:`). Usar `grep -avE "pppos_input_tcpip|ateria:|^ria:|^eria:|^teria:"`. Causa e opções no débito 13
+- ~~**Ler serial sob tráfego exige filtro.**~~ **Não exige mais** — o filtro de `grep` saiu de circulação e não deve voltar por hábito. Medido em 20/09/2026, a linha `E (…) esp-netif_lwip-ppp: pppos_input_tcpip failed with -1` chegava a 89% do serial, e o `HW FIFO Overflow` que vinha junto cortava linhas de outros módulos ao meio (`Bateria:` virava `ateria:`, `eria:`). Duas correções do mesmo dia encerraram isso: `infra/ppp_drop_counter` intercepta o `esp_log_set_vprintf`, conta o evento e **suprime a linha antes do serial**, publicando o total uma vez por janela de 30 s; e `CONFIG_LWIP_TCPIP_CORE_LOCKING` + `CORE_LOCKING_INPUT` tiraram a fila do caminho de entrada, que era a origem do descarte. Filtrar por `pppos_input_tcpip` hoje não casa com nada, e filtrar por `ateria:` esconde leitura de bateria legítima. Histórico e a validação sob carga sustentada que segue pendente no débito 13
 
 ## Procedimentos manuais
 
