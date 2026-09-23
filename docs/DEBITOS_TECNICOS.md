@@ -405,6 +405,12 @@ sessões, e mais frequentes *sem* `CORE_LOCKING`: 6 e 22 contra 14 e 2). Zero de
 ~8 min de tráfego é sinal — no regime anterior a primeira janela do zip já marcava 540 — mas
 não é prova sob carga sustentada. Fechar exige um download inteiro com enlace estável.
 
+**Parte disso já chegou em 23/09/2026.** O `PppDropCounter` passou a manter uma contagem
+única e monotônica, com a janela de 30 s derivada dela por subtração, e o total desde o boot
+saiu em `/api/status` e na página de status. Ler o número deixou de exigir monitor serial
+aberto com filtro de `grep` — basta abrir a página da unidade. O que ainda falta é o número
+sair da unidade sem alguém estar dentro do Wi-Fi dela, e isso é a Fase 9 inteira.
+
 **A Fase 9 (telemetria) é o que torna essa prova barata.** Ver
 [PRD 14](prd/14-telemetria-mqtt.md). Hoje a medição existe só enquanto alguém está com o
 monitor serial aberto e o filtro de `grep` na mão — o que é exatamente a condição que não se

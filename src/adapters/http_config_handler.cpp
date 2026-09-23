@@ -234,6 +234,7 @@ void HttpConfigHandler::handleGetStatus() {
       // O percentual sai da regra do dominio e nao de uma conta no JS: a curva da bateria e
       // regra de negocio, e duplicada no navegador ela envelhece sozinha.
       .number("battery_percent", static_cast<uint32_t>(voltageToPercent(volts)))
+      .number("ppp_drops_total", pppDrops_ != nullptr ? pppDrops_() : 0u)
       .text("firmware_slot", firmwareWriter_.runningSlotLabel())
       .text("firmware_version", firmwareWriter_.runningVersionText())
       .text("firmware_image_state", firmwareImageStateName(imageState))

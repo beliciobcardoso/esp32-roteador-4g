@@ -512,6 +512,12 @@ Do lado do servidor, que já roda em produção, a fase só acrescenta:
 `domain/telemetry_buffer`, com 50 testes nativos (`pio test -e native`). Nenhuma linha toca
 hardware, broker ou servidor; o firmware compila com eles dentro (RAM 10,6%, Flash 51,5%).
 
+O **acumulado do `PppDropCounter`** entrou junto, em 23/09/2026, e não ficou sem
+consumidor: o total desde o boot sai em `/api/status` e aparece na página de status. Isso
+foi deliberado — acessor exposto que ninguém lê é exatamente o débito 22, e o consumidor
+natural (`infra/mqtt_client`) ainda não existe. De quebra, o número do débito 13 deixa de
+exigir um monitor serial aberto para ser lido.
+
 Fecha os critérios 11 e 15 — com uma ressalva no 15: o que está testado é o **predicado**
 `connectionIsStable()`. Zerar o contador de falhas a partir dele é fiação do
 `infra/mqtt_client`, e entra junto com ele.

@@ -59,6 +59,14 @@ class HttpConfigHandler {
   // status. Devolve zero enquanto nenhuma leitura aconteceu.
   using BatteryVoltageProvider = float (*)();
   void onBatteryVoltageRequested(BatteryVoltageProvider provider) { batteryVoltage_ = provider; }
+
+  // Pacotes de entrada descartados pelo PPP desde o boot (debito 13). Acumulado e nao
+  // janela: a pagina pode ser aberta a qualquer momento, e "12 descartes nos ultimos 30 s"
+  // sem saber se houve trafego nao diz nada, enquanto o total contra o uptime diz.
+  //
+  // Provider, como os outros: o adaptador nao conhece o hook de log do lwIP.
+  using PppDropsProvider = uint32_t (*)();
+  void onPppDropsRequested(PppDropsProvider provider) { pppDrops_ = provider; }
   void onRestartRequested(RestartRequested callback) { restartRequested_ = callback; }
   void onFirmwareConfirmed(FirmwareConfirmed callback) { firmwareConfirmed_ = callback; }
 
@@ -113,6 +121,7 @@ class HttpConfigHandler {
   LocalSettingsChanged localChanged_ = nullptr;
   ClockTextProvider clockText_ = nullptr;
   BatteryVoltageProvider batteryVoltage_ = nullptr;
+  PppDropsProvider pppDrops_ = nullptr;
   String pageETag_;
   RestartRequested restartRequested_ = nullptr;
   FirmwareConfirmed firmwareConfirmed_ = nullptr;

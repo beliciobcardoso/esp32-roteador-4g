@@ -80,6 +80,13 @@ float currentBatteryVoltage() {
   return lastBatteryVoltage;
 }
 
+// Descartes de entrada do PPP desde o boot, para a pagina. Le direto do contador em vez de
+// passar pelo acumulador do reportPppDrops(): aquele guarda o pendente da janela corrente,
+// que zera a cada 30 s, e o que a pagina precisa mostrar e o total contra o uptime.
+uint32_t currentPppDrops() {
+  return PppDropCounter::totalCount();
+}
+
 // Pedido de reboot vindo da pagina, depois de um firmware novo gravado. So marca a hora:
 // reiniciar aqui dentro seria reiniciar de dentro do handler HTTP, com a resposta ainda na
 // fila do socket — o navegador mostraria erro de conexao depois de uma atualizacao que deu
@@ -216,6 +223,7 @@ void setup() {
   httpConfigHandler.onLocalSettingsChanged(&onLocalSettingsChanged);
   httpConfigHandler.onClockTextRequested(&currentClockText);
   httpConfigHandler.onBatteryVoltageRequested(&currentBatteryVoltage);
+  httpConfigHandler.onPppDropsRequested(&currentPppDrops);
   httpConfigHandler.onRestartRequested(&onRestartRequested);
   httpConfigHandler.onFirmwareConfirmed(&onFirmwareConfirmed);
 
