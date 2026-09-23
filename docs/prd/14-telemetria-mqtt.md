@@ -118,7 +118,7 @@ struct TelemetrySample {        // 20 bytes
   uint16_t uptime_min;
   uint8_t  uplink_state;
   uint8_t  flags;               // bit0 sem relogio, bit1 rebooted, bit2 exhausted
-  uint16_t reserved;            // um campo futuro sem mudar o tamanho nem a versao
+  uint32_t reserved;            // um campo futuro sem mudar o tamanho nem a versao
 };
 
 struct TelemetryRing {
@@ -134,7 +134,9 @@ struct TelemetryRing {
 power-on; `layout` cobre mudança deliberada da struct; `sample_size` cobre o erro realista —
 alguém acrescenta um campo e esquece de subir a versão. Qualquer uma falhando, o anel é
 zerado no boot. O `reserved` existe para que o primeiro campo novo não custe nem bump nem
-buffer.
+buffer, e tem 4 bytes e não 2 por um motivo mecânico: com 2 o compilador acrescentaria
+preenchimento invisível no fim para alinhar a struct em 4, e a primeira adição gastaria
+buffer mesmo assim. Explícito, o espaço é utilizável.
 
 **A partição `spiffs` foi considerada e recusada nesta fase.** Ela está parada desde a Fase 1
 (débito 7) e é o candidato óbvio para sobreviver à queda de energia, mas telemetria periódica
@@ -504,6 +506,28 @@ Do lado do servidor, que já roda em produção, a fase só acrescenta:
 16. Convenção de nomes escrita e revisada **antes** da primeira série ir para o banco — é o
     único critério desta lista que não tem conserto barato depois
 
+## Estado da implementação
+
+**Domínio concluído em 23/09/2026** — `domain/mqtt_backoff`, `domain/telemetry` e
+`domain/telemetry_buffer`, com 50 testes nativos (`pio test -e native`). Nenhuma linha toca
+hardware, broker ou servidor; o firmware compila com eles dentro (RAM 10,6%, Flash 51,5%).
+
+Fecha os critérios 11 e 15 — com uma ressalva no 15: o que está testado é o **predicado**
+`connectionIsStable()`. Zerar o contador de falhas a partir dele é fiação do
+`infra/mqtt_client`, e entra junto com ele.
+
+Três decisões que só apareceram na implementação:
+
+- **Instante é `uint32_t`, não `unsigned long`.** Descoberto ao escrever o teste de virada
+  de `millis()`: `unsigned long` tem 4 bytes na placa e 8 no host, e em 64 bits a conta não
+  vira — o teste passaria sem exercitar nada. Virou regra no [AGENTS.md](../../AGENTS.md)
+- **O backoff satura por comparação, não por deslocamento.** `kInitialBackoffMs << (falhas-1)`
+  estoura o `uint32` sob falha permanente e devolve espera curta justamente quando ela
+  deveria ser longa. Coberto por teste até `0xFFFFFFFF`
+- **Os índices entraram na validação do cabeçalho.** `magic`, `layout` e `sample_size`
+  corretos com `count` corrompido levariam o drenar a ler fora do array — pior que perder o
+  buffer, porque é leitura de memória alheia
+
 ## Validação em hardware
 
-Pendente — fase não iniciada.
+Pendente — nada desta fase rodou em placa.
