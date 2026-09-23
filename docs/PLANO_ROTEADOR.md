@@ -270,6 +270,27 @@ Usuário abre 192.168.4.1
   firmware sem estar no Wi-Fi da unidade. Depende de um servidor que ainda não existe
 - Detalhes em [prd/13-acesso-remoto.md](prd/13-acesso-remoto.md)
 
+### Fase 11 — Posição por GNSS — proposta
+
+- Responde três perguntas: onde a unidade foi instalada, se ela saiu do lugar (furto) e onde
+  a frota está num geomap. As três se resolvem com fix esparso — nenhuma pede rastreamento
+  contínuo. Depende da Fase 9, que é o canal por onde a posição sai da placa
+- **Bloqueada por uma verificação de hardware.** Nem todo A7670E tem GNSS: só o
+  `A7670E-FASE`. `AT+SIMCOMATI` responde, e roda em modo comando no boot, sem CMUX. Se o
+  módulo não for `-FASE`, o caminho passa a ser módulo GPS externo, que é outro PRD
+- **A decisão técnica é migrar o modem para CMUX.** GNSS se lê por AT, e AT não passa por uma
+  UART ocupada com PPP. Sair do modo dados a cada fix derrubaria a internet dos clientes;
+  fix só no boot não detecta movimento e ainda atrasaria o enlace pelo cold start
+- O CMUX paga por duas features: encerra também a exclusão de RSSI/CSQ registrada na Fase 9
+- ⚠️ **O risco mora debaixo do que já funciona:** o PPP validado nas Fases 4–6 passa a rodar
+  sobre uma camada nova, na mesma UART de 115200 que o débito 13 mostrou ser gargalo.
+  Revalidar reconexão, queda de RF e perda de SIM é obrigatório, e o `ppp_drops` sob carga
+  não pode piorar
+- Detecção de movimento é domínio puro e testável: fix reprovado não entra, haversine contra
+  uma posição de referência **gravada pelo operador** (não pelo primeiro fix, que se
+  desarmaria no cativeiro), e N confirmações antes de alarmar
+- Detalhes em [prd/15-gps-posicao.md](prd/15-gps-posicao.md)
+
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
 
 - Se a mudança de config exige reboot do ESP32 ou se o firmware reconecta a quente
