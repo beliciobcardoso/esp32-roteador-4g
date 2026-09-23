@@ -235,6 +235,62 @@ Usuário abre 192.168.4.1
 - ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar — unico criterio aberto
 - Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
 
+### Fase 9 — Telemetria MQTT e painéis no Grafana — proposta
+
+- A unidade publica o próprio estado num broker MQTT sobre TLS, **só de subida**, e esse
+  estado vira série temporal de longo prazo na stack Prometheus + Grafana que já roda em
+  produção. Ingestão por Telegraf (`mqtt_consumer`) e `remote_write`
+- **Vem antes da Fase 10 de propósito.** As duas contornam o CGNAT pelo mesmo princípio — a
+  conexão nasce na placa —, mas o túnel WireGuard põe uma terceira interface no mesmo lwIP
+  que hoje faz NAT dos clientes do AP, e MQTT é um socket TCP de saída. Telemetria não sobe
+  `firmware.bin` nem corrige um APN: reduz o que sobra para o túnel, e entrega antes
+- `domain/telemetry`, `domain/telemetry_buffer` e `domain/mqtt_backoff` — payload, política
+  do anel, correção de timestamp e aritmética do backoff, todos com teste nativo.
+  `infra/mqtt_client` é wrapper fino sobre o `esp_mqtt_client` que já vem no IDF 4.4.7
+- **A métrica que importa é a que não pode ser enviada.** Uplink caído é o evento que se quer
+  ver, e é exatamente quando não há publicação possível. Três mecanismos, os três
+  necessários: LWT retido, anel em `RTC_NOINIT` drenado na reconexão, e alerta por ausência
+- O anel tem **cabeçalho versionado** (`magic` + `layout` + `sample_size`). Sem ele, o
+  firmware novo leria depois de um OTA o layout antigo no mesmo endereço e publicaria lixo
+  como amostra válida — pior que perder o histórico, porque dado falso vira decisão
+- `infra/ppp_drop_counter` ganha o acumulado desde o boot, ao lado da janela de 30 s que
+  continua servindo o serial. É o que fecha a medição do débito 13 para a frota inteira
+- **Famílias de nome fixadas antes da primeira série**: `router_` para a placa, `sensor_`
+  para o ambiente. Renomear métrica depois quebra painel e histórico ao mesmo tempo
+- ⚠️ **Risco número um: heap.** A PSRAM existe na placa e **não está compilada**
+  (`# CONFIG_ESP32_SPIRAM_SUPPORT is not set`), então o handshake do mbedTLS disputa só DRAM
+  interna. Encolher os buffers TLS vem primeiro; medir vem depois, com o cliente carregado
+- Sensores externos ficam **fora de escopo**, mas a fase fixa os nomes, o formato e o
+  armazenamento que eles vão usar
+- Detalhes em [prd/14-telemetria-mqtt.md](prd/14-telemetria-mqtt.md)
+
+### Fase 10 — Acesso remoto à página de configuração — proposta
+
+- Túnel WireGuard partindo da placa contra servidor próprio, para abrir a página e subir
+  firmware sem estar no Wi-Fi da unidade. Depende de um servidor que ainda não existe
+- Detalhes em [prd/13-acesso-remoto.md](prd/13-acesso-remoto.md)
+
+### Fase 11 — Posição por GNSS — proposta
+
+- Responde três perguntas: onde a unidade foi instalada, se ela saiu do lugar (furto) e onde
+  a frota está num geomap. As três se resolvem com fix esparso — nenhuma pede rastreamento
+  contínuo. Depende da Fase 9, que é o canal por onde a posição sai da placa
+- **Bloqueada por uma verificação de hardware.** Nem todo A7670E tem GNSS: só o
+  `A7670E-FASE`. `AT+SIMCOMATI` responde, e roda em modo comando no boot, sem CMUX. Se o
+  módulo não for `-FASE`, o caminho passa a ser módulo GPS externo, que é outro PRD
+- **A decisão técnica é migrar o modem para CMUX.** GNSS se lê por AT, e AT não passa por uma
+  UART ocupada com PPP. Sair do modo dados a cada fix derrubaria a internet dos clientes;
+  fix só no boot não detecta movimento e ainda atrasaria o enlace pelo cold start
+- O CMUX paga por duas features: encerra também a exclusão de RSSI/CSQ registrada na Fase 9
+- ⚠️ **O risco mora debaixo do que já funciona:** o PPP validado nas Fases 4–6 passa a rodar
+  sobre uma camada nova, na mesma UART de 115200 que o débito 13 mostrou ser gargalo.
+  Revalidar reconexão, queda de RF e perda de SIM é obrigatório, e o `ppp_drops` sob carga
+  não pode piorar
+- Detecção de movimento é domínio puro e testável: fix reprovado não entra, haversine contra
+  uma posição de referência **gravada pelo operador** (não pelo primeiro fix, que se
+  desarmaria no cativeiro), e N confirmações antes de alarmar
+- Detalhes em [prd/15-gps-posicao.md](prd/15-gps-posicao.md)
+
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
 
 - Se a mudança de config exige reboot do ESP32 ou se o firmware reconecta a quente
