@@ -144,6 +144,17 @@ aos slots de app.
 **A Fase 8 (OTA) não consumiu essa partição**: o upload vai do socket direto para o slot de
 app, sem arquivo intermediário. A decisão continua aberta pelos mesmos motivos.
 
+**A Fase 9 (telemetria) considerou e recusou** — ver
+[PRD 14](prd/14-telemetria-mqtt.md). A partição é o candidato óbvio para o buffer de
+backfill sobreviver à queda de energia, mas telemetria periódica em flash é escrita contínua
+num setor pequeno: desgaste em troca de cobrir um caso que o anel em `RTC_NOINIT` já não
+precisa cobrir, já que sem alimentação a placa também não estava medindo nada.
+
+**Volta à mesa com os sensores externos.** Registro ambiental que precisa sobreviver a
+bateria zerada é requisito diferente do de agora — ali a escrita deixa de ser desgaste sem
+contrapartida. Enquanto isso não existir, o espaço segue parado e a ação desta seção
+continua sendo a mesma: montar ou devolver aos slots de app.
+
 ## 8. `infra/modem_ppp` escreve diagnóstico direto no `Serial`
 
 **Onde:** [src/infra/modem_ppp.cpp](../src/infra/modem_ppp.cpp)
@@ -393,6 +404,24 @@ caiu no meio das duas. O 4G estava instável naquele dia (44 quedas somadas nas 
 sessões, e mais frequentes *sem* `CORE_LOCKING`: 6 e 22 contra 14 e 2). Zero descartes em
 ~8 min de tráfego é sinal — no regime anterior a primeira janela do zip já marcava 540 — mas
 não é prova sob carga sustentada. Fechar exige um download inteiro com enlace estável.
+
+**A Fase 9 (telemetria) é o que torna essa prova barata.** Ver
+[PRD 14](prd/14-telemetria-mqtt.md). Hoje a medição existe só enquanto alguém está com o
+monitor serial aberto e o filtro de `grep` na mão — o que é exatamente a condição que não se
+consegue manter por dias, e "carga sustentada com enlace estável" é uma janela que não se
+agenda, se espera.
+
+O PRD 14 faz o `PppDropCounter` guardar o **acumulado desde o boot** ao lado da janela de
+30 s, e publica esse acumulado como counter. Duas consequências diretas para esta seção:
+
+- `rate(router_ppp_drops_total)` no Grafana mede o descarte de forma contínua, sem ninguém
+  presente, em todas as unidades ao mesmo tempo — e a validação do `CORE_LOCKING` deixa de
+  depender de uma sessão de bancada com sorte de RF
+- O heap interno livre vai no mesmo payload, então a hipótese alternativa desta seção (heap
+  esgotado, já descartada com número) continua verificável sem serial
+
+A janela de 30 s e a linha do serial **não mudam** — continuam sendo o instrumento de
+bancada. O acumulado é adição, não substituição.
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `begin()`
