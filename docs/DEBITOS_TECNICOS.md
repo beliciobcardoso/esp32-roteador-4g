@@ -422,6 +422,23 @@ O PRD 14 faz o `PppDropCounter` guardar o **acumulado desde o boot** ao lado da 
 
 A janela de 30 s e a linha do serial **não mudam** — continuam sendo o instrumento de
 bancada. O acumulado é adição, não substituição.
+
+**Zero passou a ser linha, não ausência de linha (24/09/2026).** Até aqui janela sem
+descarte não imprimia nada, e "zero descartes" ficava indistinguível de "o relatório parou
+de sair" — justamente o que esta seção precisa provar sob carga aparecia na tela igual a uma
+falha. Agora, a cada `kQuietWindowsPerReport` (4) janelas seguidas sem descarte, sai uma
+linha com o zero escrito e o tempo coberto:
+
+```
+PPP: 0 pacotes descartados em 4 janelas de 30 s (120 s medidos) | heap interno livre 96000 B
+```
+
+O heap vai junto para a hipótese alternativa continuar verificável no trecho silencioso, mas
+sem o veredito "pressão de fila" — não há descarte do qual diagnosticar causa. Heap abaixo
+do piso ainda recebe `— heap no talo`. Qualquer janela com descarte zera a contagem e sai na
+hora, como antes. Custo em unidade ociosa: 30 linhas por hora. Lógica em
+`domain/link_diagnostics` (`dropWindowClosed`, `quietReportDue`, `describeQuietWindows`),
+orquestração em `main.cpp` → `reportPppDrops()`.
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `begin()`
