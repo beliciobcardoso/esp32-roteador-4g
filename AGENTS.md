@@ -244,9 +244,8 @@ Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
 - **Instante de tempo no domínio é `uint32_t`, não `unsigned long`.** `unsigned long` tem
   4 bytes na placa e 8 no host, então a subtracão que atravessa a virada de `millis()` nunca
   vira no teste nativo — o teste passa por não exercitar nada. `millis()` cabe exato em
-  `uint32_t`, então nada se perde na placa. Vale para código novo; `dropReportDue` em
-  `domain/link_diagnostics` é anterior a esta regra e tem um teste de virada que hoje é
-  verde pelo motivo errado
+  `uint32_t`, então nada se perde na placa. `domain/link_diagnostics` era a exceção
+  anterior à regra (teste de virada verde pelo motivo errado) e foi convertido em 24/09/2026
 - Referência de documentação para código **deste** repositório cita arquivo + símbolo
   (`http_config_handler.cpp` → `begin()`), nunca número de linha — linha envelhece em
   silêncio a cada refatoração, e este erro já apareceu em duas revisões seguidas (débito 21).
