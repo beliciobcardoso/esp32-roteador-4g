@@ -1015,6 +1015,17 @@ env de desenvolvimento, onde build sujo é o caso normal e travar seria atrito p
 Por enquanto a disciplina é manual e está escrita no procedimento de campo, que começa por
 `git status --porcelain` ter que sair vazio.
 
+**Os ganchos de pre-build já existem.** Desde 24/09/2026 o env da placa roda dois
+`extra_scripts`: [scripts/check_sdkconfig.py](../scripts/check_sdkconfig.py) (débito 26) e
+[scripts/firmware_version.py](../scripts/firmware_version.py), que mantém a versão gravada no
+`esp_app_desc_t` igual ao `git describe` em build incremental (ver a decisão correspondente no
+AGENTS.md). A checagem de árvore suja que este débito pede não precisa mais nascer do zero —
+cabe no segundo script, e falta só decidir em qual env aplicá-la.
+
+Vale notar que os dois problemas de versão são diferentes e o segundo era o pior: aqui o
+`-dirty` **avisa** que o número não identifica código; lá a versão afirmava um commit errado
+sem nenhum sinal.
+
 ## 26. O `sdkconfig` gerado não acompanha o `sdkconfig.defaults`, e nada avisa — RESOLVIDO em 24/09/2026
 
 **Onde:** `sdkconfig.esp-wrover-kit` (gerado, ignorado pelo git) e
