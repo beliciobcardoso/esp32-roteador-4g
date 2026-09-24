@@ -995,7 +995,7 @@ de uma terceira interface lwIP com o NAT que já roteia os clientes do AP.
 **Enquanto não for implementado**, o procedimento de campo declara o alcance real logo no
 início, em vez de deixar a limitação implícita.
 
-## 25. Nada impede um binário de árvore suja de ir para campo
+## 25. Nada impede um binário de árvore suja de ir para campo — RESOLVIDO em 24/09/2026
 
 **Onde:** [platformio.ini](../platformio.ini); [docs/ATUALIZACAO_EM_PRODUCAO.md](ATUALIZACAO_EM_PRODUCAO.md)
 
@@ -1025,6 +1025,27 @@ cabe no segundo script, e falta só decidir em qual env aplicá-la.
 Vale notar que os dois problemas de versão são diferentes e o segundo era o pior: aqui o
 `-dirty` **avisa** que o número não identifica código; lá a versão afirmava um commit errado
 sem nenhum sinal.
+
+**Resolvido:** env `release` no [platformio.ini](../platformio.ini), que herda tudo do
+`esp-wrover-kit` e acrescenta [scripts/check_clean_tree.py](../scripts/check_clean_tree.py)
+como primeiro pre-build. Com qualquer linha no `git status --porcelain --untracked-files=all`
+o build **falha**, lista os arquivos e diz como sair. Sem git para consultar, também falha:
+release sem prova de árvore limpa não sai. O procedimento de campo passou a compilar com
+`pio run -e release`.
+
+Script próprio, e não dentro do `firmware_version.py` como esta seção sugeria: aquele roda
+nos dois envs, e a checagem só pode rodar em um. Arquivo **não rastreado** conta de
+propósito — um `.cpp` novo esquecido fora do git entra no build e o `git describe --dirty`
+nem percebe, então a versão sairia limpa e mentiria. É o caso pior do que o `-dirty`.
+
+Custo: env separado tem diretório de build e `sdkconfig.release` próprios, então o primeiro
+build compila tudo (~30 s), e o `check_sdkconfig.py` confere esse sdkconfig também. O
+`.vscode/extensions.json`, gerado pelo PlatformIO como os outros dois do `.vscode` já
+ignorados, entrou no `.gitignore`: senão ele sozinho barraria todo release.
+
+Conferido: árvore suja recusa em 2,6 s listando os arquivos; `pio run` de bancada segue
+compilando sujo; num clone limpo o release compila, grava a versão sem `-dirty` e o próprio
+build não suja a árvore — o segundo release sai em 4 s.
 
 ## 26. O `sdkconfig` gerado não acompanha o `sdkconfig.defaults`, e nada avisa — RESOLVIDO em 24/09/2026
 
