@@ -21,7 +21,11 @@ pio test -e native         # testes das regras puras, no host (sem placa)
 Se um arquivo de `domain/` passar a incluir `Arduino.h` ou `esp_*.h` direto, esse comando
 quebra — é de propósito, é o que impede a regra de dependência de virar só comentário.
 
-Se `sdkconfig.defaults` mudar e não refletir:
+O build lê o `sdkconfig.esp-wrover-kit` gerado, não o `sdkconfig.defaults`, e só regenera
+o gerado quando ele não existe. Opção nova no defaults não chega ao firmware e o build sai
+verde do mesmo jeito — em 24/09/2026 isso gravou placa sem `CORE_LOCKING` e **sem rollback de
+OTA** (débito 26). Depois de mexer no defaults, antes de gravar unidade de campo, ou na
+dúvida:
 ```bash
 rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run
 ```
@@ -199,7 +203,7 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
 - **ADC2 não funciona com o Wi-Fi ligado no ESP32.** O driver do rádio toma o periférico e a leitura passa a falhar ou devolver lixo. Como o AP nunca desliga nesta placa, entrada analógica só em **ADC1** — GPIO 32–39, dos quais 34/36/39 são só entrada. GPIO35 já é a bateria e GPIO32 é o LED de teste. Orçamento de pinos: o modem ocupa 4, 5, 12, 25, 26 e 27, e o GPIO12 (`BOARD_POWERON`) é strapping que ainda alimenta o cartão SD
 - **A PSRAM da placa não está compilada.** São 8 MB no hardware e `# CONFIG_ESP32_SPIRAM_SUPPORT is not set` no `sdkconfig` gerado, então todo o heap é DRAM interna. Qualquer raciocínio de memória — TLS, buffer, biblioteca nova — parte de ~320 KB compartilhados com WiFi, lwIP, PPP, NAT, DNS e WebServer, não dos 8 MB. `MALLOC_CAP_INTERNAL` e o heap total são o mesmo número hoje
 - `sdkconfig.<env>` é gerado e ignorado pelo git; o PlatformIO **não** reaplica `sdkconfig.defaults` enquanto ele existir — apagar o arquivo, limpar `.pio/build` não basta
-- ~~**Ler serial sob tráfego exige filtro.**~~ **Não exige mais** — o filtro de `grep` saiu de circulação e não deve voltar por hábito. Medido em 20/09/2026, a linha `E (…) esp-netif_lwip-ppp: pppos_input_tcpip failed with -1` chegava a 89% do serial, e o `HW FIFO Overflow` que vinha junto cortava linhas de outros módulos ao meio (`Bateria:` virava `ateria:`, `eria:`). Duas correções do mesmo dia encerraram isso: `infra/ppp_drop_counter` intercepta o `esp_log_set_vprintf`, conta o evento e **suprime a linha antes do serial**, publicando o total uma vez por janela de 30 s; e `CONFIG_LWIP_TCPIP_CORE_LOCKING` + `CORE_LOCKING_INPUT` tiraram a fila do caminho de entrada, que era a origem do descarte. Filtrar por `pppos_input_tcpip` hoje não casa com nada, e filtrar por `ateria:` esconde leitura de bateria legítima. Histórico e a validação sob carga sustentada que segue pendente no débito 13
+- ~~**Ler serial sob tráfego exige filtro.**~~ **Não exige mais** — o filtro de `grep` saiu de circulação e não deve voltar por hábito. Medido em 20/09/2026, a linha `E (…) esp-netif_lwip-ppp: pppos_input_tcpip failed with -1` chegava a 89% do serial, e o `HW FIFO Overflow` que vinha junto cortava linhas de outros módulos ao meio (`Bateria:` virava `ateria:`, `eria:`). Duas correções do mesmo dia encerraram isso: `infra/ppp_drop_counter` intercepta o `esp_log_set_vprintf`, conta o evento e **suprime a linha antes do serial**, publicando o total uma vez por janela de 30 s; e `CONFIG_LWIP_TCPIP_CORE_LOCKING` + `CORE_LOCKING_INPUT` tiraram a fila do caminho de entrada, que era a origem do descarte. Filtrar por `pppos_input_tcpip` hoje não casa com nada, e filtrar por `ateria:` esconde leitura de bateria legítima. Histórico no débito 13, fechado em 24/09/2026 com download completo e zero descartes
 
 ## Procedimentos manuais
 
