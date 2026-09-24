@@ -221,6 +221,7 @@ void HttpConfigHandler::handleGetStatus() {
   const UplinkStatus uplink = uplinkStatus_ != nullptr ? uplinkStatus_() : UplinkStatus();
   const FirmwareImageState imageState = firmwareWriter_.runningImageState();
   const float volts = batteryVoltage_ != nullptr ? batteryVoltage_() : 0.0f;
+  const ModemIdentity modem = modemIdentity_ != nullptr ? modemIdentity_() : ModemIdentity();
 
   JsonObject body;
   body.text("uplink_state", uplinkStateName(uplink.state))
@@ -235,6 +236,9 @@ void HttpConfigHandler::handleGetStatus() {
       // regra de negocio, e duplicada no navegador ela envelhece sozinha.
       .number("battery_percent", static_cast<uint32_t>(voltageToPercent(volts)))
       .number("ppp_drops_total", pppDrops_ != nullptr ? pppDrops_() : 0u)
+      .text("modem_model", modem.model)
+      .text("modem_revision", modem.revision)
+      .boolean("modem_gnss", modemHasGnss(modem.model))
       .text("firmware_slot", firmwareWriter_.runningSlotLabel())
       .text("firmware_version", firmwareWriter_.runningVersionText())
       .text("firmware_image_state", firmwareImageStateName(imageState))

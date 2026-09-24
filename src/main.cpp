@@ -87,6 +87,12 @@ uint32_t currentPppDrops() {
   return PppDropCounter::totalCount();
 }
 
+// Copia e nao referencia: o ponteiro de funcao do adaptador devolve por valor, e a leitura
+// acontece uma vez por boot, entao a copia a cada polling da pagina nao pesa.
+ModemIdentity currentModemIdentity() {
+  return modemPpp.identity();
+}
+
 // Pedido de reboot vindo da pagina, depois de um firmware novo gravado. So marca a hora:
 // reiniciar aqui dentro seria reiniciar de dentro do handler HTTP, com a resposta ainda na
 // fila do socket — o navegador mostraria erro de conexao depois de uma atualizacao que deu
@@ -224,6 +230,7 @@ void setup() {
   httpConfigHandler.onClockTextRequested(&currentClockText);
   httpConfigHandler.onBatteryVoltageRequested(&currentBatteryVoltage);
   httpConfigHandler.onPppDropsRequested(&currentPppDrops);
+  httpConfigHandler.onModemIdentityRequested(&currentModemIdentity);
   httpConfigHandler.onRestartRequested(&onRestartRequested);
   httpConfigHandler.onFirmwareConfirmed(&onFirmwareConfirmed);
 

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 
+#include "../domain/modem_identity.h"
 #include "../domain/router_settings.h"
 
 // Workaround: esp_modem_api.h usa `PdpContext` numa declaracao de funcao antes de
@@ -40,9 +41,17 @@ class ModemPpp {
   // Interface PPP criada em start(). Nula antes dele ou se ele falhou.
   esp_netif_t* netif() const { return netif_; }
 
+  // Modelo e firmware do modem, lidos uma vez por boot no primeiro start(), ainda em modo
+  // comando. Campos vazios se o modem nao respondeu ao AT+SIMCOMATI — a leitura nao impede
+  // o enlace de subir.
+  const ModemIdentity& identity() const { return identity_; }
+
  private:
   void powerOnSequence();
+  void readIdentityOnce();
 
   esp_netif_t* netif_ = nullptr;
   esp_modem_dce_t* dce_ = nullptr;
+  ModemIdentity identity_;
+  bool identityRead_ = false;
 };
