@@ -405,6 +405,14 @@ sessões, e mais frequentes *sem* `CORE_LOCKING`: 6 e 22 contra 14 e 2). Zero de
 ~8 min de tráfego é sinal — no regime anterior a primeira janela do zip já marcava 540 — mas
 não é prova sob carga sustentada. Fechar exige um download inteiro com enlace estável.
 
+**O total na página ([PR #16](https://github.com/beliciobcardoso/esp32-roteador-4g/pull/16)).**
+O `PppDropCounter` passou a manter uma contagem única e monotônica, com a janela de 30 s
+derivada dela por subtração, e o total desde o boot saiu em `/api/status` e na página de
+status. Ler o número de uma unidade deixou de exigir monitor serial aberto — basta abrir a
+página dela. Acompanhar a frota sem alguém dentro do Wi-Fi de cada unidade continua sendo a
+Fase 9. A prova sob carga que este débito pedia saiu antes disso, pelo serial; ver o
+fechamento de 24/09/2026 abaixo.
+
 **A Fase 9 (telemetria) é o que torna essa prova barata.** Ver
 [PRD 14](prd/14-telemetria-mqtt.md). Hoje a medição existe só enquanto alguém está com o
 monitor serial aberto e o filtro de `grep` na mão — o que é exatamente a condição que não se
