@@ -172,6 +172,23 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   navegador mostra os `{{PLACEHOLDER}}` crus, porque agora é o template de verdade, não uma
   maquete. Renomear ou mover o arquivo quebra o link com `undefined reference to
   _binary_index_html_start`, não em silêncio
+- **A versão do firmware vem de `version.txt`, gerado a cada build, e não do `git describe`
+  que o CMake resolve sozinho.** O ESP-IDF resolve `PROJECT_VER` na **configuração** do CMake
+  (`__project_get_revision`, em `tools/cmake/project.cmake`), não a cada build, e o PlatformIO
+  só reconfigura quando o cache do CMake some. Consequência medida em 23/09/2026: estando em
+  `7d3a4f3`, um build incremental gravou `98fd940` no `esp_app_desc_t` — **um commit que não é
+  nem ancestral daquele**. A data e a hora do descritor congelam junto.
+  Isso não é cosmético: o passo 2 de [ATUALIZACAO_EM_PRODUCAO.md](docs/ATUALIZACAO_EM_PRODUCAO.md)
+  manda anotar a versão antes de atualizar porque é o que permite dizer depois se a
+  atualização pegou. Congelada, essa conferência mente **com confiança** — diferente do build
+  sujo do débito 25, onde o `-dirty` avisa que o número não vale.
+  `scripts/firmware_version.py` (`pre:` no `platformio.ini`) compara o `git describe` com o
+  `version.txt` e, só quando diferem, reescreve o arquivo e apaga o `CMakeCache.txt` para
+  forçar a reconfiguração. O `CMAKE_CONFIGURE_DEPENDS` que o próprio IDF registra nesse
+  arquivo **não resolve**: quem decide reconfigurar é o PlatformIO, e ele não consulta essa
+  propriedade — testado. Custo: ~13 s de reconfiguração e relink, e só quando a versão muda
+  de verdade; build sem troca de commit segue em ~4 s. `version.txt` é gerado e ignorado pelo
+  git — versioná-lo congelaria a versão de quem clonasse o repo
 - **A telemetria sai por MQTT, só de subida, e vem antes do túnel.** Fase 9 antes da 10: as
   duas contornam o CGNAT pelo mesmo princípio — a conexão nasce na placa —, mas o WireGuard
   põe uma terceira interface no mesmo lwIP que já faz NAT dos clientes do AP, e MQTT é um

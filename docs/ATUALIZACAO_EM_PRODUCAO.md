@@ -90,7 +90,9 @@ justamente caído.
 
 1. Associe ao AP e abra `http://192.168.10.1/`
 2. Anote o que está lá **antes**: aba Firmware, slot e versão. É o que permite dizer depois
-   se a atualização pegou
+   se a atualização pegou. Desde 24/09/2026 esse número é confiável: até então um build
+   incremental podia gravar a versão de um commit que nem estava na imagem, e a conferência
+   passava batido. Ver a decisão sobre `version.txt` no AGENTS.md
 3. Aba **Firmware** → escolha o arquivo → **Enviar e reiniciar**. Cerca de um minuto
 4. A mensagem manda confirmar em até 10 minutos, e não some sozinha
 5. A placa reinicia e o Wi-Fi cai. Reconecte e reabra a página
