@@ -2,6 +2,11 @@
 
 Firmware roteador 4G — LilyGO T-A7670E R2 (ESP32-WROVER-E + modem A7670E).
 
+**Sessão nova? Leia [docs/ONDE_PARAMOS.md](docs/ONDE_PARAMOS.md) logo depois deste arquivo.**
+O projeto é trabalhado em mais de uma máquina, e o estado da última sessão, as pendências e o
+próximo passo moram lá — memória local de agente e `git stash` não viajam entre máquinas. Ao
+encerrar o dia, atualize aquele arquivo antes de publicar.
+
 ## Stack
 
 - PlatformIO, framework híbrido `espidf, arduino` (não é Arduino puro)
@@ -248,6 +253,18 @@ Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
 - **Ao iniciar** uma feature de um PRD: criar branch a partir de `developer` (nunca direto em `main`)
 - **Ao finalizar** uma feature: aguardar validação do usuário antes de qualquer `git commit` ou merge para `developer`
 - **Proibido criar PRs sem autorização explícita do usuário** — em nenhuma hipótese
+- A autorização vale **por passo**: commit, PR, merge, promoção para `main`, apagar branch e
+  gravar na placa são pedidos separados ("pode commitar, pr e merge" cobre os três citados, e
+  só eles). Terminada a implementação, parar e relatar
+- Branch nova a partir de `origin/developer` para cada trabalho; a antiga já mergeada não serve
+- Merge com merge commit, não squash: subject `merge: <resumo em pt-br> (#N)`, body vazio.
+  Promoção é um PR `developer` → `main` com título `merge: promove <o quê> para main`
+- Commit com subject em inglês no estilo conventional e body longo explicando o porquê.
+  Título e descrição de PR em pt-br
+- Branch de PR já publicada se atualiza com merge do `developer` para dentro dela, não rebase:
+  evita force-push
+- Código temporário de bancada não vai para `developer` nem `main`. Se precisar sobreviver à
+  sessão, vai para uma branch `tmp/...` com commit "wip … do not merge"
 
 ## Regras de código
 
