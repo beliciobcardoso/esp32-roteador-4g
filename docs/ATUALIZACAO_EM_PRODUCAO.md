@@ -67,7 +67,7 @@ Consequências práticas para a visita:
 ```bash
 git status --porcelain          # tem que sair VAZIO
 git describe --tags --always    # anote: é o que vai identificar esta imagem
-pio run -e esp-wrover-kit
+pio run -e release
 ```
 
 O `git status` vazio não é formalidade. A versão que o firmware reporta na página sai do
@@ -75,10 +75,13 @@ O `git status` vazio não é formalidade. A versão que o firmware reporta na p�
 código nenhum, porque "dirty" não diz *o que* estava modificado. Uma unidade em campo
 rodando uma imagem `dirty` é uma unidade cujo código ninguém consegue reproduzir.
 
-Hoje nada impede um build sujo de sair; a disciplina é manual. Está registrado como
-débito 25.
+Desde 24/09/2026 o env `release` confere isso sozinho e **recusa compilar** com qualquer
+alteração fora de commit, arquivo não rastreado incluído, listando o que achou (débito 25). O
+`git status` acima continua valendo como conferência antes de gastar o build, mas deixou de
+ser a única barreira. `pio run` sem `-e release` segue compilando árvore suja: é o build de
+bancada, e a imagem dele não vai para campo.
 
-O arquivo fica em `.pio/build/esp-wrover-kit/firmware.bin`. Copie para fora do `.pio` com o
+O arquivo fica em `.pio/build/release/firmware.bin`. Copie para fora do `.pio` com o
 nome da versão — `firmware-<versão>.bin` — porque o próximo `pio run` sobrescreve o
 original sem avisar.
 
