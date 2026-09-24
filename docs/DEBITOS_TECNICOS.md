@@ -311,7 +311,7 @@ sozinho (o IP do AP), e agora existe resolvedor nesse endereço. Uplink sem DNS 
 deixou de ser fatal: o NAT arma do mesmo jeito e o forwarder responde SERVFAIL.
 
 
-## 13. Pacotes PPP de entrada descartados sob tráfego (`pppos_input_tcpip failed with -1`)
+## 13. Pacotes PPP de entrada descartados sob tráfego (`pppos_input_tcpip failed with -1`) — RESOLVIDO em 24/09/2026
 
 **Onde:** fila da task tcpip do lwIP — `CONFIG_LWIP_TCPIP_RECVMBOX_SIZE` em
 [sdkconfig.defaults](../sdkconfig.defaults) (hoje no default, 32)
@@ -405,11 +405,13 @@ sessões, e mais frequentes *sem* `CORE_LOCKING`: 6 e 22 contra 14 e 2). Zero de
 ~8 min de tráfego é sinal — no regime anterior a primeira janela do zip já marcava 540 — mas
 não é prova sob carga sustentada. Fechar exige um download inteiro com enlace estável.
 
-**Parte disso já chegou em 23/09/2026.** O `PppDropCounter` passou a manter uma contagem
-única e monotônica, com a janela de 30 s derivada dela por subtração, e o total desde o boot
-saiu em `/api/status` e na página de status. Ler o número deixou de exigir monitor serial
-aberto com filtro de `grep` — basta abrir a página da unidade. O que ainda falta é o número
-sair da unidade sem alguém estar dentro do Wi-Fi dela, e isso é a Fase 9 inteira.
+**O total na página ([PR #16](https://github.com/beliciobcardoso/esp32-roteador-4g/pull/16)).**
+O `PppDropCounter` passou a manter uma contagem única e monotônica, com a janela de 30 s
+derivada dela por subtração, e o total desde o boot saiu em `/api/status` e na página de
+status. Ler o número de uma unidade deixou de exigir monitor serial aberto — basta abrir a
+página dela. Acompanhar a frota sem alguém dentro do Wi-Fi de cada unidade continua sendo a
+Fase 9. A prova sob carga que este débito pedia saiu antes disso, pelo serial; ver o
+fechamento de 24/09/2026 abaixo.
 
 **A Fase 9 (telemetria) é o que torna essa prova barata.** Ver
 [PRD 14](prd/14-telemetria-mqtt.md). Hoje a medição existe só enquanto alguém está com o
@@ -428,6 +430,51 @@ O PRD 14 faz o `PppDropCounter` guardar o **acumulado desde o boot** ao lado da 
 
 A janela de 30 s e a linha do serial **não mudam** — continuam sendo o instrumento de
 bancada. O acumulado é adição, não substituição.
+
+**Zero passou a ser linha, não ausência de linha (24/09/2026).** Até aqui janela sem
+descarte não imprimia nada, e "zero descartes" ficava indistinguível de "o relatório parou
+de sair" — justamente o que esta seção precisa provar sob carga aparecia na tela igual a uma
+falha. Agora, a cada `kQuietWindowsPerReport` (4) janelas seguidas sem descarte, sai uma
+linha com o zero escrito e o tempo coberto:
+
+```
+PPP: 0 pacotes descartados em 4 janelas de 30 s (120 s medidos) | heap interno livre 96000 B
+```
+
+O heap vai junto para a hipótese alternativa continuar verificável no trecho silencioso, mas
+sem o veredito "pressão de fila" — não há descarte do qual diagnosticar causa. Heap abaixo
+do piso ainda recebe `— heap no talo`. Qualquer janela com descarte zera a contagem e sai na
+hora, como antes. Custo em unidade ociosa: 30 linhas por hora. Lógica em
+`domain/link_diagnostics` (`dropWindowClosed`, `quietReportDue`, `describeQuietWindows`),
+orquestração em `main.cpp` → `reportPppDrops()`.
+
+**Fechado com download completo em 24/09/2026 — e a primeira tentativa não mediu nada.**
+
+A primeira rodada do dia deu `37` e depois `514` descartes em 30 s, heap folgado (~205 KB):
+o mesmo regime de antes da correção. Não era regressão. O `sdkconfig.esp-wrover-kit` desta
+máquina era de 18/09, anterior ao `CORE_LOCKING`, e o firmware gravado rodava com a fila no
+caminho de entrada — junto com rollback de OTA e panic do watchdog desligados. Ver débito 26.
+Regenerado o arquivo (`rm -f sdkconfig.esp-wrover-kit && rm -rf .pio`), conferido que toda
+opção do `sdkconfig.defaults` chegou ao gerado, a placa foi regravada e a medição refeita:
+
+| Trecho (s de boot) | Celular no AP | Descartes | Heap interno livre |
+|---|---|---|---|
+| 0–120 | não | 0 | 210 KB |
+| 120–240 | associou aos 152 s | 0 | 208 KB |
+| 240–360 | download | 0 | 195 KB |
+| 360–480 | download até o fim | 0 | 208 KB |
+
+Download inteiro no celular, PPP sem cair, **zero descartes**. Contra a mesma bancada e o
+mesmo celular sem `CORE_LOCKING`: 514 numa única janela. É a prova sob carga sustentada que
+faltava, e com o instrumento da janela silenciosa ela está escrita no serial em vez de
+inferida da ausência de linha.
+
+**Um resíduo, fora do escopo deste débito:** aos 452 s, no meio do download, saiu uma vez
+`W (…) uart_terminal: Ring Buffer Full`. É o buffer de recepção da UART do `esp_modem`, antes
+do PPP — byte perdido ali não passa pelo `PppDropCounter`, vira quadro PPP com FCS inválido e
+retransmissão TCP. Uma ocorrência num download inteiro não justifica mexer agora, mas é o
+mesmo gargalo da UART a 115200 que o [PRD 15](prd/15-gps-posicao.md) já aponta. Se voltar a
+aparecer com frequência, o lever é o tamanho do buffer de RX do `esp_modem` ou a taxa da UART.
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `begin()`
@@ -967,3 +1014,41 @@ env de desenvolvimento, onde build sujo é o caso normal e travar seria atrito p
 
 Por enquanto a disciplina é manual e está escrita no procedimento de campo, que começa por
 `git status --porcelain` ter que sair vazio.
+
+## 26. O `sdkconfig` gerado não acompanha o `sdkconfig.defaults`, e nada avisa — RESOLVIDO em 24/09/2026
+
+**Onde:** `sdkconfig.esp-wrover-kit` (gerado, ignorado pelo git) e
+[sdkconfig.defaults](../sdkconfig.defaults)
+
+O build não lê o `sdkconfig.defaults` — lê o `sdkconfig.esp-wrover-kit`, que é gerado a
+partir dele **só quando não existe**. Opção nova no defaults não chega ao firmware enquanto o
+gerado antigo estiver no disco, e o build sai verde do mesmo jeito.
+
+**Aconteceu em 24/09/2026, e o custo foi alto.** O gerado desta máquina tinha data de 18/09 e
+divergia do defaults em cinco opções: `LWIP_TCPIP_CORE_LOCKING` e `CORE_LOCKING_INPUT`
+(correção do débito 13), `BOOTLOADER_APP_ROLLBACK_ENABLE` (débito 6), `ESP_TASK_WDT_PANIC` e
+`LWIP_SNTP_MAX_SERVERS`. Como o rollback e o `CORE_LOCKING` foram validados em placa em
+20/09, esse arquivo não é o daquele dia — foi parar ali depois, por um caminho não
+identificado. Todo build feito daqui desde então saiu **sem rollback de OTA** e com a fila de
+entrada do PPP de volta. Só apareceu porque uma medição de descarte deu o número do regime
+antigo.
+
+**Correção proposta:** um `extra_scripts` de pre-build que compara cada `CONFIG_*=` do
+`sdkconfig.defaults` com o gerado e **falha o build** na divergência, dizendo qual opção e o
+comando de regeneração. Vale para todos os envs, ao contrário do débito 25: aqui não existe
+caso de desenvolvimento em que a divergência seja desejada.
+
+**Resolvido:** [scripts/check_sdkconfig.py](../scripts/check_sdkconfig.py), ligado como
+`extra_scripts = pre:` no env `esp-wrover-kit`. Antes de compilar, lê cada `CONFIG_*=` e cada
+`# CONFIG_* is not set` do defaults e confere no gerado; na primeira divergência o build
+**falha**, lista opção por opção o que o defaults pede e o que o gerado tem, e imprime o
+comando de regeneração. Como o `upload` passa pelo build, gravar placa com o gerado
+desatualizado também para aí.
+
+Falhar, e não regenerar sozinho, é de propósito: apagar o gerado descartaria em silêncio
+qualquer ajuste feito por `menuconfig`, e quem roda o build precisa saber que o firmware
+anterior saiu diferente do que o defaults pedia. Sem o gerado no disco a checagem não faz
+nada — o build o cria a partir do defaults naquela hora.
+
+Conferido nos três casos: gerado em dia compila; gerado com `CORE_LOCKING` desligado e o
+rollback removido falha em 0,3 s nomeando as duas opções; sem gerado, compila e o recria.

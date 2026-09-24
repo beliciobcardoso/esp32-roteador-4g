@@ -21,7 +21,11 @@ pio test -e native         # testes das regras puras, no host (sem placa)
 Se um arquivo de `domain/` passar a incluir `Arduino.h` ou `esp_*.h` direto, esse comando
 quebra — é de propósito, é o que impede a regra de dependência de virar só comentário.
 
-Se `sdkconfig.defaults` mudar e não refletir:
+O build lê o `sdkconfig.esp-wrover-kit` gerado, não o `sdkconfig.defaults`, e só regenera
+o gerado quando ele não existe. Opção nova no defaults não chega ao firmware e o build sai
+verde do mesmo jeito — em 24/09/2026 isso gravou placa sem `CORE_LOCKING` e **sem rollback de
+OTA** (débito 26). Hoje `scripts/check_sdkconfig.py` roda antes de todo build da placa e
+**falha** quando alguma opção do defaults não está no gerado, listando quais. Quando falhar:
 ```bash
 rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run
 ```
@@ -72,13 +76,29 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   inicializar RF/ADC/I2S. Justificativa completa em
   [docs/prd/08-segredos-por-unidade.md](docs/prd/08-segredos-por-unidade.md)
 - O DNS dos clientes do AP é resolvido localmente. `DnsForwarder` (`infra/dns_forwarder`)
-  escuta em `192.168.4.1:53` e repassa para o DNS da operadora lido de `dns_getserver(0)`.
+  escuta em `192.168.10.1:53` e repassa para o DNS da operadora lido de `dns_getserver(0)`.
   O `NatBridge` **não mexe mais no DHCP do AP**: a opção 6 já sai com o IP do próprio AP
   por padrão (`dhcpserver.c`), e com um resolvedor nesse endereço o valor do lease vale
-  para sempre. O bind é explicitamente em `192.168.4.1`, nunca `INADDR_ANY` — com
+  para sempre. O bind é explicitamente em `192.168.10.1`, nunca `INADDR_ANY` — com
   `INADDR_ANY` o socket atenderia a interface PPP e o roteador viraria resolvedor aberto
   para a rede da operadora. Encurtar o lease foi rejeitado: agravaria a janela de DHCP.
   Justificativa completa em [docs/prd/09-dns-local.md](docs/prd/09-dns-local.md)
+- **A faixa do AP é `192.168.10.0/24`, com a placa em `192.168.10.1`** — trocada em
+  23/09/2026, antes era `192.168.4.0/24`. O motivo é colisão: a `192.168.4.0/24` é o default
+  do core Arduino e de metade dos exemplos de ESP32, e numa bancada `http://192.168.4.1/`
+  respondeu com um nginx da rede da empresa em vez da placa, **sem erro nenhum** — a rota
+  saiu pela interface cabeada e a página simplesmente era de outro aparelho. Falha que se
+  parece com "a placa está no ar", e não com "você está falando com a coisa errada", custa
+  caro para diagnosticar.
+  O valor é fixo em `infra/wifi_ap` (`kApIp`/`kApGateway`/`kApSubnet`), não vai para a NVS:
+  existe uma faixa em uso, não duas, e editar isso pela página daria a quem configura a
+  chance de se trancar para fora da unidade. Trocar as três constantes basta — o lease do
+  DHCP sai do próprio IP do AP dentro do `set_esp_interface_ip()` do core (início em
+  `ap_ip + 1`, fim em `início + 10`), e `DnsForwarder` e `NatBridge` leem de
+  `WiFi.softAPIP()`. A máscara precisa ficar entre `/24` e `/28`, limite daquela função.
+  **PRD 05, PRD 06, PRD 09 e os débitos 9 e 12 continuam dizendo `192.168.4.x`**: são
+  registro do que foi medido na data, não instrução — quem for operar a unidade usa a faixa
+  desta seção
 - O relógio vem de SNTP, não do `AT+CCLK?`/NITZ do modem — NITZ depende de a operadora
   entregar, NTP não depende de operadora nenhuma. A sincronização é disparada pelo
   `LinkSupervisor` ao entrar em `Online`, e "já sincronizou alguma vez" é um latch ligado
@@ -183,7 +203,7 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
 - **ADC2 não funciona com o Wi-Fi ligado no ESP32.** O driver do rádio toma o periférico e a leitura passa a falhar ou devolver lixo. Como o AP nunca desliga nesta placa, entrada analógica só em **ADC1** — GPIO 32–39, dos quais 34/36/39 são só entrada. GPIO35 já é a bateria e GPIO32 é o LED de teste. Orçamento de pinos: o modem ocupa 4, 5, 12, 25, 26 e 27, e o GPIO12 (`BOARD_POWERON`) é strapping que ainda alimenta o cartão SD
 - **A PSRAM da placa não está compilada.** São 8 MB no hardware e `# CONFIG_ESP32_SPIRAM_SUPPORT is not set` no `sdkconfig` gerado, então todo o heap é DRAM interna. Qualquer raciocínio de memória — TLS, buffer, biblioteca nova — parte de ~320 KB compartilhados com WiFi, lwIP, PPP, NAT, DNS e WebServer, não dos 8 MB. `MALLOC_CAP_INTERNAL` e o heap total são o mesmo número hoje
 - `sdkconfig.<env>` é gerado e ignorado pelo git; o PlatformIO **não** reaplica `sdkconfig.defaults` enquanto ele existir — apagar o arquivo, limpar `.pio/build` não basta
-- ~~**Ler serial sob tráfego exige filtro.**~~ **Não exige mais** — o filtro de `grep` saiu de circulação e não deve voltar por hábito. Medido em 20/09/2026, a linha `E (…) esp-netif_lwip-ppp: pppos_input_tcpip failed with -1` chegava a 89% do serial, e o `HW FIFO Overflow` que vinha junto cortava linhas de outros módulos ao meio (`Bateria:` virava `ateria:`, `eria:`). Duas correções do mesmo dia encerraram isso: `infra/ppp_drop_counter` intercepta o `esp_log_set_vprintf`, conta o evento e **suprime a linha antes do serial**, publicando o total uma vez por janela de 30 s; e `CONFIG_LWIP_TCPIP_CORE_LOCKING` + `CORE_LOCKING_INPUT` tiraram a fila do caminho de entrada, que era a origem do descarte. Filtrar por `pppos_input_tcpip` hoje não casa com nada, e filtrar por `ateria:` esconde leitura de bateria legítima. Histórico e a validação sob carga sustentada que segue pendente no débito 13
+- ~~**Ler serial sob tráfego exige filtro.**~~ **Não exige mais** — o filtro de `grep` saiu de circulação e não deve voltar por hábito. Medido em 20/09/2026, a linha `E (…) esp-netif_lwip-ppp: pppos_input_tcpip failed with -1` chegava a 89% do serial, e o `HW FIFO Overflow` que vinha junto cortava linhas de outros módulos ao meio (`Bateria:` virava `ateria:`, `eria:`). Duas correções do mesmo dia encerraram isso: `infra/ppp_drop_counter` intercepta o `esp_log_set_vprintf`, conta o evento e **suprime a linha antes do serial**, publicando o total uma vez por janela de 30 s; e `CONFIG_LWIP_TCPIP_CORE_LOCKING` + `CORE_LOCKING_INPUT` tiraram a fila do caminho de entrada, que era a origem do descarte. Filtrar por `pppos_input_tcpip` hoje não casa com nada, e filtrar por `ateria:` esconde leitura de bateria legítima. Histórico no débito 13, fechado em 24/09/2026 com download completo e zero descartes
 
 ## Procedimentos manuais
 
@@ -228,9 +248,8 @@ Ver [docs/DEBITOS_TECNICOS.md](docs/DEBITOS_TECNICOS.md).
 - **Instante de tempo no domínio é `uint32_t`, não `unsigned long`.** `unsigned long` tem
   4 bytes na placa e 8 no host, então a subtracão que atravessa a virada de `millis()` nunca
   vira no teste nativo — o teste passa por não exercitar nada. `millis()` cabe exato em
-  `uint32_t`, então nada se perde na placa. Vale para código novo; `dropReportDue` em
-  `domain/link_diagnostics` é anterior a esta regra e tem um teste de virada que hoje é
-  verde pelo motivo errado
+  `uint32_t`, então nada se perde na placa. `domain/link_diagnostics` era a exceção
+  anterior à regra (teste de virada verde pelo motivo errado) e foi convertido em 24/09/2026
 - Referência de documentação para código **deste** repositório cita arquivo + símbolo
   (`http_config_handler.cpp` → `begin()`), nunca número de linha — linha envelhece em
   silêncio a cada refatoração, e este erro já apareceu em duas revisões seguidas (débito 21).

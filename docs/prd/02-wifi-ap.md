@@ -12,7 +12,7 @@ Subir SoftAP com SSID/senha vindos de `load_settings`, IP fixo, pronto pra clien
 
 ## Escopo
 
-- `infra/wifi_ap.{h,cpp}` — wrapper fino sobre API de SoftAP do ESP-IDF/Arduino: `start(const RouterSettings&)`, IP fixo (ex: `192.168.4.1`), `WIFI_AUTH_WPA2_WPA3_PSK`, limite de 15 clientes simultâneos (teto do driver)
+- `infra/wifi_ap.{h,cpp}` — wrapper fino sobre API de SoftAP do ESP-IDF/Arduino: `start(const RouterSettings&)`, IP fixo (ex: `192.168.10.1`), `WIFI_AUTH_WPA2_WPA3_PSK`, limite de 15 clientes simultâneos (teto do driver)
 
 ## Depende de
 

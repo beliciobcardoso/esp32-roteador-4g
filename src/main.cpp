@@ -264,7 +264,10 @@ constexpr unsigned long kRestartGraceMs = 1000;
 // comparacao direta de instantes, que quebra na virada.
 unsigned long lastLedToggleMs = 0;
 unsigned long lastBatteryReportMs = 0;
-unsigned long lastDropReportMs = 0;
+// uint32_t e nao unsigned long: e instante consumido pelo dominio, e a regra do AGENTS.md
+// existe porque `unsigned long` tem 8 bytes no host e 4 na placa, o que faz o teste de virada
+// passar sem exercitar a virada.
+uint32_t lastDropReportMs = 0;
 bool ledOn = false;
 
 void blinkLed(unsigned long now) {
@@ -374,17 +377,35 @@ void settleFirmwareConfirmation(unsigned long now) {
 // apertada, que e a que o lwIP usa para pbuf.
 void reportPppDrops(unsigned long now) {
   static uint32_t pending = 0;
+  // Janelas fechadas em sequencia sem um descarte sequer. Zera a cada linha emitida, seja
+  // ela de descarte ou de silencio.
+  static uint32_t quietWindows = 0;
 
   // Drenado a cada volta, nao so na hora do relatorio: o contador e a unica copia do dado, e
   // deixa-lo acumular na task do lwIP por 30 s so para ler no fim nao ganha nada.
   pending += PppDropCounter::takeCount();
 
-  if (!dropReportDue(now, lastDropReportMs, pending)) return;
-  lastDropReportMs = now;
+  if (!dropWindowClosed(static_cast<uint32_t>(now), lastDropReportMs)) return;
+  lastDropReportMs = static_cast<uint32_t>(now);
 
   uint32_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-  Serial.println(describeDropWindow(pending, freeInternal));
-  pending = 0;
+
+  if (pending > 0) {
+    Serial.println(describeDropWindow(pending, freeInternal));
+    pending = 0;
+    quietWindows = 0;
+    return;
+  }
+
+  // Janela zerada nao imprime na hora, mas tambem nao e esquecida: depois de
+  // kQuietWindowsPerReport delas sai uma linha dizendo quanto tempo passou sem descarte.
+  // Sem isso "zero descartes" e "o relatorio parou" se parecem na tela, e o debito 13 pede
+  // justamente provar zero sob carga.
+  quietWindows++;
+  if (!quietReportDue(quietWindows)) return;
+
+  Serial.println(describeQuietWindows(quietWindows, freeInternal));
+  quietWindows = 0;
 }
 
 void applyPendingRestart(unsigned long now) {
