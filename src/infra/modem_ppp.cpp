@@ -170,6 +170,31 @@ bool runAtCommand(esp_modem_dce_t* dce, const char* command, uint32_t timeoutMs)
   return result == ESP_OK;
 }
 
+// Resposta do AT+SIMCOMATI, copiada pelo callback. Estado de arquivo pelo mesmo motivo do
+// gPppHasIp: o callback do esp_modem_command e funcao livre, sem ponteiro de contexto.
+String gSimcomatiResponse;
+
+// Diferente do onAtResponseLine: nao imprime a resposta, porque ela traz o IMEI. E o
+// esp_modem entrega o buffer acumulado desde o comando a cada chamada, nao so a parte nova
+// (por isso o eco aparece repetido no serial dos outros AT) — entao cada chamada substitui
+// a copia inteira em vez de concatenar.
+esp_err_t captureSimcomati(uint8_t* data, size_t len) {
+  gSimcomatiResponse = String();
+  for (size_t i = 0; i < len; i++) {
+    gSimcomatiResponse += static_cast<char>(data[i]);
+  }
+
+  std::string_view text(reinterpret_cast<const char*>(data), len);
+  if (text.find("ERROR") != std::string_view::npos) {
+    return ESP_FAIL;
+  }
+  // "\nOK" e nao "OK": o eco do comando vem antes, entao o OK final sempre segue uma quebra.
+  if (text.find("\nOK") != std::string_view::npos) {
+    return ESP_OK;
+  }
+  return ESP_ERR_NOT_FINISHED;
+}
+
 // ATENCAO: nao usar esp_modem_at nem nenhum comando com saida de string (get_imsi,
 // get_operator_name). O header do componente, compilado em C++, declara o parametro
 // de saida como `std::string&`, mas a implementacao em esp_modem_c_api.cpp e
@@ -294,6 +319,26 @@ void ModemPpp::powerOnSequence() {
   pulsePwrKey();
 }
 
+// Uma vez por boot: o modem nao troca de modelo entre reconexoes, e o start() de cada
+// reconexao ja carrega esperas de SIM e registro o bastante. Roda em modo comando, antes do
+// PPP — e o unico momento em que AT passa pela UART sem CMUX (PRD 15). Falhar aqui so deixa
+// a identidade vazia; o enlace segue, porque inventario nao pode custar internet.
+void ModemPpp::readIdentityOnce() {
+  if (identityRead_) {
+    return;
+  }
+  identityRead_ = true;
+
+  gSimcomatiResponse = String();
+  esp_err_t result = esp_modem_command(dce_, "AT+SIMCOMATI\r", &captureSimcomati, 3000);
+  if (result != ESP_OK) {
+    Serial.printf("Modem: AT+SIMCOMATI falhou [%s]\n", esp_err_to_name(result));
+  }
+  identity_ = parseSimcomati(gSimcomatiResponse);
+  gSimcomatiResponse = String();
+  Serial.println(describeModem(identity_));
+}
+
 bool ModemPpp::start(const RouterSettings& settings) {
   // Para depurar o dialogo AT cru: ligar CONFIG_ESP_MODEM_ADD_DEBUG_LOGS=y e
   // CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y, e subir os TAGs command_lib, modem_api e
@@ -359,6 +404,8 @@ bool ModemPpp::start(const RouterSettings& settings) {
   if (!waitForAtReady(dce_)) {
     return false;
   }
+
+  readIdentityOnce();
 
   if (!waitForNetwork(dce_, settings.apn)) {
     return false;

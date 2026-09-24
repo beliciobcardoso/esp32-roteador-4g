@@ -288,9 +288,11 @@ Usuário abre 192.168.10.1
 - Responde três perguntas: onde a unidade foi instalada, se ela saiu do lugar (furto) e onde
   a frota está num geomap. As três se resolvem com fix esparso — nenhuma pede rastreamento
   contínuo. Depende da Fase 9, que é o canal por onde a posição sai da placa
-- **Bloqueada por uma verificação de hardware.** Nem todo A7670E tem GNSS: só o
-  `A7670E-FASE`. `AT+SIMCOMATI` responde, e roda em modo comando no boot, sem CMUX. Se o
-  módulo não for `-FASE`, o caminho passa a ser módulo GPS externo, que é outro PRD
+- ~~**Bloqueada por uma verificação de hardware.**~~ **Desbloqueada em 24/09/2026:** o
+  `AT+SIMCOMATI`, agora consultado em todo boot em modo comando, responde `A7670E-FASE` — a
+  variante com GNSS interno. Modelo e firmware do modem aparecem no serial, em `/api/status`
+  e na página. O IPEX de GNSS existe na PCB, mas está sem antena — ligar uma é o próximo
+  passo de bancada
 - **A decisão técnica é migrar o modem para CMUX.** GNSS se lê por AT, e AT não passa por uma
   UART ocupada com PPP. Sair do modo dados a cada fix derrubaria a internet dos clientes;
   fix só no boot não detecta movimento e ainda atrasaria o enlace pelo cold start

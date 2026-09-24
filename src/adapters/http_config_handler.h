@@ -2,6 +2,7 @@
 
 #include <WebServer.h>
 
+#include "../domain/modem_identity.h"
 #include "../domain/uplink_status.h"
 #include "../usecases/load_settings.h"
 #include "../usecases/save_settings.h"
@@ -67,6 +68,12 @@ class HttpConfigHandler {
   // Provider, como os outros: o adaptador nao conhece o hook de log do lwIP.
   using PppDropsProvider = uint32_t (*)();
   void onPppDropsRequested(PppDropsProvider provider) { pppDrops_ = provider; }
+
+  // Modelo e firmware do modem (PRD 15). Lido uma vez no boot; campos vazios ate la ou se o
+  // modem nao respondeu. Provider pelo mesmo motivo dos outros: o adaptador nao conhece o
+  // esp_modem.
+  using ModemIdentityProvider = ModemIdentity (*)();
+  void onModemIdentityRequested(ModemIdentityProvider provider) { modemIdentity_ = provider; }
   void onRestartRequested(RestartRequested callback) { restartRequested_ = callback; }
   void onFirmwareConfirmed(FirmwareConfirmed callback) { firmwareConfirmed_ = callback; }
 
@@ -122,6 +129,7 @@ class HttpConfigHandler {
   ClockTextProvider clockText_ = nullptr;
   BatteryVoltageProvider batteryVoltage_ = nullptr;
   PppDropsProvider pppDrops_ = nullptr;
+  ModemIdentityProvider modemIdentity_ = nullptr;
   String pageETag_;
   RestartRequested restartRequested_ = nullptr;
   FirmwareConfirmed firmwareConfirmed_ = nullptr;
