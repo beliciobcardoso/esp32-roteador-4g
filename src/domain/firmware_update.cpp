@@ -30,6 +30,34 @@ const char* to_string(FirmwareUpdateError error) {
   return "erro desconhecido";
 }
 
+const char* updateReasonToken(FirmwareUpdateError error) {
+  switch (error) {
+    case FirmwareUpdateError::None:
+      return "ok";
+    case FirmwareUpdateError::EmptyImage:
+      return "sem_arquivo";
+    case FirmwareUpdateError::TooShortToBeAnImage:
+      return "curto_demais";
+    case FirmwareUpdateError::NotAnEspImage:
+      return "nao_e_imagem_esp32";
+    case FirmwareUpdateError::TooLargeForSlot:
+      return "maior_que_o_slot";
+  }
+  return "desconhecido";
+}
+
+String describeUpdateOutcome(const char* reason, uint32_t receivedBytes) {
+  if (reason == nullptr) {
+    return "OTA: gravado | " + numberToString(receivedBytes) + " B | reiniciando";
+  }
+  String line = "OTA: recusado (";
+  line += reason;
+  line += ") | ";
+  line += numberToString(receivedBytes);
+  line += " B recebidos";
+  return line;
+}
+
 FirmwareUpdateError inspectImageHead(const unsigned char* head, size_t length) {
   if (head == nullptr || length == 0) return FirmwareUpdateError::EmptyImage;
   if (length < kEspImageHeaderSize) return FirmwareUpdateError::TooShortToBeAnImage;
