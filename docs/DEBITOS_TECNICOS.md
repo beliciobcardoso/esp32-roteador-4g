@@ -1007,7 +1007,7 @@ env de desenvolvimento, onde build sujo é o caso normal e travar seria atrito p
 Por enquanto a disciplina é manual e está escrita no procedimento de campo, que começa por
 `git status --porcelain` ter que sair vazio.
 
-## 26. O `sdkconfig` gerado não acompanha o `sdkconfig.defaults`, e nada avisa
+## 26. O `sdkconfig` gerado não acompanha o `sdkconfig.defaults`, e nada avisa — RESOLVIDO em 24/09/2026
 
 **Onde:** `sdkconfig.esp-wrover-kit` (gerado, ignorado pelo git) e
 [sdkconfig.defaults](../sdkconfig.defaults)
@@ -1030,5 +1030,17 @@ antigo.
 comando de regeneração. Vale para todos os envs, ao contrário do débito 25: aqui não existe
 caso de desenvolvimento em que a divergência seja desejada.
 
-Por enquanto, o procedimento manual está no AGENTS.md: depois de mexer no defaults, ou em
-caso de dúvida, regenerar com `rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run`.
+**Resolvido:** [scripts/check_sdkconfig.py](../scripts/check_sdkconfig.py), ligado como
+`extra_scripts = pre:` no env `esp-wrover-kit`. Antes de compilar, lê cada `CONFIG_*=` e cada
+`# CONFIG_* is not set` do defaults e confere no gerado; na primeira divergência o build
+**falha**, lista opção por opção o que o defaults pede e o que o gerado tem, e imprime o
+comando de regeneração. Como o `upload` passa pelo build, gravar placa com o gerado
+desatualizado também para aí.
+
+Falhar, e não regenerar sozinho, é de propósito: apagar o gerado descartaria em silêncio
+qualquer ajuste feito por `menuconfig`, e quem roda o build precisa saber que o firmware
+anterior saiu diferente do que o defaults pedia. Sem o gerado no disco a checagem não faz
+nada — o build o cria a partir do defaults naquela hora.
+
+Conferido nos três casos: gerado em dia compila; gerado com `CORE_LOCKING` desligado e o
+rollback removido falha em 0,3 s nomeando as duas opções; sem gerado, compila e o recria.
