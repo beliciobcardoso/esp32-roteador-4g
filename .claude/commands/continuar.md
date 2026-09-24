@@ -11,10 +11,15 @@ da outra máquina não existem aqui.
    mostre o `git status` e pergunte.
 2. **Leia o contexto, nesta ordem:** `AGENTS.md` (se ainda não estiver no contexto) e
    `docs/ONDE_PARAMOS.md`. Abra outros arquivos só quando uma pendência pedir.
-3. **Confira se o arquivo está em dia.** Ele tem a data da última atualização. Rode
-   `git log --oneline --since=<essa data> origin/developer` e compare. Se houver merges que o
-   arquivo não menciona, ele está desatualizado: resuma o que esses merges fizeram, pelo `git
-   log`, e avise o usuário.
+3. **Confira se o arquivo está em dia.** A linha "Última atualização" traz a data e o último
+   merge que ele cobre ("depois do merge #N"). Rode `git log --oneline --merges -40
+   origin/developer` e procure merges com número maior que N. Se a linha não tiver o número,
+   use a data **com hora**: `--since='<AAAA-MM-DD> 00:00'`. Sem a hora, o Git lê a data no
+   horário atual e esconde tudo o que foi feito antes dele no mesmo dia — em 24/09/2026 isso
+   devolveu 0 commits num dia com 24. Merges que só mexem em `docs/ONDE_PARAMOS.md` ou em
+   `.claude/commands/` são manutenção deste ciclo e não contam (confira com `git show --stat
+   <merge>^2`). Se sobrar merge que o arquivo não menciona, ele está desatualizado: resuma o
+   que esses merges fizeram, pelo `git log`, e avise o usuário.
 4. **Prepare a máquina**, seguindo a seção "Ao abrir numa máquina" do `ONDE_PARAMOS.md`:
    - porta serial: se a placa estiver ligada e o caminho em `/dev/serial/by-id/` for diferente
      do versionado no `platformio.ini`, proponha o `platformio_override.ini`, sem criar sem
