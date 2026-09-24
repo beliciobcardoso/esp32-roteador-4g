@@ -6,7 +6,9 @@ computador (trabalho e casa), e o que um agente guarda localmente — memória, 
 código. Quem abre uma sessão nova lê isto logo depois do AGENTS.md.
 
 **Ao encerrar um dia de trabalho, atualize este arquivo** (estado, pendências, próximo passo)
-e publique junto com o resto. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
+e publique junto com o resto. Os comandos do Claude Code fazem isso: **`/continuar`** ao
+chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionados, iguais nas
+duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
 Última atualização: 24/09/2026, fim do dia no trabalho.
