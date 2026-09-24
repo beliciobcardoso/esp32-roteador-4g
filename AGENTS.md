@@ -5,7 +5,8 @@ Firmware roteador 4G — LilyGO T-A7670E R2 (ESP32-WROVER-E + modem A7670E).
 **Sessão nova? Leia [docs/ONDE_PARAMOS.md](docs/ONDE_PARAMOS.md) logo depois deste arquivo.**
 O projeto é trabalhado em mais de uma máquina, e o estado da última sessão, as pendências e o
 próximo passo moram lá — memória local de agente e `git stash` não viajam entre máquinas. Ao
-encerrar o dia, atualize aquele arquivo antes de publicar.
+encerrar o dia, atualize aquele arquivo antes de publicar. Os comandos `/continuar` e
+`/encerrar` (em `.claude/commands/`, versionados) fazem as duas pontas desse ciclo.
 
 ## Stack
 
