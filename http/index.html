@@ -560,6 +560,10 @@
                             <dt>Reiniciou sem uplink</dt>
                             <dd id="status-rebooted">—</dd>
                         </div>
+                        <div>
+                            <dt>Pacotes descartados</dt>
+                            <dd id="status-drops">—</dd>
+                        </div>
                     </dl>
                 </article>
                 <article class="card">
@@ -780,6 +784,7 @@
             el('status-uplink').textContent = labelForState(data.uplink_state);
             el('status-failures').textContent = String(data.uplink_failures);
             el('status-rebooted').textContent = data.uplink_rebooted ? 'sim' : 'não';
+            el('status-drops').textContent = String(data.ppp_drops_total);
 
             el('bar-clock').textContent = data.clock_text;
             el('bar-clock').classList.toggle('excuse', !data.clock_synced);

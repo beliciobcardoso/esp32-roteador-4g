@@ -16,13 +16,19 @@ constexpr const char* kDropFragment = "pppos_input_tcpip failed";
 // alteracao: este hook e um filtro, nao uma substituicao do log do sistema.
 vprintf_like_t gPreviousVprintf = nullptr;
 
-std::atomic<uint32_t> gDrops{0};
+// Nunca zera. A janela sai da diferenca contra gLastTaken, e o valor cru e o que a
+// telemetria publica como counter.
+std::atomic<uint32_t> gTotal{0};
+
+// Marca da ultima drenagem. Nao e atomico de proposito: so a task que chama takeCount()
+// escreve e le esta variavel, e o unico chamador e o loop(). Ver o contrato no header.
+uint32_t gLastTaken = 0;
 
 // Roda na task que emitiu o log — inclusive a do lwIP, dentro do caminho de recepcao. Por
 // isso nao aloca, nao formata e nao loga: um ESP_LOG daqui reentraria neste mesmo hook.
 int filteringVprintf(const char* format, va_list args) {
   if (format != nullptr && std::strstr(format, kDropFragment) != nullptr) {
-    gDrops.fetch_add(1, std::memory_order_relaxed);
+    gTotal.fetch_add(1, std::memory_order_relaxed);
     // Devolve o que um printf teria escrito. Zero e honesto: nada foi para o serial.
     return 0;
   }
@@ -42,6 +48,15 @@ void begin() {
   gPreviousVprintf = esp_log_set_vprintf(&filteringVprintf);
 }
 
-uint32_t takeCount() { return gDrops.exchange(0, std::memory_order_relaxed); }
+uint32_t takeCount() {
+  const uint32_t total = gTotal.load(std::memory_order_relaxed);
+  // Subtracao de unsigned: atravessa a virada de 2^32 sem devolver um delta absurdo, do
+  // mesmo jeito que as contas de millis() no dominio.
+  const uint32_t sinceLast = total - gLastTaken;
+  gLastTaken = total;
+  return sinceLast;
+}
+
+uint32_t totalCount() { return gTotal.load(std::memory_order_relaxed); }
 
 }  // namespace PppDropCounter

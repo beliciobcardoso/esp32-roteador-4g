@@ -268,10 +268,13 @@ Usuário abre 192.168.10.1
   `domain/telemetry` (amostra de 20 B, payload, decisão de publicar) e
   `domain/telemetry_buffer` (anel, as três guardas do cabeçalho, correção de timestamp).
   Fecha os critérios de aceite 11 e 15 do PRD
-- **Falta tudo o que toca o mundo:** `infra/mqtt_client`, o acumulado do
-  `infra/ppp_drop_counter`, os campos de broker em `RouterSettings` e na página, os buffers
-  do mbedTLS no `sdkconfig.defaults`, o broker com TLS e ACL, o Telegraf, os painéis e a
-  medição de heap com TLS carregado
+- **Acumulado do `infra/ppp_drop_counter` feito em 23/09/2026**, e já com consumidor: o
+  total desde o boot aparece em `/api/status` e na página. Uma contagem só, monotônica, com
+  a janela de 30 s derivada dela por subtração — dois contadores independentes poderiam
+  divergir e custariam dois incrementos no caminho de recepção do lwIP
+- **Falta tudo o que toca a rede:** `infra/mqtt_client`, os campos de broker em
+  `RouterSettings` e na página, os buffers do mbedTLS no `sdkconfig.defaults`, o broker com
+  TLS e ACL, o Telegraf, os painéis e a medição de heap com TLS carregado
 - Detalhes em [prd/14-telemetria-mqtt.md](prd/14-telemetria-mqtt.md)
 
 ### Fase 10 — Acesso remoto à página de configuração — proposta
