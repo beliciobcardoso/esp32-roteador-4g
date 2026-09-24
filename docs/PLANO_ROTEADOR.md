@@ -64,7 +64,7 @@ esp32-roteador-4g/
 ## Fluxo de dados da configuração
 
 ```
-Usuário abre 192.168.4.1
+Usuário abre 192.168.10.1
    → http_config_handler (adapters) exige Basic Auth
    → GET: renderiza html_page com valores atuais (via load_settings usecase)
    → POST: valida payload → save_settings usecase → valida via domain/router_settings
@@ -85,7 +85,7 @@ Usuário abre 192.168.4.1
   sem deixar placas já gravadas subirem com campos vazios
 
 ### Fase 2 — WiFi AP — ✅ concluída (com ressalvas)
-- `infra/wifi_ap`: sobe SoftAP com SSID/senha vindos do `load_settings`, IP fixo (ex: `192.168.4.1`)
+- `infra/wifi_ap`: sobe SoftAP com SSID/senha vindos do `load_settings`, IP fixo (ex: `192.168.10.1`)
 - Teste: conectar um celular no AP e confirmar que recebe IP por DHCP
 - **Validado em campo:** celular conecta e recebe IP por DHCP
 - ⚠️ Dois critérios originais não se sustentaram, descobertos na Fase 4:
@@ -96,7 +96,7 @@ Usuário abre 192.168.4.1
 ### Fase 3 — Servidor de configuração HTTP — ✅ concluída
 - `adapters/html_page`: formulário simples (SSID, senha WiFi, APN, usuário/senha admin)
 - `adapters/http_config_handler`: rotas GET/POST, Basic Auth, chama `save_settings`
-- Teste: acessar `192.168.4.1` do celular conectado no AP, editar e salvar configs, confirmar persistência após reboot
+- Teste: acessar `192.168.10.1` do celular conectado no AP, editar e salvar configs, confirmar persistência após reboot
 - **Validado em campo:** GET renderiza o formulário, POST persiste, configs sobrevivem ao reboot
 - Evoluiu na Fase 4: formulário ganhou `apn_user`/`apn_password` (senha em branco mantém a atual)
 - ⚠️ `loop()` bloqueia `handleClient()` por ~3 s por ciclo — débito 4 em [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md)
@@ -110,7 +110,7 @@ Usuário abre 192.168.4.1
 ### Fase 5 — NAT / roteamento — ✅ concluída
 - `infra/nat_bridge`: habilita NAPT na interface **AP** (não na PPP — ver PRD 05)
   - Entregava também o DNS da operadora pela opção 6 do DHCP; desde 19/09/2026 não mexe
-    mais no DHCP — quem resolve é o `infra/dns_forwarder` em `192.168.4.1:53` (PRD 09)
+    mais no DHCP — quem resolve é o `infra/dns_forwarder` em `192.168.10.1:53` (PRD 09)
 - Orquestração (settings → AP → modem → espera IP → NAT) ficou em `main.cpp`, não em
   `usecases/start_routing` — decisão registrada no PRD 05
 - Validado em hardware: celular conectado no AP navegou pelo 4G
@@ -143,8 +143,9 @@ Usuário abre 192.168.4.1
   (`reinicio 1/2` → `reinicio 2/2`) e o terceiro reboot foi suprimido — sem ele a placa
   reiniciaria para sempre. Depois disso o supervisor segue tentando com backoff de 60 s e o
   AP não cai mais sozinho
-- ⚠️ Rajadas de `pppos_input_tcpip failed with -1` sob tráfego — débito 13 em
-  [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md)
+- ✅ Rajadas de `pppos_input_tcpip failed with -1` sob tráfego — débito 13 em
+  [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md), resolvido com `CORE_LOCKING` e fechado em
+  24/09/2026 com download completo e zero descartes
 - Acertos, erros e lições da fase: [prd/06-integracao-testes-carga.md](prd/06-integracao-testes-carga.md#retrospectiva-da-fase)
 
 ### Fase 7 — Relógio (NTP + fuso) — concluída, validada em hardware
@@ -234,6 +235,71 @@ Usuário abre 192.168.4.1
     sequencia de reverts deixa a placa
 - ⚠️ Upload interrompido no meio (cabo/Wi-Fi) segue por validar — unico criterio aberto
 - Detalhes em [prd/11-atualizacao-ota.md](prd/11-atualizacao-ota.md)
+
+### Fase 9 — Telemetria MQTT e painéis no Grafana — em andamento (domínio concluído)
+
+- A unidade publica o próprio estado num broker MQTT sobre TLS, **só de subida**, e esse
+  estado vira série temporal de longo prazo na stack Prometheus + Grafana que já roda em
+  produção. Ingestão por Telegraf (`mqtt_consumer`) e `remote_write`
+- **Vem antes da Fase 10 de propósito.** As duas contornam o CGNAT pelo mesmo princípio — a
+  conexão nasce na placa —, mas o túnel WireGuard põe uma terceira interface no mesmo lwIP
+  que hoje faz NAT dos clientes do AP, e MQTT é um socket TCP de saída. Telemetria não sobe
+  `firmware.bin` nem corrige um APN: reduz o que sobra para o túnel, e entrega antes
+- `domain/telemetry`, `domain/telemetry_buffer` e `domain/mqtt_backoff` — payload, política
+  do anel, correção de timestamp e aritmética do backoff, todos com teste nativo.
+  `infra/mqtt_client` é wrapper fino sobre o `esp_mqtt_client` que já vem no IDF 4.4.7
+- **A métrica que importa é a que não pode ser enviada.** Uplink caído é o evento que se quer
+  ver, e é exatamente quando não há publicação possível. Três mecanismos, os três
+  necessários: LWT retido, anel em `RTC_NOINIT` drenado na reconexão, e alerta por ausência
+- O anel tem **cabeçalho versionado** (`magic` + `layout` + `sample_size`). Sem ele, o
+  firmware novo leria depois de um OTA o layout antigo no mesmo endereço e publicaria lixo
+  como amostra válida — pior que perder o histórico, porque dado falso vira decisão
+- `infra/ppp_drop_counter` ganha o acumulado desde o boot, ao lado da janela de 30 s que
+  continua servindo o serial. É o que fecha a medição do débito 13 para a frota inteira
+- **Famílias de nome fixadas antes da primeira série**: `router_` para a placa, `sensor_`
+  para o ambiente. Renomear métrica depois quebra painel e histórico ao mesmo tempo
+- ⚠️ **Risco número um: heap.** A PSRAM existe na placa e **não está compilada**
+  (`# CONFIG_ESP32_SPIRAM_SUPPORT is not set`), então o handshake do mbedTLS disputa só DRAM
+  interna. Encolher os buffers TLS vem primeiro; medir vem depois, com o cliente carregado
+- Sensores externos ficam **fora de escopo**, mas a fase fixa os nomes, o formato e o
+  armazenamento que eles vão usar
+- **Domínio concluído em 23/09/2026**, com 50 testes nativos, sem tocar em hardware:
+  `domain/mqtt_backoff` (progressão, jitter, gate por uplink, patamar de estabilidade),
+  `domain/telemetry` (amostra de 20 B, payload, decisão de publicar) e
+  `domain/telemetry_buffer` (anel, as três guardas do cabeçalho, correção de timestamp).
+  Fecha os critérios de aceite 11 e 15 do PRD
+- **Falta tudo o que toca o mundo:** `infra/mqtt_client`, o acumulado do
+  `infra/ppp_drop_counter`, os campos de broker em `RouterSettings` e na página, os buffers
+  do mbedTLS no `sdkconfig.defaults`, o broker com TLS e ACL, o Telegraf, os painéis e a
+  medição de heap com TLS carregado
+- Detalhes em [prd/14-telemetria-mqtt.md](prd/14-telemetria-mqtt.md)
+
+### Fase 10 — Acesso remoto à página de configuração — proposta
+
+- Túnel WireGuard partindo da placa contra servidor próprio, para abrir a página e subir
+  firmware sem estar no Wi-Fi da unidade. Depende de um servidor que ainda não existe
+- Detalhes em [prd/13-acesso-remoto.md](prd/13-acesso-remoto.md)
+
+### Fase 11 — Posição por GNSS — proposta
+
+- Responde três perguntas: onde a unidade foi instalada, se ela saiu do lugar (furto) e onde
+  a frota está num geomap. As três se resolvem com fix esparso — nenhuma pede rastreamento
+  contínuo. Depende da Fase 9, que é o canal por onde a posição sai da placa
+- **Bloqueada por uma verificação de hardware.** Nem todo A7670E tem GNSS: só o
+  `A7670E-FASE`. `AT+SIMCOMATI` responde, e roda em modo comando no boot, sem CMUX. Se o
+  módulo não for `-FASE`, o caminho passa a ser módulo GPS externo, que é outro PRD
+- **A decisão técnica é migrar o modem para CMUX.** GNSS se lê por AT, e AT não passa por uma
+  UART ocupada com PPP. Sair do modo dados a cada fix derrubaria a internet dos clientes;
+  fix só no boot não detecta movimento e ainda atrasaria o enlace pelo cold start
+- O CMUX paga por duas features: encerra também a exclusão de RSSI/CSQ registrada na Fase 9
+- ⚠️ **O risco mora debaixo do que já funciona:** o PPP validado nas Fases 4–6 passa a rodar
+  sobre uma camada nova, na mesma UART de 115200 que o débito 13 mostrou ser gargalo.
+  Revalidar reconexão, queda de RF e perda de SIM é obrigatório, e o `ppp_drops` sob carga
+  não pode piorar
+- Detecção de movimento é domínio puro e testável: fix reprovado não entra, haversine contra
+  uma posição de referência **gravada pelo operador** (não pelo primeiro fix, que se
+  desarmaria no cativeiro), e N confirmações antes de alarmar
+- Detalhes em [prd/15-gps-posicao.md](prd/15-gps-posicao.md)
 
 ## Em aberto para decidir durante a implementação (não bloqueia o início)
 
