@@ -24,8 +24,8 @@ quebra — é de propósito, é o que impede a regra de dependência de virar s�
 O build lê o `sdkconfig.esp-wrover-kit` gerado, não o `sdkconfig.defaults`, e só regenera
 o gerado quando ele não existe. Opção nova no defaults não chega ao firmware e o build sai
 verde do mesmo jeito — em 24/09/2026 isso gravou placa sem `CORE_LOCKING` e **sem rollback de
-OTA** (débito 26). Depois de mexer no defaults, antes de gravar unidade de campo, ou na
-dúvida:
+OTA** (débito 26). Hoje `scripts/check_sdkconfig.py` roda antes de todo build da placa e
+**falha** quando alguma opção do defaults não está no gerado, listando quais. Quando falhar:
 ```bash
 rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run
 ```
