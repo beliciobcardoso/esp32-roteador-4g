@@ -239,6 +239,7 @@ void HttpConfigHandler::handleGetStatus() {
       .text("modem_model", modem.model)
       .text("modem_revision", modem.revision)
       .boolean("modem_gnss", modemHasGnss(modem.model))
+      .text("gnss_bench", gnssBench_ != nullptr ? gnssBench_() : String(""))  // TEMPORARIO
       .text("firmware_slot", firmwareWriter_.runningSlotLabel())
       .text("firmware_version", firmwareWriter_.runningVersionText())
       .text("firmware_image_state", firmwareImageStateName(imageState))

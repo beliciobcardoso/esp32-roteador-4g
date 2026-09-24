@@ -231,6 +231,7 @@ void setup() {
   httpConfigHandler.onBatteryVoltageRequested(&currentBatteryVoltage);
   httpConfigHandler.onPppDropsRequested(&currentPppDrops);
   httpConfigHandler.onModemIdentityRequested(&currentModemIdentity);
+  httpConfigHandler.onGnssBenchRequested(&gnssBenchText);  // TEMPORARIO
   httpConfigHandler.onRestartRequested(&onRestartRequested);
   httpConfigHandler.onFirmwareConfirmed(&onFirmwareConfirmed);
 

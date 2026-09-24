@@ -576,6 +576,10 @@
                             <dt>GNSS interno</dt>
                             <dd id="status-modem-gnss">—</dd>
                         </div>
+                        <div class="longa">
+                            <dt>Captura GNSS (temporário)</dt>
+                            <dd id="status-gnss-bench">—</dd>
+                        </div>
                     </dl>
                 </article>
                 <article class="card">
@@ -802,6 +806,7 @@
             el('status-modem').textContent = modemRead ? data.modem_model : 'não identificado';
             el('status-modem-revision').textContent = data.modem_revision || '—';
             el('status-modem-gnss').textContent = !modemRead ? '—' : data.modem_gnss ? 'sim' : 'não';
+            el('status-gnss-bench').textContent = data.gnss_bench || '—';
 
             el('bar-clock').textContent = data.clock_text;
             el('bar-clock').classList.toggle('excuse', !data.clock_synced);

@@ -74,6 +74,7 @@ class HttpConfigHandler {
   // esp_modem.
   using ModemIdentityProvider = ModemIdentity (*)();
   void onModemIdentityRequested(ModemIdentityProvider provider) { modemIdentity_ = provider; }
+  void onGnssBenchRequested(ClockTextProvider provider) { gnssBench_ = provider; }  // TEMPORARIO
   void onRestartRequested(RestartRequested callback) { restartRequested_ = callback; }
   void onFirmwareConfirmed(FirmwareConfirmed callback) { firmwareConfirmed_ = callback; }
 
@@ -130,6 +131,7 @@ class HttpConfigHandler {
   BatteryVoltageProvider batteryVoltage_ = nullptr;
   PppDropsProvider pppDrops_ = nullptr;
   ModemIdentityProvider modemIdentity_ = nullptr;
+  ClockTextProvider gnssBench_ = nullptr;  // TEMPORARIO
   String pageETag_;
   RestartRequested restartRequested_ = nullptr;
   FirmwareConfirmed firmwareConfirmed_ = nullptr;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Arduino.h>
 #include <esp_netif.h>
 
 #include <cstdint>
@@ -18,6 +19,9 @@ typedef struct esp_modem_dce_wrap esp_modem_dce_t;
 // INFRA — wrapper fino sobre esp_modem (componente oficial ESP-IDF).
 // Faz o power-on do A7670E (PWRKEY) e sobe uma sessao PPPoS com o APN salvo,
 // expondo uma interface esp_netif PPP roteavel (nao e relay de comandos AT).
+// TEMPORARIO — texto da captura de GNSS de bancada, para a pagina.
+String gnssBenchText();
+
 class ModemPpp {
  public:
   // Retorna false se a interface PPP ou o DCE nao inicializarem.

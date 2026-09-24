@@ -8,6 +8,9 @@
 #include <esp_netif.h>
 #include <esp_netif_ppp.h>
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string_view>
 
 #include "../../include/config.h"
@@ -339,6 +342,123 @@ void ModemPpp::readIdentityOnce() {
   Serial.println(describeModem(identity_));
 }
 
+// ===== TEMPORARIO — captura de bancada do GNSS (PRD 15). Nao vai para o repositorio. =====
+// A placa roda na bateria, longe do USB; o resultado vai para a pagina via gnssBenchText().
+namespace {
+
+char gGnssBench[240] = "captura nao iniciada";
+String gGnssWindow;
+
+esp_err_t captureWindow(uint8_t* data, size_t len) {
+  gGnssWindow = String();
+  for (size_t i = 0; i < len; i++) gGnssWindow += static_cast<char>(data[i]);
+  return ESP_ERR_NOT_FINISHED;  // coleta ate o timeout
+}
+
+esp_err_t captureUntilOk(uint8_t* data, size_t len) {
+  gGnssWindow = String();
+  for (size_t i = 0; i < len; i++) gGnssWindow += static_cast<char>(data[i]);
+  std::string_view t(reinterpret_cast<const char*>(data), len);
+  if (t.find("ERROR") != std::string_view::npos) return ESP_FAIL;
+  if (t.find("\nOK") != std::string_view::npos) return ESP_OK;
+  return ESP_ERR_NOT_FINISHED;
+}
+
+// Campo n (0 = talker) de uma sentenca NMEA, como inteiro; -1 se vazio.
+int nmeaField(const char* sentence, int n) {
+  // Para no fim da sentenca: sem isso a busca de virgula invade a linha seguinte.
+  const char* p = sentence;
+  for (int i = 0; i < n; i++) {
+    while (*p != ',' && *p != '*' && *p != '\r' && *p != '\n' && *p != '\0') p++;
+    if (*p != ',') return -1;
+    p++;
+  }
+  if (*p == ',' || *p == '*' || *p == '\0' || *p == '\r') return -1;
+  return std::atoi(p);
+}
+
+struct GsvStats {
+  int inView = 0;
+  int withSignal = 0;
+  int maxSnr = 0;
+};
+
+GsvStats parseGsv(const String& text) {
+  GsvStats stats;
+  const char* s = text.c_str();
+  for (const char* p = std::strstr(s, "GSV,"); p != nullptr; p = std::strstr(p + 4, "GSV,")) {
+    const char* start = p - 3;  // "$GPGSV"
+    if (start < s || *start != '$') continue;
+    if (nmeaField(start, 2) == 1) {
+      int view = nmeaField(start, 3);
+      if (view > 0) stats.inView += view;
+    }
+    for (int block = 0; block < 4; block++) {
+      int snr = nmeaField(start, 7 + block * 4);
+      if (snr > 0) {
+        stats.withSignal++;
+        if (snr > stats.maxSnr) stats.maxSnr = snr;
+      }
+    }
+  }
+  return stats;
+}
+
+String lastCgnssInfoLine(const String& text) {
+  int found = text.indexOf("+CGNSSINFO: ");
+  if (found < 0) return String("(sem linha)");
+  size_t at = static_cast<size_t>(found);
+  String line;
+  for (size_t i = at; i < text.length() && text[i] != '\r' && text[i] != '\n'; i++) line += text[i];
+  return line;
+}
+
+void captureGnssForBench(esp_modem_dce_t* dce) {
+  Serial.println("GNSS-CAPTURA: ligando o receptor");
+  runAtCommand(dce, "AT+CGNSSPWR=1\r", 10000);
+  delay(12000);  // +CGNSSPWR: READY! chegou em ~10 s na primeira rodada
+  runAtCommand(dce, "AT+CGNSSNMEA=0,0,0,1,0,0,0,0\r", 3000);  // so GSV
+  runAtCommand(dce, "AT+CGNSSPORTSWITCH=0,1\r", 3000);        // NMEA na UART
+  runAtCommand(dce, "AT+CGNSSTST=1\r", 3000);
+
+  int fixes = 0;
+  const unsigned long began = millis();
+  for (int second = 12; second < 900 && fixes < 3; second = (millis() - began) / 1000 + 12) {
+    gGnssWindow = String();
+    esp_modem_command(dce, "AT\r", &captureWindow, 1500);
+    GsvStats gsv = parseGsv(gGnssWindow);
+
+    gGnssWindow = String();
+    esp_modem_command(dce, "AT+CGNSSINFO\r", &captureUntilOk, 3000);
+    String info = lastCgnssInfoLine(gGnssWindow);
+    const bool fix = info.length() > 12 && info[12] != ',';
+    if (fix) fixes++;
+
+    char text[sizeof(gGnssBench)];
+    std::snprintf(text, sizeof(text), "t=%ds | vistos %d, com sinal %d, SNR max %d | fixes %d | %.150s",
+                  second, gsv.inView, gsv.withSignal, gsv.maxSnr, fixes, info.c_str());
+    std::memcpy(gGnssBench, text, sizeof(gGnssBench));
+    Serial.printf("GNSS-CAPTURA: %s\n", text);
+    delay(8000);
+  }
+
+  // NMEA ligado em modo dados corromperia o PPP: desliga antes de seguir.
+  runAtCommand(dce, "AT+CGNSSTST=0\r", 3000);
+  runAtCommand(dce, "AT+CGNSSPORTSWITCH=0,0\r", 3000);
+  delay(2000);
+  esp_modem_sync(dce);
+
+  char text[sizeof(gGnssBench)];
+  std::snprintf(text, sizeof(text), "FIM | %.200s", gGnssBench);
+  std::memcpy(gGnssBench, text, sizeof(gGnssBench));
+  Serial.printf("GNSS-CAPTURA: %s\n", text);
+}
+
+}  // namespace
+
+String gnssBenchText() { return String(gGnssBench); }
+// ===== fim do temporario =====
+
 bool ModemPpp::start(const RouterSettings& settings) {
   // Para depurar o dialogo AT cru: ligar CONFIG_ESP_MODEM_ADD_DEBUG_LOGS=y e
   // CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y, e subir os TAGs command_lib, modem_api e
@@ -391,6 +511,7 @@ bool ModemPpp::start(const RouterSettings& settings) {
   // (GPIO27) e causam falha silenciosa no uart_set_pin. Desliga os dois.
   dteConfig.uart_config.rts_io_num = UART_PIN_NO_CHANGE;
   dteConfig.uart_config.cts_io_num = UART_PIN_NO_CHANGE;
+  dteConfig.dte_buffer_size = 4096;  // TEMPORARIO: janela de NMEA da captura de GNSS
 
   esp_modem_dce_config_t dceConfig = ESP_MODEM_DCE_DEFAULT_CONFIG(settings.apn.c_str());
 
@@ -406,6 +527,7 @@ bool ModemPpp::start(const RouterSettings& settings) {
   }
 
   readIdentityOnce();
+  captureGnssForBench(dce_);
 
   if (!waitForNetwork(dce_, settings.apn)) {
     return false;
