@@ -11,12 +11,12 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 24/09/2026, fim do dia no trabalho.
+Última atualização: 24/09/2026, fim do dia no trabalho (depois do merge #36).
 
 ## Ao abrir numa máquina
 
 1. `git fetch && git switch developer && git pull` — `main` e `developer` ficaram iguais no
-   fim de 24/09/2026 (último merge: #32)
+   fim de 24/09/2026 (última promoção: #36)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20)
 3. `pio test -e native` (221 testes) e `pio run`. Se o build falhar dizendo que o
@@ -27,7 +27,7 @@ usuário que ele estava desatualizado.
 
 ## Estado em 24/09/2026
 
-Fechado no dia (PRs #18 a #32, tudo em `main`):
+Fechado no dia (PRs #18 a #36, tudo em `main`):
 
 - Janela silenciosa do descarte PPP: 2 min sem descarte viram uma linha com o zero escrito
 - **Débito 13 fechado**: download completo com `CORE_LOCKING`, zero descartes
@@ -38,8 +38,23 @@ Fechado no dia (PRs #18 a #32, tudo em `main`):
 - **Débito 25 fechado**: `pio run -e release` recusa árvore suja
 - **Débito 23 fechado**: uma linha `OTA:` por upload no serial; arquivo maior que o slot
   recusado antes de gravar
+- Este arquivo (#33) e os comandos `/continuar` e `/encerrar` (#35). O `/continuar` ainda não
+  rodou numa sessão nova: a primeira execução é o teste dele — se algo sair torto, corrigir o
+  `.claude/commands/continuar.md`
 
-A placa da bancada do trabalho roda `3072737`.
+A placa fica na bancada do **trabalho** e roda `3072737`. Em casa, sem placa, só vale trabalho
+que se prove com `pio test -e native` e `pio run`.
+
+## Próximo passo recomendado
+
+**Em casa (sem placa): Fase 9, `infra/mqtt_client`** ([PRD 14](prd/14-telemetria-mqtt.md)). O
+domínio já está pronto e testado (`domain/telemetry`, `telemetry_buffer`, `mqtt_backoff`), o
+contador acumulado de descartes e a identificação do modem já existem para irem no payload, e
+a fase destrava a publicação da posição da Fase 11. Dá para escrever e compilar sem placa;
+validar exige a bancada e o broker.
+
+**No trabalho (com placa):** validar o que for feito em casa. Se a antena de GNSS tiver
+chegado, retomar a Fase 11 pela captura de `+CGNSSINFO`.
 
 ## Pendências
 
