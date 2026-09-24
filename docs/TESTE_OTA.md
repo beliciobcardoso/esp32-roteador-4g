@@ -51,21 +51,28 @@ carrega no primeiro byte.
 
 ## O que cada um tem que mostrar
 
-| arquivo | regra que pega | mensagem na página |
-|---|---|---|
-| `vazio.bin` | `EmptyImage` | `nenhum arquivo foi enviado` |
-| `curto-demais.bin` | `TooShortToBeAnImage` | `arquivo pequeno demais para ser um firmware` |
-| `nao-e-imagem.bin` | `NotAnEspImage` | `arquivo não é uma imagem de firmware do ESP32 (envie o firmware.bin)` |
-| `grande-demais.bin` | `TooLargeForSlot` | `firmware maior do que a partição de destino` |
-| `firmware.bin` | passa | `Firmware gravado. A placa reinicia agora…` |
+| arquivo | regra que pega | mensagem na página | linha no serial |
+|---|---|---|---|
+| `vazio.bin` | `EmptyImage` | `nenhum arquivo foi enviado` | `OTA: recusado (sem_arquivo) \| 0 B recebidos` |
+| `curto-demais.bin` | `TooShortToBeAnImage` | `arquivo pequeno demais para ser um firmware` | `OTA: recusado (curto_demais) \| 10 B recebidos` |
+| `nao-e-imagem.bin` | `NotAnEspImage` | `arquivo não é uma imagem de firmware do ESP32 (envie o firmware.bin)` | `OTA: recusado (nao_e_imagem_esp32) \| 214 B recebidos` |
+| `grande-demais.bin` | `TooLargeForSlot` | `firmware maior do que a partição de destino` | `OTA: recusado (maior_que_o_slot) \| 2000001 B recebidos` |
+| `firmware.bin` | passa | `Firmware gravado. A placa reinicia agora…` | `OTA: gravado \| <tamanho> B \| reiniciando` |
+
+Toda requisição ao `/update` deixa **uma** linha `OTA:` no serial, dê certo ou não (débito 23).
+Envio sem credencial sai como `OTA: recusado (sem_credencial)`. Se a página mostrou um
+resultado e o serial não tem a linha, a requisição não chegou à placa — foi o navegador.
 
 Nos quatro primeiros a barra de progresso some e a mensagem fica vermelha **até você tocar
 nela** — erro não some sozinho. Nada é gravado: as duas primeiras checagens rodam no
 primeiro bloco do upload, antes de a partição de destino ser aberta.
 
-O `grande-demais.bin` é o único que gasta tempo: o corpo inteiro sobe antes de o tamanho
-final ser conhecido. Isso não é desperdício do teste, é como o protocolo funciona — o
-`Content-Length` não é confiável e o firmware só decide no fim.
+O `grande-demais.bin` é o único que gasta tempo: o corpo inteiro sobe mesmo depois de
+recusado, porque o parser do `WebServer` lê a requisição até o fim. A recusa em si acontece no
+bloco que passa do tamanho do slot, antes de escrevê-lo. Até 24/09/2026 ela só era conferida
+no fim, e esse arquivo nunca chegava lá: o gravador estourava antes, e a página respondia
+"arquivo grande demais **ou flash com defeito**" — um erro de arquivo com cara de defeito de
+hardware. A linha do serial do débito 23 foi o que mostrou.
 
 ## O caminho do sucesso, passo a passo
 

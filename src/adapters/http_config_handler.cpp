@@ -405,6 +405,8 @@ void HttpConfigHandler::handleUpdateUpload() {
     updateAttempted_ = true;
     updateAuthorized_ = false;
     updateError_ = "";
+    updateReason_ = nullptr;
+    updateBytes_ = 0;
 
     RouterSettings current = loadUseCase_.execute();
     if (!authenticate(current)) return;  // o 401 ja saiu; nada sera gravado
@@ -413,9 +415,15 @@ void HttpConfigHandler::handleUpdateUpload() {
     if (!firmwareWriter_.begin()) {
       Serial.printf("OTA: abertura do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
       updateError_ = "não foi possível abrir a partição de destino";
+      updateReason_ = "abertura_do_slot_falhou";
     }
     return;
   }
+
+  // Contado antes de qualquer retorno: o arquivo continua chegando mesmo recusado, e o total
+  // e metade do veredito no serial. No WRITE o totalSize ainda nao inclui o bloco corrente.
+  updateBytes_ = upload.totalSize +
+                 (upload.status == UPLOAD_FILE_WRITE ? upload.currentSize : 0);
 
   if (!updateAuthorized_) return;
   // Ja falhou: o resto do arquivo continua chegando pela rede e e descartado aqui. A
@@ -427,6 +435,7 @@ void HttpConfigHandler::handleUpdateUpload() {
     // so grava os primeiros bytes da imagem no fim, justamente para este caso.
     firmwareWriter_.abort();
     updateError_ = "o envio foi interrompido antes do fim";
+    updateReason_ = "interrompido";
     return;
   }
 
@@ -438,28 +447,44 @@ void HttpConfigHandler::handleUpdateUpload() {
       if (verdict != FirmwareUpdateError::None) {
         firmwareWriter_.abort();
         updateError_ = to_string(verdict);
+        updateReason_ = updateReasonToken(verdict);
         return;
       }
+    }
+
+    // Antes de cada escrita, e nao so no fim: o `Update` abre o slot com o tamanho da
+    // particao e recusa o bloco que passa dela com "Not Enough Space". Conferido so no
+    // UPLOAD_FILE_END, o arquivo grande demais nunca chegava la — morria aqui como falha de
+    // escrita, e a pagina falava em "flash com defeito" para um arquivo errado. A linha do
+    // serial do debito 23 foi o que mostrou isso, em 24/09/2026.
+    FirmwareUpdateError sizeVerdict = inspectImageSize(
+        upload.totalSize + upload.currentSize, firmwareWriter_.targetSlotSize());
+    if (sizeVerdict == FirmwareUpdateError::TooLargeForSlot) {
+      firmwareWriter_.abort();
+      updateError_ = to_string(sizeVerdict);
+      updateReason_ = updateReasonToken(sizeVerdict);
+      return;
     }
 
     if (!firmwareWriter_.write(upload.buf, upload.currentSize)) {
       Serial.printf("OTA: escrita falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
       firmwareWriter_.abort();
       updateError_ = "falha ao gravar no slot de destino: arquivo grande demais ou flash com defeito";
+      updateReason_ = "escrita_falhou";
     }
     return;
   }
 
   if (upload.status == UPLOAD_FILE_END) {
-    // Unico momento em que o tamanho da imagem e conhecido. O `Update` tambem recusa
-    // passar do fim da particao, mas ali o erro sairia como falha de escrita; aqui sai
-    // dizendo o que aconteceu. E e este o caminho que pega o formulario enviado sem
-    // arquivo nenhum, que chega como uma parte de tamanho zero.
+    // O tamanho final. O "grande demais" ja foi pego bloco a bloco no WRITE; aqui fica o
+    // caminho que pega o formulario enviado com um arquivo de zero bytes, que chega como uma
+    // parte vazia e nunca passa pelo WRITE.
     FirmwareUpdateError verdict =
         inspectImageSize(upload.totalSize, firmwareWriter_.targetSlotSize());
     if (verdict != FirmwareUpdateError::None) {
       firmwareWriter_.abort();
       updateError_ = to_string(verdict);
+      updateReason_ = updateReasonToken(verdict);
       return;
     }
 
@@ -468,6 +493,7 @@ void HttpConfigHandler::handleUpdateUpload() {
     if (!firmwareWriter_.finish()) {
       Serial.printf("OTA: ativacao do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
       updateError_ = "a imagem enviada não passou na verificação";
+      updateReason_ = "verificacao_falhou";
     }
   }
 }
@@ -479,25 +505,42 @@ void HttpConfigHandler::handleUpdateDone() {
     // POST sem parte de arquivo nenhuma — nem passou pelo upload, entao a credencial ainda
     // nao foi conferida.
     RouterSettings current = loadUseCase_.execute();
-    if (!authenticate(current)) return;
+    if (!authenticate(current)) {
+      Serial.println(describeUpdateOutcome("sem_credencial", 0));
+      return;
+    }
+    Serial.println(describeUpdateOutcome(updateReasonToken(FirmwareUpdateError::EmptyImage), 0));
     sendJsonError(400, to_string(FirmwareUpdateError::EmptyImage));
     return;
   }
 
   const bool authorized = updateAuthorized_;
   const String error = updateError_;
+  const char* reason = updateReason_;
+  const uint32_t bytes = updateBytes_;
   updateAttempted_ = false;
   updateAuthorized_ = false;
   updateError_ = "";
+  updateReason_ = nullptr;
+  updateBytes_ = 0;
 
   // Sem credencial o 401 ja saiu no primeiro bloco; responder de novo colocaria duas
-  // respostas na mesma conexao.
-  if (!authorized) return;
+  // respostas na mesma conexao. A linha do serial sai assim mesmo: e a prova de que a
+  // requisicao chegou, que e o que quem esta com o cabo nao consegue ver de outro jeito.
+  if (!authorized) {
+    Serial.println(describeUpdateOutcome("sem_credencial", bytes));
+    return;
+  }
 
   if (error.length() > 0) {
+    // Toda falha acima grava o motivo junto da mensagem; o "desconhecido" so apareceria se
+    // um caminho novo esquecesse de fazer isso.
+    Serial.println(describeUpdateOutcome(reason != nullptr ? reason : "desconhecido", bytes));
     sendJsonError(400, error);
     return;
   }
+
+  Serial.println(describeUpdateOutcome(nullptr, bytes));
 
   // O prazo vem do dominio e nao de um numero digitado aqui: e o mesmo que o loop() usa
   // para decidir, e duas redacoes do mesmo prazo divergem na primeira vez que uma delas
