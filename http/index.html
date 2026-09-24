@@ -564,6 +564,18 @@
                             <dt>Pacotes descartados</dt>
                             <dd id="status-drops">—</dd>
                         </div>
+                        <div>
+                            <dt>Modem</dt>
+                            <dd id="status-modem">—</dd>
+                        </div>
+                        <div class="longa">
+                            <dt>Firmware do modem</dt>
+                            <dd id="status-modem-revision">—</dd>
+                        </div>
+                        <div>
+                            <dt>GNSS interno</dt>
+                            <dd id="status-modem-gnss">—</dd>
+                        </div>
                     </dl>
                 </article>
                 <article class="card">
@@ -785,6 +797,11 @@
             el('status-failures').textContent = String(data.uplink_failures);
             el('status-rebooted').textContent = data.uplink_rebooted ? 'sim' : 'não';
             el('status-drops').textContent = String(data.ppp_drops_total);
+            // Modelo vazio é "não lido", não "sem GNSS": sem leitura a página não afirma nada.
+            const modemRead = data.modem_model.length > 0;
+            el('status-modem').textContent = modemRead ? data.modem_model : 'não identificado';
+            el('status-modem-revision').textContent = data.modem_revision || '—';
+            el('status-modem-gnss').textContent = !modemRead ? '—' : data.modem_gnss ? 'sim' : 'não';
 
             el('bar-clock').textContent = data.clock_text;
             el('bar-clock').classList.toggle('excuse', !data.clock_synced);

@@ -1,6 +1,6 @@
 # PRD 15 — Posição por GNSS
 
-**Status: proposto** — não implementado. Fase 11.
+**Status: proposto** — só a identificação do modem implementada (24/09/2026). Fase 11.
 
 Fonte: conversa de 23/09/2026, logo depois do [PRD 14](14-telemetria-mqtt.md). Depende dele:
 posição sem canal para sair da placa não serve para nada, e o canal é a telemetria MQTT.
@@ -22,7 +22,26 @@ consumo, a cadência e metade das decisões abaixo.
 
 ## Pré-requisito bloqueante: qual A7670E é este
 
-**A fase não começa sem essa resposta.** Nem todo A7670E tem GNSS, e a diferença não está no
+**Respondido em 24/09/2026: é `A7670E-FASE`, com GNSS interno.** Lido pelo próprio modem,
+com a consulta descrita abaixo já no firmware:
+
+```
+Modem: A7670E-FASE | firmware A110B01A7670M7_F | GNSS interno: sim
+```
+
+A etiqueta do módulo não resolvia — diz só `A7670E`, com P/N `S2-10DAX-Z32C4`. O mesmo P/N
+aparece numa [issue da LilyGO](https://github.com/Xinyuan-LilyGO/LilyGo-Modem-Series/issues/374)
+com `AT+SIMCOMATI` respondendo `A7670E-FASE`, o que antecipava a resposta, mas era a placa de
+outra pessoa. O caminho deste PRD vale; módulo externo sai da mesa.
+
+O conector também existe: a PCB desta bancada tem um IPEX com a serigrafia `GNSS`, ao lado
+do slot do SIM. Na foto de 24/09/2026 ele está **vazio** — sem antena de GNSS encaixada, a
+captura de `+CGNSSINFO` só devolveria "sem fix". Ligar uma antena ativa de GNSS nele, com
+vista de céu, é o próximo pré-requisito de bancada.
+
+A seção a seguir fica como registro de por que a pergunta existia.
+
+**A fase não começava sem essa resposta.** Nem todo A7670E tem GNSS, e a diferença não está no
 nome do produto — está no modelo do módulo, segundo o repo canônico da LilyGO
 (`docs/en/esp32/a7670-esp32/README.MD`; o wiki não serve, ver AGENTS.md):
 
@@ -215,4 +234,12 @@ AGENTS.md. Default de fábrica: GNSS **desligado** e sem referência.
 
 ## Validação em hardware
 
-Pendente — fase não iniciada, e bloqueada pelo `AT+SIMCOMATI`.
+**24/09/2026 — critério 1, metade da placa.** `AT+SIMCOMATI` roda em `ModemPpp::start()`
+logo depois do sync AT, uma vez por boot, e o resultado aparece no serial e em `/api/status`
+(`modem_model`, `modem_revision`, `modem_gnss`) e na página. O PPP subiu em 16 s, o mesmo
+tempo de antes da consulta — o enlace não atrasou. O IMEI, que vem na mesma resposta, não é
+impresso nem guardado. A página mostrou `A7670E-FASE`, `A110B01A7670M7_F` e "GNSS interno:
+sim" no celular. A outra metade do critério, o modelo na telemetria, espera o
+`infra/mqtt_client` da Fase 9.
+
+O resto da fase não começou.
