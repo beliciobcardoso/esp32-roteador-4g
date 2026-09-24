@@ -13,6 +13,7 @@ Firmware roteador 4G — LilyGO T-A7670E R2 (ESP32-WROVER-E + modem A7670E).
 ```bash
 pio run                    # build
 pio run --target upload    # flash (fecha o monitor serial antes)
+pio run -e release         # imagem de campo: recusa árvore suja (débito 25)
 pio device monitor         # monitor serial
 pio test -e native         # testes das regras puras, no host (sem placa)
 ```
