@@ -475,6 +475,13 @@ do PPP — byte perdido ali não passa pelo `PppDropCounter`, vira quadro PPP co
 retransmissão TCP. Uma ocorrência num download inteiro não justifica mexer agora, mas é o
 mesmo gargalo da UART a 115200 que o [PRD 15](prd/15-gps-posicao.md) já aponta. Se voltar a
 aparecer com frequência, o lever é o tamanho do buffer de RX do `esp_modem` ou a taxa da UART.
+
+Segunda ocorrência, no mesmo dia e de outra forma: `W (…) uart_terminal: HW FIFO Overflow`
+durante o envio de um arquivo de 2 MB pela página (teste do débito 23), com a CPU ocupada
+recebendo o upload pelo Wi-Fi. É a FIFO de hardware da UART, um degrau antes do ring buffer:
+a task do `esp_modem` não drenou a tempo. Mesma família, mesmo gargalo; segue uma ocorrência
+por evento pesado, e segue sem justificar mexer. No reteste do mesmo upload não se repetiu.
+
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `begin()`
@@ -922,7 +929,7 @@ placa e quebraria no host, que é o tipo exato de divergência que o seam existe
   nossos e um número. Fica no caminho para o dia em que a mensagem incluir um valor
   gravado.
 
-## 23. O caminho de OTA só fala no serial quando o gravador falha
+## 23. O caminho de OTA só fala no serial quando o gravador falha — RESOLVIDO em 24/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) —
 `handleUpdateUpload()` e `handleUpdateDone()`
@@ -943,6 +950,26 @@ tinha como mostrar a diferença — em ambos os casos, silêncio.
 dois desfechos. Barato; ficou de fora porque a fase fechou antes. Cuidado ao fazer: o débito
 13 já afoga o serial sob tráfego, então a linha tem que ser uma por requisição, não por
 bloco recebido.
+
+**Resolvido:** toda requisição ao `/update` deixa uma linha `OTA:` — `OTA: gravado | <n> B |
+reiniciando` ou `OTA: recusado (<motivo>) | <n> B recebidos`, inclusive `sem_credencial` e o
+formulário sem parte de arquivo. O motivo é um token ASCII sem espaço
+(`updateReasonToken()` em `domain/firmware_update`, para as recusas do domínio; o handler
+nomeia as de infra: `abertura_do_slot_falhou`, `interrompido`, `escrita_falhou`,
+`verificacao_falhou`), porque o serial é sem acento e greppável, e a frase da página é outra
+coisa. Os bytes vão nos dois desfechos: são o que separa "a placa recusou" de "o navegador
+mandou outra coisa". A linha é montada por `describeUpdateOutcome()`, com teste nativo.
+
+**E ela achou um defeito no primeiro dia.** O `grande-demais.bin` do
+[TESTE_OTA.md](TESTE_OTA.md) saiu `recusado (escrita_falhou)`, não `maior_que_o_slot`: o
+`Update` abre o slot com o tamanho da partição e recusa o bloco que passa dela, então a
+checagem de tamanho, que só rodava no fim do upload, nunca era alcançada por um arquivo maior
+que o slot. A página dizia "arquivo grande demais ou flash com defeito". Agora o tamanho
+acumulado é conferido antes de cada escrita.
+
+Validado em placa em 24/09/2026 com os cinco arquivos do guia: as quatro recusas com o
+motivo e o tamanho certos, e o `firmware.bin` com `OTA: gravado | 989200 B | reiniciando`,
+seguido do reboot e da confirmação pelo operador.
 
 ## 24. A página só é alcançável de dentro do AP
 

@@ -140,4 +140,6 @@ class HttpConfigHandler {
   bool updateAttempted_ = false;   // alguma parte de arquivo chegou
   bool updateAuthorized_ = false;  // a credencial passou no primeiro bloco
   String updateError_;             // primeira falha; vazio enquanto tudo caminha
+  const char* updateReason_ = nullptr;  // a mesma falha como token do serial (debito 23)
+  uint32_t updateBytes_ = 0;            // bytes do arquivo recebidos, gravados ou nao
 };

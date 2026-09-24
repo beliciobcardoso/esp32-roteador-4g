@@ -25,6 +25,20 @@ enum class FirmwareUpdateError {
 
 const char* to_string(FirmwareUpdateError error);
 
+// Motivo curto, ASCII e sem espaco, para a linha do serial. O to_string() acima e para a
+// pagina, com acento e frase inteira; o serial fica sem acento para continuar greppavel, e um
+// token fixo e mais facil de filtrar do que uma frase que alguem vai reescrever.
+const char* updateReasonToken(FirmwareUpdateError error);
+
+// Linha unica do serial com o desfecho de um POST /update (debito 23). `reason` nulo e o
+// caso de sucesso. Sai uma por requisicao, nunca por bloco recebido: o upload chega em
+// centenas de blocos, e uma linha por bloco afogaria o serial como o debito 13 afogava.
+//
+// Os bytes recebidos vao nos dois desfechos porque sao o que separa "a placa recusou o
+// arquivo" de "o navegador mandou outra coisa" — foi a pergunta sem resposta na validacao
+// de 20/09/2026, quando o navegador abortou o envio e o serial ficou mudo nos dois casos.
+String describeUpdateOutcome(const char* reason, uint32_t receivedBytes);
+
 // Primeiro byte de toda imagem de app do ESP32 (`ESP_IMAGE_HEADER_MAGIC`,
 // `esp_app_format.h`). Um `.elf` comeca com 0x7F, que e o engano mais comum.
 extern const unsigned char kEspImageMagic;

@@ -234,6 +234,65 @@ void test_the_supervisor_reboots_normally_once_the_image_is_settled() {
   TEST_ASSERT_TRUE(supervisorMayRebootForUplink(FirmwareImageState::Unknown));
 }
 
+// --- linha do serial com o desfecho do upload (debito 23) ---
+
+bool lineMentions(const String& text, const char* fragment) {
+  return text.find(fragment) != String::npos;
+}
+
+void test_every_error_has_its_own_reason_token() {
+  // Token repetido faria dois defeitos diferentes parecerem o mesmo no grep.
+  const FirmwareUpdateError errors[] = {
+      FirmwareUpdateError::None, FirmwareUpdateError::EmptyImage,
+      FirmwareUpdateError::TooShortToBeAnImage, FirmwareUpdateError::NotAnEspImage,
+      FirmwareUpdateError::TooLargeForSlot};
+  const size_t count = sizeof(errors) / sizeof(errors[0]);
+  for (size_t i = 0; i < count; ++i) {
+    for (size_t j = i + 1; j < count; ++j) {
+      TEST_ASSERT_TRUE(String(updateReasonToken(errors[i])) != updateReasonToken(errors[j]));
+    }
+  }
+}
+
+void test_reason_tokens_are_plain_ascii_without_spaces() {
+  // Sem acento e sem espaco: e o que deixa o token filtravel por grep em qualquer terminal.
+  const FirmwareUpdateError errors[] = {
+      FirmwareUpdateError::EmptyImage, FirmwareUpdateError::TooShortToBeAnImage,
+      FirmwareUpdateError::NotAnEspImage, FirmwareUpdateError::TooLargeForSlot};
+  for (FirmwareUpdateError error : errors) {
+    for (const char* c = updateReasonToken(error); *c != '\0'; ++c) {
+      TEST_ASSERT_TRUE_MESSAGE(*c > ' ' && static_cast<unsigned char>(*c) < 0x80,
+                               updateReasonToken(error));
+    }
+  }
+}
+
+void test_a_success_line_says_written_and_how_much() {
+  String text = describeUpdateOutcome(nullptr, 987654);
+  TEST_ASSERT_TRUE_MESSAGE(lineMentions(text, "gravado"), text.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(lineMentions(text, "987654 B"), text.c_str());
+  TEST_ASSERT_FALSE_MESSAGE(lineMentions(text, "recusado"), text.c_str());
+}
+
+void test_a_refusal_line_names_the_reason_and_the_bytes() {
+  String text = describeUpdateOutcome(updateReasonToken(FirmwareUpdateError::NotAnEspImage), 1024);
+  TEST_ASSERT_TRUE_MESSAGE(lineMentions(text, "recusado (nao_e_imagem_esp32)"), text.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(lineMentions(text, "1024 B"), text.c_str());
+}
+
+void test_an_empty_form_is_told_apart_from_a_refused_file() {
+  // Os dois respondem 400 na pagina. No serial, o motivo e os zero bytes contam a diferenca.
+  String empty = describeUpdateOutcome(updateReasonToken(FirmwareUpdateError::EmptyImage), 0);
+  TEST_ASSERT_TRUE_MESSAGE(lineMentions(empty, "sem_arquivo"), empty.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(lineMentions(empty, "| 0 B"), empty.c_str());
+}
+
+void test_every_outcome_line_starts_with_the_ota_tag() {
+  // Um prefixo so para os dois desfechos: grep "OTA:" pega toda tentativa, deu certo ou nao.
+  TEST_ASSERT_EQUAL(0, describeUpdateOutcome(nullptr, 1).find("OTA: "));
+  TEST_ASSERT_EQUAL(0, describeUpdateOutcome("sem_credencial", 1).find("OTA: "));
+}
+
 }  // namespace
 
 int main(int, char**) {
@@ -264,5 +323,11 @@ int main(int, char**) {
   RUN_TEST(test_a_broken_image_that_is_not_pending_is_left_alone);
   RUN_TEST(test_the_supervisor_holds_its_reboot_while_confirmation_is_pending);
   RUN_TEST(test_the_supervisor_reboots_normally_once_the_image_is_settled);
+  RUN_TEST(test_every_error_has_its_own_reason_token);
+  RUN_TEST(test_reason_tokens_are_plain_ascii_without_spaces);
+  RUN_TEST(test_a_success_line_says_written_and_how_much);
+  RUN_TEST(test_a_refusal_line_names_the_reason_and_the_bytes);
+  RUN_TEST(test_an_empty_form_is_told_apart_from_a_refused_file);
+  RUN_TEST(test_every_outcome_line_starts_with_the_ota_tag);
   return UNITY_END();
 }
