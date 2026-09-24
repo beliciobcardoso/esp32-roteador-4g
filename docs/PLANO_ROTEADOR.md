@@ -143,8 +143,9 @@ Usuário abre 192.168.10.1
   (`reinicio 1/2` → `reinicio 2/2`) e o terceiro reboot foi suprimido — sem ele a placa
   reiniciaria para sempre. Depois disso o supervisor segue tentando com backoff de 60 s e o
   AP não cai mais sozinho
-- ⚠️ Rajadas de `pppos_input_tcpip failed with -1` sob tráfego — débito 13 em
-  [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md)
+- ✅ Rajadas de `pppos_input_tcpip failed with -1` sob tráfego — débito 13 em
+  [DEBITOS_TECNICOS.md](DEBITOS_TECNICOS.md), resolvido com `CORE_LOCKING` e fechado em
+  24/09/2026 com download completo e zero descartes
 - Acertos, erros e lições da fase: [prd/06-integracao-testes-carga.md](prd/06-integracao-testes-carga.md#retrospectiva-da-fase)
 
 ### Fase 7 — Relógio (NTP + fuso) — concluída, validada em hardware

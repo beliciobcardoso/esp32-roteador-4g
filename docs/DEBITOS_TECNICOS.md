@@ -311,7 +311,7 @@ sozinho (o IP do AP), e agora existe resolvedor nesse endereço. Uplink sem DNS 
 deixou de ser fatal: o NAT arma do mesmo jeito e o forwarder responde SERVFAIL.
 
 
-## 13. Pacotes PPP de entrada descartados sob tráfego (`pppos_input_tcpip failed with -1`)
+## 13. Pacotes PPP de entrada descartados sob tráfego (`pppos_input_tcpip failed with -1`) — RESOLVIDO em 24/09/2026
 
 **Onde:** fila da task tcpip do lwIP — `CONFIG_LWIP_TCPIP_RECVMBOX_SIZE` em
 [sdkconfig.defaults](../sdkconfig.defaults) (hoje no default, 32)
@@ -439,6 +439,34 @@ do piso ainda recebe `— heap no talo`. Qualquer janela com descarte zera a con
 hora, como antes. Custo em unidade ociosa: 30 linhas por hora. Lógica em
 `domain/link_diagnostics` (`dropWindowClosed`, `quietReportDue`, `describeQuietWindows`),
 orquestração em `main.cpp` → `reportPppDrops()`.
+
+**Fechado com download completo em 24/09/2026 — e a primeira tentativa não mediu nada.**
+
+A primeira rodada do dia deu `37` e depois `514` descartes em 30 s, heap folgado (~205 KB):
+o mesmo regime de antes da correção. Não era regressão. O `sdkconfig.esp-wrover-kit` desta
+máquina era de 18/09, anterior ao `CORE_LOCKING`, e o firmware gravado rodava com a fila no
+caminho de entrada — junto com rollback de OTA e panic do watchdog desligados. Ver débito 26.
+Regenerado o arquivo (`rm -f sdkconfig.esp-wrover-kit && rm -rf .pio`), conferido que toda
+opção do `sdkconfig.defaults` chegou ao gerado, a placa foi regravada e a medição refeita:
+
+| Trecho (s de boot) | Celular no AP | Descartes | Heap interno livre |
+|---|---|---|---|
+| 0–120 | não | 0 | 210 KB |
+| 120–240 | associou aos 152 s | 0 | 208 KB |
+| 240–360 | download | 0 | 195 KB |
+| 360–480 | download até o fim | 0 | 208 KB |
+
+Download inteiro no celular, PPP sem cair, **zero descartes**. Contra a mesma bancada e o
+mesmo celular sem `CORE_LOCKING`: 514 numa única janela. É a prova sob carga sustentada que
+faltava, e com o instrumento da janela silenciosa ela está escrita no serial em vez de
+inferida da ausência de linha.
+
+**Um resíduo, fora do escopo deste débito:** aos 452 s, no meio do download, saiu uma vez
+`W (…) uart_terminal: Ring Buffer Full`. É o buffer de recepção da UART do `esp_modem`, antes
+do PPP — byte perdido ali não passa pelo `PppDropCounter`, vira quadro PPP com FCS inválido e
+retransmissão TCP. Uma ocorrência num download inteiro não justifica mexer agora, mas é o
+mesmo gargalo da UART a 115200 que o [PRD 15](prd/15-gps-posicao.md) já aponta. Se voltar a
+aparecer com frequência, o lever é o tamanho do buffer de RX do `esp_modem` ou a taxa da UART.
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `begin()`
@@ -978,3 +1006,29 @@ env de desenvolvimento, onde build sujo é o caso normal e travar seria atrito p
 
 Por enquanto a disciplina é manual e está escrita no procedimento de campo, que começa por
 `git status --porcelain` ter que sair vazio.
+
+## 26. O `sdkconfig` gerado não acompanha o `sdkconfig.defaults`, e nada avisa
+
+**Onde:** `sdkconfig.esp-wrover-kit` (gerado, ignorado pelo git) e
+[sdkconfig.defaults](../sdkconfig.defaults)
+
+O build não lê o `sdkconfig.defaults` — lê o `sdkconfig.esp-wrover-kit`, que é gerado a
+partir dele **só quando não existe**. Opção nova no defaults não chega ao firmware enquanto o
+gerado antigo estiver no disco, e o build sai verde do mesmo jeito.
+
+**Aconteceu em 24/09/2026, e o custo foi alto.** O gerado desta máquina tinha data de 18/09 e
+divergia do defaults em cinco opções: `LWIP_TCPIP_CORE_LOCKING` e `CORE_LOCKING_INPUT`
+(correção do débito 13), `BOOTLOADER_APP_ROLLBACK_ENABLE` (débito 6), `ESP_TASK_WDT_PANIC` e
+`LWIP_SNTP_MAX_SERVERS`. Como o rollback e o `CORE_LOCKING` foram validados em placa em
+20/09, esse arquivo não é o daquele dia — foi parar ali depois, por um caminho não
+identificado. Todo build feito daqui desde então saiu **sem rollback de OTA** e com a fila de
+entrada do PPP de volta. Só apareceu porque uma medição de descarte deu o número do regime
+antigo.
+
+**Correção proposta:** um `extra_scripts` de pre-build que compara cada `CONFIG_*=` do
+`sdkconfig.defaults` com o gerado e **falha o build** na divergência, dizendo qual opção e o
+comando de regeneração. Vale para todos os envs, ao contrário do débito 25: aqui não existe
+caso de desenvolvimento em que a divergência seja desejada.
+
+Por enquanto, o procedimento manual está no AGENTS.md: depois de mexer no defaults, ou em
+caso de dúvida, regenerar com `rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run`.
