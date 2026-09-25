@@ -14,6 +14,7 @@
 #include "infra/dns_forwarder.h"
 #include "infra/entropy.h"
 #include "infra/link_supervisor.h"
+#include "infra/loop_watchdog.h"
 #include "infra/modem_ppp.h"
 #include "infra/nat_bridge.h"
 #include "infra/ota_updater.h"
@@ -44,6 +45,11 @@ ModemPpp modemPpp;
 NatBridge natBridge;
 DnsForwarder dnsForwarder;
 LinkSupervisor linkSupervisor(modemPpp, natBridge);
+LoopWatchdog loopWatchdog;
+
+// Ponte entre o adaptador HTTP e o watchdog: o handler avisa que chegou pedaco de
+// firmware, e so isso; quem sabe o que fazer com a noticia e o watchdog.
+void beatLoopWatchdog() { loopWatchdog.beat(); }
 
 // Ponte entre o adaptador HTTP e o supervisor: o handler nao conhece o modem, e o
 // supervisor nao conhece HTTP.
@@ -233,6 +239,7 @@ void setup() {
   httpConfigHandler.onModemIdentityRequested(&currentModemIdentity);
   httpConfigHandler.onRestartRequested(&onRestartRequested);
   httpConfigHandler.onFirmwareConfirmed(&onFirmwareConfirmed);
+  httpConfigHandler.onUploadProgress(&beatLoopWatchdog);
 
   // Guardado pelo ap_up, e nao incondicional: o `server_.begin()` abre um socket TCP, e sem
   // o AP no ar o `esp_netif_init()` nunca rodou — o lwIP bate em
@@ -254,6 +261,12 @@ void setup() {
   } else {
     Serial.println("Roteamento: sem AP — servidor HTTP nao sobe, e o loop segue para decidir o firmware");
   }
+
+  // Por ultimo, de proposito: o watchdog mede o intervalo entre voltas do loop() e comeca a
+  // contar no begin(). Subindo antes, o que ele mediria seria o resto do setup() — que tem
+  // travessia legitima de varios segundos (NVS, ADC, radio) e, num caso ruim, passaria do
+  // limite e reiniciaria a placa em boot loop, sem nunca haver defeito nenhum.
+  loopWatchdog.begin();
 }
 
 // Cadencias do loop. Antes eram delay() em sequencia, o que segurava o loop inteiro por
@@ -426,6 +439,10 @@ void applyPendingRestart(unsigned long now) {
 
 void loop() {
   unsigned long now = millis();
+
+  // Primeira coisa da volta: tudo abaixo pode demorar, e o que o watchdog vigia e o
+  // intervalo entre voltas, nao o que acontece dentro de uma.
+  loopWatchdog.beat();
 
   httpConfigHandler.handleClient();
   blinkLed(now);
