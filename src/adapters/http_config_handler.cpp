@@ -1,5 +1,7 @@
 #include "http_config_handler.h"
 
+#include <lwip/sockets.h>
+
 #include "../domain/battery.h"
 #include "../domain/firmware_update.h"
 #include "../domain/json.h"
@@ -8,6 +10,40 @@
 
 namespace {
 const int kServerPort = 80;
+
+// Keepalive do socket que recebe o firmware. Sem isto, um cliente que SOME — Wi-Fi
+// desligado, fora de alcance — nao fecha a conexao, e `WebServer::_uploadReadByte` espera
+// para sempre em `while(!client.available() && client.connected()) delay(2);`, dentro do
+// loop(). Medido em bancada em 24/09/2026: 137 s de serial mudo com o celular fora, e a
+// placa seguiu parada depois que ele voltou. Com keepalive o lwIP declara a conexao morta,
+// `connected()` vira falso e o `UPLOAD_FILE_ABORTED` roda como deveria.
+//
+// 5 s ocioso + 3 sondas de 2 s = morte em ~11 s, bem abaixo do limite de travamento de
+// `domain/loop_health` (30 s): quando as duas correcoes valem, esta age primeiro e a placa
+// se recupera sem reiniciar. O reinicio fica para quando esta aqui falhar.
+//
+// Pode falhar, e o motivo e uma linha do core: `WiFiClient::connected()` so derruba o
+// estado em ENOTCONN, EPIPE, ECONNRESET, ECONNREFUSED e ECONNABORTED; qualquer outro errno
+// cai no `default` e e lido como "ainda conectado". Se o lwIP entregar ETIMEDOUT ao matar a
+// conexao por keepalive, este bloco nao resolve nada — e por isso ele entra junto com o
+// watchdog, e nao no lugar dele.
+const int kKeepAliveIdleSeconds = 5;
+const int kKeepAliveIntervalSeconds = 2;
+const int kKeepAliveProbes = 3;
+
+// Recebe por valor porque `WebServer::client()` devolve uma copia, e nao uma referencia.
+// Nao ha perda: o WiFiClient guarda o descritor num shared_ptr, entao a copia aponta para o
+// mesmo socket, e e nele que o setsockopt escreve.
+void enableKeepAlive(WiFiClient client) {
+  const int on = 1;
+  client.setSocketOption(SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPIDLE, &kKeepAliveIdleSeconds,
+                         sizeof(kKeepAliveIdleSeconds));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPINTVL, &kKeepAliveIntervalSeconds,
+                         sizeof(kKeepAliveIntervalSeconds));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPCNT, &kKeepAliveProbes,
+                         sizeof(kKeepAliveProbes));
+}
 const char* kAuthRealm = "roteador-4g";
 const char* kJsonType = "application/json";
 
@@ -401,7 +437,20 @@ void HttpConfigHandler::handlePostConfig() {
 void HttpConfigHandler::handleUpdateUpload() {
   HTTPUpload& upload = server_.upload();
 
+  // Antes de qualquer decisao e de qualquer return: chegou pedaco, houve progresso. Vale
+  // ate para o upload ja recusado, cujo corpo o parser continua lendo ate o fim — o
+  // `grande-demais.bin` do TESTE_OTA gasta 2 MB assim, e isso e travessia legitima, nao
+  // travamento.
+  if (uploadProgress_ != nullptr) {
+    uploadProgress_();
+  }
+
   if (upload.status == UPLOAD_FILE_START) {
+    // Armado no primeiro pedaco, que e a primeira vez que o socket desta requisicao esta ao
+    // alcance daqui. O `server_.client()` e o mesmo objeto em que o parser do WebServer
+    // espera os pedacos seguintes.
+    enableKeepAlive(server_.client());
+
     updateAttempted_ = true;
     updateAuthorized_ = false;
     updateError_ = "";
