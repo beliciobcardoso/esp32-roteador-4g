@@ -1111,3 +1111,127 @@ nada — o build o cria a partir do defaults naquela hora.
 
 Conferido nos três casos: gerado em dia compila; gerado com `CORE_LOCKING` desligado e o
 rollback removido falha em 0,3 s nomeando as duas opções; sem gerado, compila e o recria.
+
+## 27. Cliente que some no meio de um upload de firmware trava a placa até o reset
+
+**Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) —
+`handleUpdateUpload()`; `WebServer::_uploadReadByte` do core Arduino;
+[src/main.cpp](../src/main.cpp) — `loop()`
+
+Subir firmware pela página e sair de alcance antes do fim **para a placa**, e ela não volta
+sozinha. Não é lentidão nem atraso: o `loop()` não roda mais.
+
+**Medido em bancada em 24/09/2026.** Upload de 4 MiB pelo celular no AP, modo avião ligado
+com a barra em ~20%:
+
+```
+I (1054418) wifi:station: … leave        ← modo avião
+        ⟨ 137,3 s sem uma única linha ⟩
+I (1191713) wifi:station: … join          ← avião desligado
+I (1192300) esp_netif_lwip: DHCP server assigned IP … 192.168.10.2
+        ⟨ nada ⟩
+```
+
+Com `kBatteryReportIntervalMs` em 3 s, eram ~45 linhas de bateria que não saíram. E o
+silêncio não terminou quando o celular voltou: a placa seguiu parada, e só um reset a trouxe
+de volta.
+
+**A causa está no core.** `WebServer::_uploadReadByte` espera pelo próximo byte assim:
+
+```c
+while(!client.available() && client.connected())
+    delay(2);
+```
+
+Desligar o Wi-Fi não envia FIN — do lado da placa é silêncio. Sem FIN e sem keepalive no
+socket, `connected()` nunca vira falso e o laço gira para sempre, dentro da travessia do
+`loop()`. Fechar a aba ou matar o app é outro caso: ali sai FIN, `connected()` cai e o
+`UPLOAD_FILE_ABORTED` roda como deveria. Os dois se chamam "upload interrompido" e têm
+desfechos opostos.
+
+**Nenhuma proteção existente pega isso.** `CONFIG_ESP_TASK_WDT_PANIC=y` está ligado, mas o
+core deixa `loopTaskWDTEnabled = false` (`cores/esp32/main.cpp`) e o projeto nunca chamou
+`enableLoopWDT()` — o `loopTask` não está registrado em watchdog nenhum. As duas idle tasks,
+essas sim vigiadas, seguem rodando porque o `delay(2)` cede a CPU a elas. O AGENTS.md
+afirmava que essa flag era "a única das três camadas que cobre travamento"; não era, e a
+frase foi corrigida junto com este débito.
+
+**Por que é grave:** o AP e o DHCP vivem em tasks do driver, independentes do `loop()`. A
+unidade continua associando o celular e entregando IP enquanto a página não responde, a
+bateria não é lida e o uplink não é supervisionado. Parece viva. É a mesma classe de falha
+que motivou a troca da faixa do AP: o sintoma imita funcionamento, e isso custa caro para
+diagnosticar. O gatilho é banal — subir firmware pelo celular e andar para fora de alcance.
+
+**Correção, em duas camadas:**
+
+- **Rede de segurança:** [src/domain/loop_health.h](../src/domain/loop_health.h) fixa o
+  limite (30 s sem batimento) com teste nativo, e
+  [src/infra/loop_watchdog.h](../src/infra/loop_watchdog.h) roda numa task própria — a única
+  forma de enxergar o defeito, já que quem trava é o `loopTask`. O batimento vem do `loop()`
+  e também do callback de bloco do upload, senão todo upload legítimo, que passa dezenas de
+  segundos sem devolver o controle, seria lido como travamento. Reinicia mesmo com
+  confirmação de firmware pendente: com o `loop()` parado o prazo nunca venceria e a imagem
+  ficaria em `PENDING_VERIFY` para sempre.
+- **Causa:** keepalive no socket do upload (5 s ocioso + 3 sondas de 2 s ≈ 11 s), armado no
+  `UPLOAD_FILE_START`. Se funcionar, o laço do core sai sozinho, o abort roda e ninguém
+  reinicia.
+
+Os 11 s do keepalive contra os 30 s do watchdog são de propósito: na bancada os dois
+desfechos são distinguíveis — abort sem reboot é o keepalive; reboot aos ~30 s com a linha
+`LoopWatchdog:` é a rede de segurança agindo porque o keepalive falhou.
+
+**O keepalive pode não resolver**, e por uma linha só do core:
+
+```c
+case ENOTCONN: case EPIPE: case ECONNRESET:
+case ECONNREFUSED: case ECONNABORTED:
+    _connected = false;  break;
+default:
+    _connected = true;   break;   // ← ETIMEDOUT cai aqui
+```
+
+Se o lwIP entregar `ETIMEDOUT` ao matar a conexão por keepalive, `WiFiClient::connected()`
+lê como "ainda conectado" e nada muda. Por isso as duas camadas entram juntas, e não uma no
+lugar da outra. Qual delas agiu é o que a medição de bancada tem que dizer.
+
+**Validado em placa em 24/09/2026**, repetindo a rodada que produziu o débito — mesmo
+celular, mesmo arquivo de 4 MiB, mesmo modo avião com a barra em ~20%:
+
+| | antes (`3072737`) | depois (`ba48fb5`) |
+|---|---|---|
+| tempo com o cliente fora | 137,3 s | 348,3 s |
+| batidas de `Bateria:` no período | 0 | 113 (esperado ~116) |
+| relatório de PPP | nenhum | 3 janelas |
+| estado no fim | placa morta até o reset | viva, sem reiniciar |
+
+```
+I (31099939) wifi:station: … leave           ← modo avião
+   Bateria: 4.16V | ~96%      ×113
+   PPP: 0 pacotes descartados em 4 janelas de 30 s | heap interno livre 209604 B
+I (31448206) wifi:station: … join            ← avião desligado
+```
+
+**Quem resolveu foi o keepalive.** O `LoopWatchdog` não imprimiu nada: não precisou agir,
+porque o laço do core saiu sozinho quando o lwIP matou a conexão. Isso responde a dúvida do
+`switch` acima — o errno entregue **é** um dos reconhecidos (`ECONNABORTED`), e não o
+`ETIMEDOUT` que cairia no `default`. A página mostrou `O envio foi interrompido antes do fim.
+Nada foi gravado.`, que é o ramo certo do XHR, e o heap ficou em 206–210 KB durante e depois,
+sem vazamento no abort.
+
+A rodada anterior é o controle do experimento: o mesmo aparelho, na mesma ação, travou a
+placa com o firmware antigo. O que mudou foi o firmware, e não o comportamento de rede do
+celular.
+
+**O watchdog segue sem validação em placa.** Ele não regrediu nada — 204 batidas acumuladas
+sem disparo espúrio — e o limite tem teste nativo, mas o caminho de disparo nunca foi
+exercitado em hardware, justamente porque o keepalive age antes. Exercitá-lo pede um firmware
+de teste com travamento artificial no `loop()`, gravado e revertido em seguida. Fica como
+rodada separada: a camada que age no caso real está provada, e esta é a que só entra quando
+a outra falha.
+
+**Resíduo conhecido:** no abort, nenhuma linha `OTA:` sai. `_parseForm` devolve `false` e o
+`_handleRequest()` nem chega a ser chamado, então `handleUpdateDone()` — que é quem imprime o
+veredito do débito 23 — não roda. O contrato daquele débito ("toda requisição ao `/update`
+deixa uma linha, dê certo ou não") tem esse furo. Ficou cosmético depois desta correção,
+porque o caminho agora se recupera sozinho, mas continua sendo um caso em que o serial não
+registra o que aconteceu.

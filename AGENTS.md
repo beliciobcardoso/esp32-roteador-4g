@@ -159,10 +159,15 @@ A configuração persistida (chaves da NVS, defaults de fábrica, como consultar
   justamente o que quebrou o modem — e esse caso termina em revert no fim do prazo de todo
   jeito
 - **`CONFIG_ESP_TASK_WDT_PANIC=y`.** Sem ela o Task WDT só imprime aviso no serial a cada
-  5 s e não reinicia nada: firmware travado — `while` infinito, deadlock, espera de I/O sem
-  timeout — fica de pé, mudo e inalcançável para sempre, e o rollback nunca roda porque
-  depende de um reset que não acontece. É a única das três camadas que cobre travamento;
-  prazo e autocheck só funcionam com o `loop()` girando
+  5 s e não reinicia nada. Ela vale para as tasks vigiadas, mas **não cobre o `loop()`**:
+  o core deixa `loopTaskWDTEnabled = false` (`cores/esp32/main.cpp`) e este projeto nunca
+  chamou `enableLoopWDT()`, então o `loopTask` não está registrado em watchdog nenhum. As
+  duas idle tasks, essas sim vigiadas, continuam rodando sempre que o código travado cede a
+  CPU — um `delay()` dentro de um laço infinito alimenta o watchdog enquanto a placa não faz
+  mais nada. Medido em 24/09/2026 com o upload interrompido do débito 27: 137 s de serial
+  mudo, sem reset. Quem cobre travamento do `loop()` é `infra/loop_watchdog`, numa task
+  própria, com o limite em `domain/loop_health`; prazo e autocheck só funcionam com o
+  `loop()` girando
 - Até 15 clientes WiFi simultâneos, WPA2-PSK (`WIFI_AUTH_WPA2_PSK`) — 15 é o teto do
   driver no ESP32 clássico (`ESP_WIFI_MAX_CONN_NUM`), não uma escolha de projeto
   - Revisado na Fase 4: WPA2/WPA3 misto era a decisão original, mas o ESP32 clássico

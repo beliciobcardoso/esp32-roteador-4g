@@ -36,6 +36,13 @@ class HttpConfigHandler {
   // clique ao estado da imagem pela regra do dominio.
   using FirmwareConfirmed = void (*)();
 
+  // Avisada a cada pedaco de um upload de firmware que chega. Existe para o watchdog do
+  // loop: o upload roda inteiro dentro de uma unica travessia do handleClient(), que passa
+  // dezenas de segundos sem devolver o controle ao loop(), e sem este aviso essa travessia
+  // legitima seria lida como travamento. O adaptador nao conhece o watchdog — so anuncia
+  // que houve progresso, como faz com os outros avisos deste arquivo.
+  using UploadProgress = void (*)();
+
   HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase,
                     FirmwareWriter& firmwareWriter);
 
@@ -76,6 +83,7 @@ class HttpConfigHandler {
   void onModemIdentityRequested(ModemIdentityProvider provider) { modemIdentity_ = provider; }
   void onRestartRequested(RestartRequested callback) { restartRequested_ = callback; }
   void onFirmwareConfirmed(FirmwareConfirmed callback) { firmwareConfirmed_ = callback; }
+  void onUploadProgress(UploadProgress callback) { uploadProgress_ = callback; }
 
  private:
   // GET / — devolve a pagina embutida byte a byte, sem montar String nenhuma.
@@ -133,6 +141,7 @@ class HttpConfigHandler {
   String pageETag_;
   RestartRequested restartRequested_ = nullptr;
   FirmwareConfirmed firmwareConfirmed_ = nullptr;
+  UploadProgress uploadProgress_ = nullptr;
 
   // Estado de um upload de firmware, valido so entre o inicio e o fim de um POST /update.
   // Mora aqui e nao em variaveis locais porque o upload chega picado em varias chamadas do
