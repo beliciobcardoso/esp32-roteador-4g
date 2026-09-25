@@ -11,23 +11,23 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 24/09/2026, fim do dia no trabalho (depois do merge #36).
+Última atualização: 25/09/2026, manhã no trabalho (depois do merge #42).
 
 ## Ao abrir numa máquina
 
-1. `git fetch && git switch developer && git pull` — `main` e `developer` ficaram iguais no
-   fim de 24/09/2026 (última promoção: #36)
+1. `git fetch && git switch developer && git pull` — `main` e `developer` ficaram iguais em
+   25/09/2026 (última promoção: #42)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20)
-3. `pio test -e native` (221 testes) e `pio run`. Se o build falhar dizendo que o
+3. `pio test -e native` (229 testes) e `pio run`. Se o build falhar dizendo que o
    `sdkconfig.esp-wrover-kit diverge do sdkconfig.defaults`, é o débito 26 fazendo o trabalho
    dele: `rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run`
 4. Relatar o resultado ao usuário e sugerir o próximo trabalho — **sem começar antes de ele
    escolher**
 
-## Estado em 24/09/2026
+## Estado em 25/09/2026
 
-Fechado no dia (PRs #18 a #36, tudo em `main`):
+Fechado em 24/09 (PRs #18 a #36, tudo em `main`):
 
 - Janela silenciosa do descarte PPP: 2 min sem descarte viram uma linha com o zero escrito
 - **Débito 13 fechado**: download completo com `CORE_LOCKING`, zero descartes
@@ -38,12 +38,31 @@ Fechado no dia (PRs #18 a #36, tudo em `main`):
 - **Débito 25 fechado**: `pio run -e release` recusa árvore suja
 - **Débito 23 fechado**: uma linha `OTA:` por upload no serial; arquivo maior que o slot
   recusado antes de gravar
-- Este arquivo (#33) e os comandos `/continuar` e `/encerrar` (#35). O `/continuar` ainda não
-  rodou numa sessão nova: a primeira execução é o teste dele — se algo sair torto, corrigir o
-  `.claude/commands/continuar.md`
 
-A placa fica na bancada do **trabalho** e roda `3072737`. Em casa, sem placa, só vale trabalho
-que se prove com `pio test -e native` e `pio run`.
+Fechado na virada de 24 para 25/09 (#41, promovido em #42):
+
+- **Débito 27 aberto, corrigido e validado no mesmo ciclo.** Subir firmware pela página e sair
+  de alcance antes do fim **parava a placa**, e ela não voltava sozinha — medido em 137 s de
+  serial mudo, que não terminaram nem quando o celular voltou. A causa é o
+  `WebServer::_uploadReadByte` do core, que espera em `while(!client.available() &&
+  client.connected()) delay(2);`: desligar o Wi-Fi não manda FIN, e sem keepalive
+  `connected()` nunca vira falso. Corrigido em duas camadas — keepalive no socket do upload
+  (~11 s) ataca a causa, `infra/loop_watchdog` + `domain/loop_health` (30 s) é a rede de
+  segurança. Na validação, 348 s com o cliente fora e a placa seguiu viva, 113 batidas de
+  bateria, sem reiniciar. Quem agiu foi o keepalive
+- **O `AGENTS.md` afirmava uma proteção que não existia.** `CONFIG_ESP_TASK_WDT_PANIC=y` não
+  cobre o `loop()`: o core deixa `loopTaskWDTEnabled = false` e o projeto nunca chamou
+  `enableLoopWDT()`. A frase foi corrigida
+- **O critério de bancada aberto da Fase 8 foi respondido** — era exatamente o upload
+  interrompido. E o desfecho "não confirmar" do OTA foi exercitado de verdade no caminho: uma
+  imagem antiga subiu por engano, ninguém confirmou, e o rollback do bootloader devolveu a
+  placa ao slot anterior sozinho, como documentado
+- **O `/continuar` rodou pela primeira vez numa sessão nova** e funcionou fim a fim
+
+A placa fica na bancada do **trabalho** e roda **`ba48fb5-dirty`**. O sufixo `-dirty` é de
+build de árvore suja: pelo débito 25 esse rótulo não serve como prova de versão, então, se for
+preciso conferir o que está gravado, regrave a partir de um commit limpo antes. Em casa, sem
+placa, só vale trabalho que se prove com `pio test -e native` e `pio run`.
 
 ## Próximo passo recomendado
 
@@ -51,10 +70,14 @@ que se prove com `pio test -e native` e `pio run`.
 domínio já está pronto e testado (`domain/telemetry`, `telemetry_buffer`, `mqtt_backoff`), o
 contador acumulado de descartes e a identificação do modem já existem para irem no payload, e
 a fase destrava a publicação da posição da Fase 11. Dá para escrever e compilar sem placa;
-validar exige a bancada e o broker.
+validar exige a bancada e o broker. Referência colhida em 24/09 para o orçamento de memória:
+heap interno livre em ~206–210 KB com PPP e AP de pé.
 
-**No trabalho (com placa):** validar o que for feito em casa. Se a antena de GNSS tiver
-chegado, retomar a Fase 11 pela captura de `+CGNSSINFO`.
+**No trabalho (com placa):** o disparo do `LoopWatchdog` continua sem prova em hardware —
+ele nunca chegou a agir, porque o keepalive resolve antes. Exercitá-lo pede um firmware
+descartável com travamento artificial no `loop()`, gravado e revertido em seguida. Se a antena
+de GNSS tiver chegado, ela ganha da validação do watchdog: retomar a Fase 11 pela captura de
+`+CGNSSINFO` destrava uma fase inteira.
 
 ## Pendências
 
@@ -88,6 +111,14 @@ o caso de teste do parser —, e só depois a migração para CMUX.
 
 Domínio pronto e contador acumulado feito. Falta `infra/mqtt_client` e tudo o que toca rede.
 
+### Débito 27 — o que ficou aberto depois da correção
+
+- **O `LoopWatchdog` nunca disparou em placa.** Não regrediu nada (204 batidas acumuladas sem
+  disparo espúrio) e o limite tem teste nativo, mas o gatilho segue sem prova em hardware
+- **No abort não sai linha `OTA:`.** `_parseForm` devolve `false` e o `_handleRequest()` nem é
+  chamado, então `handleUpdateDone()` não roda. É um furo no contrato do débito 23 — hoje
+  cosmético, porque o caminho se recupera, mas real
+
 ### Débitos abertos
 
 | Débito | Situação |
@@ -97,6 +128,7 @@ Domínio pronto e contador acumulado feito. Falta `infra/mqtt_client` e tudo o q
 | 11 — NAPT entre sessões PPP | medir antes de mexer |
 | 3, 7, 8 | aceitos, esperando gatilho |
 | 24 | é a Fase 10 inteira (PRD 13) |
+| 27 | corrigido e validado; restam as duas ressalvas acima |
 
 Resíduo anotado no débito 13: `uart_terminal: Ring Buffer Full` e `HW FIFO Overflow`, uma vez
 cada, sob carga pesada (UART do modem a 115200). Não mexer sem recorrência.
@@ -111,3 +143,15 @@ cada, sob carga pesada (UART do modem a 115200). Não mexer sem recorrência.
 - Testes que o usuário faz pelo celular (OTA, página): gravar o serial em arquivo durante o
   teste e filtrar depois (`grep -a "OTA:"`)
 - Arquivos de teste de OTA: `docs/TESTE_OTA.md`. Recopiar o `firmware.bin` depois de cada build
+- **`pio device monitor` não aceita stdin redirecionado** — para gravar o serial em arquivo,
+  falar direto com a porta por pyserial. Abrir a porta com `dtr`/`rts` em `False` não reinicia
+  a placa; para reiniciar de propósito, pulso de `rts = True` por 200 ms com `dtr` em `False`
+  (EN baixo, IO0 alto). Anexar a captura **antes** do pulso é a única forma de o log pegar o
+  boot inteiro
+- **A barra de progresso do upload não serve de cronômetro.** Ela é o `upload.onprogress` do
+  XHR, que mede o buffer do socket do celular, não a rede: um `firmware.bin` de ~1 MB cabe
+  quase inteiro nesse buffer e a barra vai a 100% enquanto a placa ainda está recebendo. Para
+  cronometrar uma interrupção, arquivo bem maior — 4 MiB funcionou —, e ele precisa **começar
+  com `0xE9`**, senão a placa recusa no primeiro bloco e o caminho que se queria medir nem
+  roda. O limite do slot (1.900.544 B) cai em 45% de um arquivo de 4 MiB, então cortar abaixo
+  disso dá abort puro
