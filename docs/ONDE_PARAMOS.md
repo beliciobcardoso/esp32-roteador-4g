@@ -11,12 +11,12 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 25/09/2026, manhã no trabalho (depois do merge #42).
+Última atualização: 25/09/2026, manhã no trabalho (depois do merge #44).
 
 ## Ao abrir numa máquina
 
 1. `git fetch && git switch developer && git pull` — `main` e `developer` ficaram iguais em
-   25/09/2026 (última promoção: #42)
+   25/09/2026 (última promoção: #44)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20)
 3. `pio test -e native` (229 testes) e `pio run`. Se o build falhar dizendo que o
@@ -39,7 +39,7 @@ Fechado em 24/09 (PRs #18 a #36, tudo em `main`):
 - **Débito 23 fechado**: uma linha `OTA:` por upload no serial; arquivo maior que o slot
   recusado antes de gravar
 
-Fechado na virada de 24 para 25/09 (#41, promovido em #42):
+Fechado na virada de 24 para 25/09 (#41 e #43, promovidos em #42 e #44):
 
 - **Débito 27 aberto, corrigido e validado no mesmo ciclo.** Subir firmware pela página e sair
   de alcance antes do fim **parava a placa**, e ela não voltava sozinha — medido em 137 s de
@@ -58,11 +58,14 @@ Fechado na virada de 24 para 25/09 (#41, promovido em #42):
   imagem antiga subiu por engano, ninguém confirmou, e o rollback do bootloader devolveu a
   placa ao slot anterior sozinho, como documentado
 - **O `/continuar` rodou pela primeira vez numa sessão nova** e funcionou fim a fim
+- Este arquivo (#43, promovido em #44) e a placa regravada a partir dele. As branches do
+  ciclo foram apagadas; sobrou só a `tmp/captura-gnss`, que é para durar
 
-A placa fica na bancada do **trabalho** e roda **`ba48fb5-dirty`**. O sufixo `-dirty` é de
-build de árvore suja: pelo débito 25 esse rótulo não serve como prova de versão, então, se for
-preciso conferir o que está gravado, regrave a partir de um commit limpo antes. Em casa, sem
-placa, só vale trabalho que se prove com `pio test -e native` e `pio run`.
+A placa fica na bancada do **trabalho** e roda **`00d8844`** — o mesmo commit de `main` e
+`developer`, regravado de árvore limpa em 25/09, com uplink online e relógio sincronizado. O
+`App version` do boot vale como prova de versão de novo: o build anterior saíra `-dirty`, e
+pelo débito 25 aquele rótulo não prova nada. Em casa, sem placa, só vale trabalho que se prove
+com `pio test -e native` e `pio run`.
 
 ## Próximo passo recomendado
 
