@@ -1263,3 +1263,24 @@ veredito do débito 23 — não roda. O contrato daquele débito ("toda requisi�
 deixa uma linha, dê certo ou não") tem esse furo. Ficou cosmético depois desta correção,
 porque o caminho agora se recupera sozinho, mas continua sendo um caso em que o serial não
 registra o que aconteceu.
+
+**Resíduo corrigido e validado em placa em 25/09/2026.** O `_parseFormUploadAborted()` do
+core chama o handler de upload com `UPLOAD_FILE_ABORTED` antes de devolver `false`, então a
+linha sai de lá: `http_config_handler.cpp` → `handleUpdateAborted()`, chamado antes das
+guardas de credencial e de falha anterior — que também calavam o abort de quem não tinha
+senha e o de arquivo já recusado. O motivo segue a regra da primeira falha: `sem_credencial`,
+o motivo da recusa anterior, ou `interrompido` quando o upload vinha bem. O estado do upload
+é limpo ali (`resetUpdateState()`), já que nada mais responde àquela requisição; antes ele
+ficava sujo para o próximo POST `/update` sem parte de arquivo.
+
+```
+ 857.60 wifi:station: … leave                      ← modo avião
+ 868.62 OTA: recusado (interrompido) | 4308 B recebidos
+1003.64 OTA: recusado (maior_que_o_slot) | 2910772 B recebidos   ← aba fechada depois de 45%
+```
+
+A primeira linha veio 11,0 s depois do `leave`, o tempo do keepalive. A segunda é o FIN da
+aba fechada depois de a placa já ter recusado o arquivo por tamanho: mantém o motivo da
+recusa, e os 2,9 MB, menores que os 4 MiB do arquivo, a distinguem de uma recusa que chegou
+ao fim. Nos dois, sem reinício, bateria seguindo, e o upload seguinte correu do zero. Não foi
+exercitado o FIN abaixo de 45% — mesmo ramo do código, só muda como o core percebe a queda.
