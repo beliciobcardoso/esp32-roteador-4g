@@ -474,19 +474,15 @@ void HttpConfigHandler::handleUpdateUpload() {
   updateBytes_ = upload.totalSize +
                  (upload.status == UPLOAD_FILE_WRITE ? upload.currentSize : 0);
 
+  if (upload.status == UPLOAD_FILE_ABORTED) {
+    handleUpdateAborted();
+    return;
+  }
+
   if (!updateAuthorized_) return;
   // Ja falhou: o resto do arquivo continua chegando pela rede e e descartado aqui. A
   // primeira mensagem e a que descreve o defeito; as seguintes seriam consequencia dela.
   if (updateError_.length() > 0) return;
-
-  if (upload.status == UPLOAD_FILE_ABORTED) {
-    // Conexao caiu no meio do envio. O slot fica com lixo, mas nao bootavel: o `Update`
-    // so grava os primeiros bytes da imagem no fim, justamente para este caso.
-    firmwareWriter_.abort();
-    updateError_ = "o envio foi interrompido antes do fim";
-    updateReason_ = "interrompido";
-    return;
-  }
 
   if (upload.status == UPLOAD_FILE_WRITE) {
     // Primeiro bloco: o `totalSize` so e somado depois desta chamada (Parsing.cpp), entao
@@ -547,6 +543,44 @@ void HttpConfigHandler::handleUpdateUpload() {
   }
 }
 
+// Conexao caiu no meio do envio. O slot fica com lixo, mas nao bootavel: o `Update` so
+// grava os primeiros bytes da imagem no fim, justamente para este caso.
+//
+// A linha do serial sai daqui porque o handleUpdateDone() nao vai rodar: o
+// `_parseFormUploadAborted()` do core chama este handler com ABORTED e devolve falso, e o
+// `_handleRequest()` nem e chamado. Sem isto o abort era o unico desfecho de POST /update
+// sem linha no serial, o furo que o debito 27 deixou no contrato do debito 23. Vem antes das
+// guardas de credencial e de falha anterior porque aqui nao ha mais o que descartar — e a
+// ultima chamada desta requisicao, entao e a ultima chance de a linha sair.
+//
+// O motivo segue a regra do resto do arquivo, a primeira falha descreve o defeito: sem
+// credencial continua `sem_credencial`, arquivo ja recusado continua com o motivo dele, e
+// `interrompido` so aparece quando o upload estava indo bem. O que separa os dois casos de
+// recusa do desfecho completo e o total de bytes, menor que o arquivo.
+void HttpConfigHandler::handleUpdateAborted() {
+  const char* reason = "sem_credencial";
+  if (updateAuthorized_) {
+    if (updateError_.length() == 0) {
+      firmwareWriter_.abort();
+      updateReason_ = "interrompido";
+    }
+    reason = updateReason_ != nullptr ? updateReason_ : "desconhecido";
+  }
+  Serial.println(describeUpdateOutcome(reason, updateBytes_));
+
+  // Nada responde a esta requisicao, entao ninguem mais limparia o estado. Sujo, ele seria
+  // lido pelo proximo POST /update que chegasse sem parte de arquivo.
+  resetUpdateState();
+}
+
+void HttpConfigHandler::resetUpdateState() {
+  updateAttempted_ = false;
+  updateAuthorized_ = false;
+  updateError_ = "";
+  updateReason_ = nullptr;
+  updateBytes_ = 0;
+}
+
 // Roda uma vez, depois do corpo inteiro. A gravacao ja aconteceu: aqui so se responde e,
 // se deu certo, se pede o reboot.
 void HttpConfigHandler::handleUpdateDone() {
@@ -567,11 +601,7 @@ void HttpConfigHandler::handleUpdateDone() {
   const String error = updateError_;
   const char* reason = updateReason_;
   const uint32_t bytes = updateBytes_;
-  updateAttempted_ = false;
-  updateAuthorized_ = false;
-  updateError_ = "";
-  updateReason_ = nullptr;
-  updateBytes_ = 0;
+  resetUpdateState();
 
   // Sem credencial o 401 ja saiu no primeiro bloco; responder de novo colocaria duas
   // respostas na mesma conexao. A linha do serial sai assim mesmo: e a prova de que a

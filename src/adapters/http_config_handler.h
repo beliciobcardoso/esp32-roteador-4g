@@ -102,6 +102,8 @@ class HttpConfigHandler {
   // Os dois lados do POST /update. O de upload roda DENTRO do parser da requisicao, um
   // bloco por vez, antes de o handler de POST existir; o de fim roda depois, uma vez.
   void handleUpdateUpload();
+  void handleUpdateAborted();
+  void resetUpdateState();
   void handleUpdateDone();
 
   // POST porque muda estado da placa: um GET aqui seria disparado por prefetch do
