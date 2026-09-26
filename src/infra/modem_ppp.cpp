@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "../../include/config.h"
+#include "timestamped_serial.h"
 
 namespace {
 
@@ -74,13 +75,13 @@ const char* pppStatusName(int32_t id) {
 
 void onPppEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
   if (base == IP_EVENT && id == IP_EVENT_PPP_GOT_IP) {
-    Serial.println("PPP: IP recebido da operadora");
+    logSerial.println("PPP: IP recebido da operadora");
     gPppHasIp = true;
     return;
   }
 
   if (base == IP_EVENT && id == IP_EVENT_PPP_LOST_IP) {
-    Serial.println("PPP: perdeu o IP da operadora");
+    logSerial.println("PPP: perdeu o IP da operadora");
     gPppHasIp = false;
     return;
   }
@@ -88,7 +89,7 @@ void onPppEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
   // ERRORNONE (id 0) e o fechamento limpo da sessao, nao um erro — mas tambem significa
   // que o enlace nao esta mais de pe, entao derruba o estado igual aos outros.
   if (base == NETIF_PPP_STATUS) {
-    Serial.printf("PPP: enlace caiu | NETIF_PPP_STATUS=%s (%d)\n", pppStatusName(id),
+    logSerial.printf("PPP: enlace caiu | NETIF_PPP_STATUS=%s (%d)\n", pppStatusName(id),
                   static_cast<int>(id));
     gPppHasIp = false;
   }
@@ -115,17 +116,17 @@ void pulsePwrKey() {
 bool waitForAtReady(esp_modem_dce_t* dce) {
   for (int attempt = 1; attempt <= kAtSyncMaxAttempts; attempt++) {
     if (esp_modem_sync(dce) == ESP_OK) {
-      Serial.printf("Modem: respondeu AT na tentativa %d\n", attempt);
+      logSerial.printf("Modem: respondeu AT na tentativa %d\n", attempt);
       return true;
     }
 
     if (attempt == kAtSyncRepulseAttempt) {
-      Serial.println("Modem: sem resposta AT apos Ton(uart), repetindo pulso de PWRKEY");
+      logSerial.println("Modem: sem resposta AT apos Ton(uart), repetindo pulso de PWRKEY");
       pulsePwrKey();
     }
     delay(kAtSyncRetryDelayMs);
   }
-  Serial.println("Modem: nao respondeu AT — verificar alimentacao e pinagem da UART");
+  logSerial.println("Modem: nao respondeu AT — verificar alimentacao e pinagem da UART");
   return false;
 }
 
@@ -144,7 +145,7 @@ esp_err_t onAtResponseLine(uint8_t* data, size_t len) {
     len--;
   }
   if (len > 0) {
-    Serial.printf("    AT< %.*s\n", static_cast<int>(len), reinterpret_cast<const char*>(data));
+    logSerial.printf("    AT< %.*s\n", static_cast<int>(len), reinterpret_cast<const char*>(data));
   }
 
   std::string_view line(reinterpret_cast<const char*>(data), len);
@@ -162,10 +163,10 @@ esp_err_t onAtResponseLine(uint8_t* data, size_t len) {
 // esp_modem_set_pdp_context, gerada, declara PdpContext& em C++ mas recebe o struct C
 // de const char* na implementacao — tipos de layout incompativel, nao da pra usar.
 bool runAtCommand(esp_modem_dce_t* dce, const char* command, uint32_t timeoutMs) {
-  Serial.printf("    AT> %s\n", command);
+  logSerial.printf("    AT> %s\n", command);
   esp_err_t result = esp_modem_command(dce, command, &onAtResponseLine, timeoutMs);
   if (result != ESP_OK) {
-    Serial.printf("    AT! falhou [%s]\n", esp_err_to_name(result));
+    logSerial.printf("    AT! falhou [%s]\n", esp_err_to_name(result));
   }
   return result == ESP_OK;
 }
@@ -207,7 +208,7 @@ void dumpNetworkDiagnostics(esp_modem_dce_t* dce) {
   int ber = 0;
   esp_err_t csqResult = esp_modem_get_signal_quality(dce, rssi, ber);
   // RSSI 99 no 3GPP TS 27.007 significa "desconhecido ou nao detectavel", nao sinal zero.
-  Serial.printf("    CSQ [%s] rssi=%d ber=%d\n", esp_err_to_name(csqResult), rssi, ber);
+  logSerial.printf("    CSQ [%s] rssi=%d ber=%d\n", esp_err_to_name(csqResult), rssi, ber);
 
   // Resposta crua do registro e da operadora: o parser do esp_modem pega so o campo
   // depois da primeira virgula, e ja devolveu estado=11 (que nao existe no 3GPP
@@ -228,20 +229,20 @@ bool waitForSimReady(esp_modem_dce_t* dce) {
     bool pinOk = false;
     esp_err_t pinResult = esp_modem_read_pin(dce, pinOk);
     if (pinResult == ESP_OK && pinOk) {
-      Serial.printf("Modem: SIM pronto na tentativa %d\n", attempt);
+      logSerial.printf("Modem: SIM pronto na tentativa %d\n", attempt);
       return true;
     }
     if (pinResult == ESP_OK && !pinOk) {
-      Serial.println("Modem: SIM pede PIN — desbloquear o cartao antes de usar");
+      logSerial.println("Modem: SIM pede PIN — desbloquear o cartao antes de usar");
       return false;
     }
     if (attempt % kSimReadyLogEvery == 1) {
-      Serial.printf("Modem: aguardando SIM (%ds) | CPIN -> [%s]\n",
+      logSerial.printf("Modem: aguardando SIM (%ds) | CPIN -> [%s]\n",
                     attempt, esp_err_to_name(pinResult));
     }
     delay(kSimReadyRetryDelayMs);
   }
-  Serial.println("Modem: SIM nao respondeu ao AT+CPIN? — conferir encaixe do cartao");
+  logSerial.println("Modem: SIM nao respondeu ao AT+CPIN? — conferir encaixe do cartao");
   return false;
 }
 
@@ -254,7 +255,7 @@ bool applyPdpContext(esp_modem_dce_t* dce, const String& apn) {
   // esp_modem_set_apn() nao serve aqui: ele so troca o PdpContext guardado em memoria,
   // que continua sendo enviado la no setup_data_mode(). Precisa ser o AT cru agora.
   String command = "AT+CGDCONT=1,\"IP\",\"" + apn + "\"\r";
-  Serial.printf("Modem: gravando APN \"%s\" no contexto 1\n", apn.c_str());
+  logSerial.printf("Modem: gravando APN \"%s\" no contexto 1\n", apn.c_str());
   return runAtCommand(dce, command.c_str(), 3000);
 }
 
@@ -278,19 +279,19 @@ bool waitForNetwork(esp_modem_dce_t* dce, const String& apn) {
       int rssi = 0;
       int ber = 0;
       esp_modem_get_signal_quality(dce, rssi, ber);
-      Serial.printf("Modem: registrado (CEREG=%d) apos %ds | RSSI=%d\n", state, attempt, rssi);
+      logSerial.printf("Modem: registrado (CEREG=%d) apos %ds | RSSI=%d\n", state, attempt, rssi);
       return true;
     }
 
     if (attempt % kRegistrationLogEvery == 1) {
-      Serial.printf("Modem: aguardando registro (%ds) | CEREG -> [%s] estado=%d\n",
+      logSerial.printf("Modem: aguardando registro (%ds) | CEREG -> [%s] estado=%d\n",
                     attempt, esp_err_to_name(result), state);
       dumpNetworkDiagnostics(dce);
     }
     delay(kRegistrationRetryDelayMs);
   }
 
-  Serial.println("Modem: nao registrou na rede — verificar antena LTE, SIM e cobertura");
+  logSerial.println("Modem: nao registrou na rede — verificar antena LTE, SIM e cobertura");
   return false;
 }
 
@@ -332,11 +333,11 @@ void ModemPpp::readIdentityOnce() {
   gSimcomatiResponse = String();
   esp_err_t result = esp_modem_command(dce_, "AT+SIMCOMATI\r", &captureSimcomati, 3000);
   if (result != ESP_OK) {
-    Serial.printf("Modem: AT+SIMCOMATI falhou [%s]\n", esp_err_to_name(result));
+    logSerial.printf("Modem: AT+SIMCOMATI falhou [%s]\n", esp_err_to_name(result));
   }
   identity_ = parseSimcomati(gSimcomatiResponse);
   gSimcomatiResponse = String();
-  Serial.println(describeModem(identity_));
+  logSerial.println(describeModem(identity_));
 }
 
 bool ModemPpp::start(const RouterSettings& settings) {
@@ -375,10 +376,10 @@ bool ModemPpp::start(const RouterSettings& settings) {
     esp_err_t authResult = esp_netif_ppp_set_auth(netif_, NETIF_PPP_AUTHTYPE_PAP,
                                                   settings.apn_user.c_str(),
                                                   settings.apn_password.c_str());
-    Serial.printf("PPP: auth PAP usuario=\"%s\" -> [%s]\n",
+    logSerial.printf("PPP: auth PAP usuario=\"%s\" -> [%s]\n",
                   settings.apn_user.c_str(), esp_err_to_name(authResult));
     if (authResult != ESP_OK) {
-      Serial.println("PPP: falha ao configurar PAP — conexao segue sem autenticacao");
+      logSerial.println("PPP: falha ao configurar PAP — conexao segue sem autenticacao");
     }
   }
 
@@ -396,7 +397,7 @@ bool ModemPpp::start(const RouterSettings& settings) {
 
   // A7670E usa conjunto de comandos AT compativel com o perfil SIM7600 do esp_modem.
   dce_ = esp_modem_new_dev(ESP_MODEM_DCE_SIM7600, &dteConfig, &dceConfig, netif_);
-  Serial.printf("Modem: esp_modem_new_dev -> %s\n", dce_ == nullptr ? "NULL" : "ok");
+  logSerial.printf("Modem: esp_modem_new_dev -> %s\n", dce_ == nullptr ? "NULL" : "ok");
   if (dce_ == nullptr) {
     return false;
   }
@@ -416,7 +417,7 @@ bool ModemPpp::start(const RouterSettings& settings) {
   gPppHasIp = false;
 
   esp_err_t modeResult = esp_modem_set_mode(dce_, ESP_MODEM_MODE_DATA);
-  Serial.printf("Modem: set_mode(DATA) -> %s\n", esp_err_to_name(modeResult));
+  logSerial.printf("Modem: set_mode(DATA) -> %s\n", esp_err_to_name(modeResult));
   return modeResult == ESP_OK;
 }
 
@@ -430,7 +431,7 @@ bool ModemPpp::waitForIp(uint32_t timeoutMs) {
     }
     delay(kGotIpPollIntervalMs);
   }
-  Serial.printf("PPP: operadora nao entregou IP em %us — LCP/IPCP nao fechou\n",
+  logSerial.printf("PPP: operadora nao entregou IP em %us — LCP/IPCP nao fechou\n",
                 timeoutMs / 1000);
   return false;
 }

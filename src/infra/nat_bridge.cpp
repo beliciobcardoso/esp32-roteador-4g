@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <lwip/lwip_napt.h>
 
+#include "timestamped_serial.h"
+
 namespace {
 
 // Chave do esp_netif que o core Arduino cria quando o SoftAP sobe. Buscar o handle
@@ -27,7 +29,7 @@ bool enableNaptOnAp(const esp_netif_ip_info_t& apIp) {
   uint32_t apAddress = apIp.ip.addr;
   esp_err_t result = esp_netif_tcpip_exec(&enableNaptInTcpipContext, &apAddress);
   if (result != ESP_OK) {
-    Serial.printf("NAT: ip_napt_enable falhou [%s]\n", esp_err_to_name(result));
+    logSerial.printf("NAT: ip_napt_enable falhou [%s]\n", esp_err_to_name(result));
     return false;
   }
   return true;
@@ -37,20 +39,20 @@ bool enableNaptOnAp(const esp_netif_ip_info_t& apIp) {
 
 bool NatBridge::enable(esp_netif_t* uplink) {
   if (uplink == nullptr) {
-    Serial.println("NAT: uplink PPP nulo — o modem nao chegou a inicializar");
+    logSerial.println("NAT: uplink PPP nulo — o modem nao chegou a inicializar");
     return false;
   }
 
   esp_netif_t* apNetif = esp_netif_get_handle_from_ifkey(kApNetifKey);
   if (apNetif == nullptr) {
-    Serial.printf("NAT: interface \"%s\" nao existe — o SoftAP nao subiu\n", kApNetifKey);
+    logSerial.printf("NAT: interface \"%s\" nao existe — o SoftAP nao subiu\n", kApNetifKey);
     return false;
   }
 
   esp_netif_ip_info_t apIp = {};
   esp_err_t ipResult = esp_netif_get_ip_info(apNetif, &apIp);
   if (ipResult != ESP_OK) {
-    Serial.printf("NAT: nao consegui ler o IP do AP [%s]\n", esp_err_to_name(ipResult));
+    logSerial.printf("NAT: nao consegui ler o IP do AP [%s]\n", esp_err_to_name(ipResult));
     return false;
   }
 
@@ -70,7 +72,7 @@ bool NatBridge::enable(esp_netif_t* uplink) {
   if (dnsResult != ESP_OK) {
     // Nao e mais fatal: o NAT roteia IP do mesmo jeito, e o forwarder responde SERVFAIL
     // enquanto nao houver DNS — falha explicita em vez de sessao que parece ok e nao e.
-    Serial.printf("NAT: ativo | AP " IPSTR " -> PPP | a operadora nao informou DNS [%s]\n",
+    logSerial.printf("NAT: ativo | AP " IPSTR " -> PPP | a operadora nao informou DNS [%s]\n",
                   IP2STR(&apIp.ip), esp_err_to_name(dnsResult));
     return true;
   }
@@ -79,7 +81,7 @@ bool NatBridge::enable(esp_netif_t* uplink) {
   // do SoftAP (esp_netif_defaults.h), e o esp_netif_update_default_netif() promove o
   // PPP a interface default sozinho quando o GOT_IP chega. esp_netif_set_default_netif()
   // e static em esp_netif_lwip.c:202 — nem da pra chamar de fora.
-  Serial.printf("NAT: ativo | AP " IPSTR " -> PPP | DNS da operadora: " IPSTR "\n",
+  logSerial.printf("NAT: ativo | AP " IPSTR " -> PPP | DNS da operadora: " IPSTR "\n",
                 IP2STR(&apIp.ip), IP2STR(&dns.ip.u_addr.ip4));
   return true;
 }

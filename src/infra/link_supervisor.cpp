@@ -6,6 +6,7 @@
 #include <esp_system.h>
 
 #include "../domain/firmware_update.h"
+#include "timestamped_serial.h"
 
 namespace {
 
@@ -110,7 +111,7 @@ bool LinkSupervisor::begin(const RouterSettings& settings) {
 
   settingsMutex_ = xSemaphoreCreateMutex();
   if (settingsMutex_ == nullptr) {
-    Serial.println("Uplink: sem memoria para o mutex de configuracao");
+    logSerial.println("Uplink: sem memoria para o mutex de configuracao");
     return false;
   }
 
@@ -122,7 +123,7 @@ bool LinkSupervisor::begin(const RouterSettings& settings) {
   BaseType_t created = xTaskCreatePinnedToCore(&LinkSupervisor::taskEntry, "uplink", kTaskStackBytes,
                                                this, kTaskPriority, &task_, kTaskCore);
   if (created != pdPASS) {
-    Serial.println("Uplink: nao foi possivel criar a task de supervisao");
+    logSerial.println("Uplink: nao foi possivel criar a task de supervisao");
     return false;
   }
   return true;
@@ -175,17 +176,17 @@ bool LinkSupervisor::connectOnce(const RouterSettings& settings) {
   modem_.stop();
 
   if (!modem_.start(settings)) {
-    Serial.println("Uplink: modem nao subiu");
+    logSerial.println("Uplink: modem nao subiu");
     return false;
   }
 
   if (!modem_.waitForIp(kIpTimeoutMs)) {
-    Serial.println("Uplink: operadora nao entregou IP");
+    logSerial.println("Uplink: operadora nao entregou IP");
     return false;
   }
 
   if (!nat_.enable(modem_.netif())) {
-    Serial.println("Uplink: NAT nao armou — clientes do AP nao saem pra internet");
+    logSerial.println("Uplink: NAT nao armou — clientes do AP nao saem pra internet");
     return false;
   }
 
@@ -198,9 +199,9 @@ void LinkSupervisor::run() {
 
     if (state_ == UplinkState::Online) {
       if (changed) {
-        Serial.println("Uplink: configuracao nova — reconectando");
+        logSerial.println("Uplink: configuracao nova — reconectando");
       } else if (!modem_.hasIp()) {
-        Serial.println("Uplink: enlace caiu — reconectando");
+        logSerial.println("Uplink: enlace caiu — reconectando");
       } else {
         vTaskDelay(pdMS_TO_TICKS(kOnlinePollMs));
         continue;
@@ -215,7 +216,7 @@ void LinkSupervisor::run() {
       // orcamento e acabem suprimindo um reboot que teria resolvido.
       gRebootsWithoutUplink = 0;
       state_ = UplinkState::Online;
-      Serial.println("Uplink: online — clientes do AP saem pelo 4G");
+      logSerial.println("Uplink: online — clientes do AP saem pelo 4G");
       // Depois do estado e do log: o ouvinte roda nesta task, entao qualquer coisa que ele
       // demore atrasa o proximo ciclo de supervisao. Avisar por ultimo mantem o estado
       // consistente para quem consultar de fora enquanto isso acontece.
@@ -232,14 +233,14 @@ void LinkSupervisor::run() {
       if (!mayRebootNow()) {
         // So na transicao, pelo mesmo motivo da mensagem de causa externa mais abaixo.
         if (consecutiveFailures_ == kMaxFailuresBeforeReboot) {
-          Serial.println(
+          logSerial.println(
               "Uplink: reinicio segurado — ha uma atualizacao de firmware esperando "
               "confirmacao, e reiniciar agora faria o bootloader reverte-la por falta de "
               "sinal, que nao e defeito dela. Segue tentando sem reiniciar.");
         }
       } else if (gRebootsWithoutUplink < kMaxRebootsWithoutUplink) {
         gRebootsWithoutUplink++;
-        Serial.printf("Uplink: %u falhas seguidas — reiniciando a placa (reinicio %u/%u)\n",
+        logSerial.printf("Uplink: %u falhas seguidas — reiniciando a placa (reinicio %u/%u)\n",
                       consecutiveFailures_, gRebootsWithoutUplink, kMaxRebootsWithoutUplink);
         Serial.flush();
         esp_restart();
@@ -248,7 +249,7 @@ void LinkSupervisor::run() {
       // So na transicao. Daqui pra frente a condicao segue verdadeira a cada falha, e
       // repetir a mesma linha a cada 60s afogaria o resto do serial numa depuracao.
       if (consecutiveFailures_ == kMaxFailuresBeforeReboot) {
-        Serial.printf(
+        logSerial.printf(
             "Uplink: %u reinicios nao resolveram — causa externa (SIM, cobertura ou credito). "
             "Segue tentando sem reiniciar; o AP continua no ar.\n",
             kMaxRebootsWithoutUplink);
@@ -257,19 +258,19 @@ void LinkSupervisor::run() {
 
     uint32_t backoffMs = backoffForFailure(consecutiveFailures_);
     if (gRebootsWithoutUplink < kMaxRebootsWithoutUplink) {
-      Serial.printf("Uplink: falha %u/%u — nova tentativa em %us\n", consecutiveFailures_,
+      logSerial.printf("Uplink: falha %u/%u — nova tentativa em %us\n", consecutiveFailures_,
                     kMaxFailuresBeforeReboot, backoffMs / 1000);
     } else {
       // Sem orcamento de reinicio o denominador nao significa mais nada: o contador segue
       // subindo e o serial mostrava "falha 12/10", que sugere um limite ja estourado quando
       // na verdade nao ha mais limite nenhum a atingir.
-      Serial.printf("Uplink: falha %u — nova tentativa em %us\n", consecutiveFailures_,
+      logSerial.printf("Uplink: falha %u — nova tentativa em %us\n", consecutiveFailures_,
                     backoffMs / 1000);
     }
 
     state_ = UplinkState::Backoff;
     if (waitInterruptible(backoffMs)) {
-      Serial.println("Uplink: configuracao nova durante o backoff — tentando ja");
+      logSerial.println("Uplink: configuracao nova durante o backoff — tentando ja");
     }
     state_ = UplinkState::Connecting;
   }

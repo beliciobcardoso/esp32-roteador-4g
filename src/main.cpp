@@ -19,6 +19,7 @@
 #include "infra/nat_bridge.h"
 #include "infra/ota_updater.h"
 #include "infra/ppp_drop_counter.h"
+#include "infra/timestamped_serial.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
 #include "usecases/provision_settings.h"
@@ -131,23 +132,23 @@ UplinkStatus currentUplinkStatus() {
 void reportProvisioning(const ProvisionResult& result) {
   if (!result.provisioned) return;
 
-  Serial.println("=== Provisionamento (primeiro boot) ===");
-  Serial.printf("AP    \"%s\"  senha: %s\n", result.settings.wifi_ssid.c_str(),
+  logSerial.println("=== Provisionamento (primeiro boot) ===");
+  logSerial.printf("AP    \"%s\"  senha: %s\n", result.settings.wifi_ssid.c_str(),
                 result.settings.wifi_password.c_str());
-  Serial.printf("Admin \"%s\"  senha: %s (troca obrigatoria no primeiro acesso)\n",
+  logSerial.printf("Admin \"%s\"  senha: %s (troca obrigatoria no primeiro acesso)\n",
                 result.settings.admin_user.c_str(), result.settings.admin_password.c_str());
 
   if (!result.persisted) {
     // Grave: o AP sobe com esta senha, mas o proximo boot sorteia outra. Quem anotar a
     // senha agora perde o acesso no reset seguinte sem nenhum sinal de que algo falhou.
-    Serial.println("ATENCAO: o sorteio NAO foi gravado na NVS — estas senhas valem so ate o");
-    Serial.println("proximo boot, que vai sortear outras. Verificar a particao nvs.");
+    logSerial.println("ATENCAO: o sorteio NAO foi gravado na NVS — estas senhas valem so ate o");
+    logSerial.println("proximo boot, que vai sortear outras. Verificar a particao nvs.");
   }
-  Serial.println("=======================================");
+  logSerial.println("=======================================");
 }
 
 bool startRouting(const RouterSettings& settings) {
-  Serial.printf("Roteamento: SSID \"%s\" | APN \"%s\"\n",
+  logSerial.printf("Roteamento: SSID \"%s\" | APN \"%s\"\n",
                 settings.wifi_ssid.c_str(), settings.apn.c_str());
 
   // Sem AP nao ha pagina de configuracao para desfazer nada, entao configuracao invalida
@@ -155,16 +156,16 @@ bool startRouting(const RouterSettings& settings) {
   // fallback do LoadSettingsUseCase devolve senhas vazias de proposito.
   SettingsValidationError invalid = validate(settings);
   if (invalid != SettingsValidationError::None) {
-    Serial.printf("Roteamento: configuracao invalida (%s) — AP nao vai subir\n",
+    logSerial.printf("Roteamento: configuracao invalida (%s) — AP nao vai subir\n",
                   to_string(invalid));
     return false;
   }
 
   if (!wifiAp.start(settings)) {
-    Serial.println("Roteamento: parou no SoftAP — nem o AP nem a config HTTP vao responder");
+    logSerial.println("Roteamento: parou no SoftAP — nem o AP nem a config HTTP vao responder");
     return false;
   }
-  Serial.printf("Roteamento: AP no ar em %s\n", WiFi.softAPIP().toString().c_str());
+  logSerial.printf("Roteamento: AP no ar em %s\n", WiFi.softAPIP().toString().c_str());
 
   // Aqui e nao antes do AP: as funcoes do esp_sntp entram pelo tcpip_callback, e a task
   // tcpip do lwIP so existe depois do esp_netif_init() que roda dentro do wifiAp.start().
@@ -179,15 +180,15 @@ bool startRouting(const RouterSettings& settings) {
   // roteamento — quebra a resolucao de nomes, que e grave o bastante para ir pro log e
   // leve o bastante para nao valer perder a pagina de configuracao junto.
   if (!dnsForwarder.begin(static_cast<uint32_t>(WiFi.softAPIP()))) {
-    Serial.println("Roteamento: DNS local nao subiu — clientes vao rotear, mas nao resolver");
+    logSerial.println("Roteamento: DNS local nao subiu — clientes vao rotear, mas nao resolver");
   }
 
   if (!linkSupervisor.begin(settings)) {
-    Serial.println("Roteamento: parou na supervisao do uplink — AP so pra configuracao");
+    logSerial.println("Roteamento: parou na supervisao do uplink — AP so pra configuracao");
     return false;
   }
 
-  Serial.println("Roteamento: AP no ar, uplink 4G conectando em background");
+  logSerial.println("Roteamento: AP no ar, uplink 4G conectando em background");
   return true;
 }
 
@@ -212,6 +213,10 @@ void setup() {
 
   delay(100); // pequena margem para o circuito de power estabilizar
   Serial.begin(115200);
+  // Logo depois do Serial, para toda linha do projeto ja sair com o prefixo. Nao depende
+  // do systemClock.begin(): ate a primeira sincronizacao o prefixo e `--:--:--` de qualquer
+  // jeito, e o objeto do relogio existe desde antes do setup().
+  logSerial.begin(systemClock);
 
   // Antes de o PPP subir: instalado depois, os descartes da primeira sessao ainda sairiam
   // como linha solta, que e o que este hook existe para evitar (debito 13).
@@ -240,6 +245,7 @@ void setup() {
   httpConfigHandler.onRestartRequested(&onRestartRequested);
   httpConfigHandler.onFirmwareConfirmed(&onFirmwareConfirmed);
   httpConfigHandler.onUploadProgress(&beatLoopWatchdog);
+  httpConfigHandler.logTo(logSerial);
 
   // Guardado pelo ap_up, e nao incondicional: o `server_.begin()` abre um socket TCP, e sem
   // o AP no ar o `esp_netif_init()` nunca rodou — o lwIP bate em
@@ -259,7 +265,7 @@ void setup() {
     // o caso que de fato acontece.
     firmwareHealth.http_up = true;
   } else {
-    Serial.println("Roteamento: sem AP — servidor HTTP nao sobe, e o loop segue para decidir o firmware");
+    logSerial.println("Roteamento: sem AP — servidor HTTP nao sobe, e o loop segue para decidir o firmware");
   }
 
   // Por ultimo, de proposito: o watchdog mede o intervalo entre voltas do loop() e comeca a
@@ -329,11 +335,11 @@ void reportBattery(unsigned long now) {
   lastBatteryReportMs = now;
 
   int percent = voltageToPercent(batteryVoltage);
-  Serial.print("Bateria: ");
-  Serial.print(batteryVoltage, 2);
-  Serial.print("V | ~");
-  Serial.print(percent);
-  Serial.println("%");
+  logSerial.print("Bateria: ");
+  logSerial.print(batteryVoltage, 2);
+  logSerial.print("V | ~");
+  logSerial.print(percent);
+  logSerial.println("%");
 }
 
 // Sobrescreve o simbolo weak do core do Arduino (`esp32-hal-misc.c`). Sem isto o
@@ -374,11 +380,11 @@ void settleFirmwareConfirmation(unsigned long now) {
     case FirmwareConfirmationOutcome::Confirm:
       firmwareDecisionSettled = true;
       if (otaUpdater.confirmRunningImage()) {
-        Serial.println("Firmware: confirmado pelo operador, rollback cancelado");
+        logSerial.println("Firmware: confirmado pelo operador, rollback cancelado");
       } else {
         // A imagem continua PENDING_VERIFY: o proximo reboot volta para a anterior. Grave o
         // bastante para o log, e nada a fazer daqui — quem decide e quem le.
-        Serial.println("Firmware: NAO foi possivel confirmar a imagem — o proximo reboot reverte");
+        logSerial.println("Firmware: NAO foi possivel confirmar a imagem — o proximo reboot reverte");
       }
       return;
 
@@ -397,11 +403,11 @@ void settleFirmwareConfirmation(unsigned long now) {
       // Confirmar a atual e o menos ruim. Ela pode estar com defeito, mas nao ha para onde
       // voltar: deixar em PENDING_VERIFY nao protege de nada e ainda arma um rollback que
       // vai falhar de novo no proximo reset, agora sem ninguem olhando o serial.
-      Serial.println("Firmware: nao ha imagem anterior para voltar — confirmando a atual");
+      logSerial.println("Firmware: nao ha imagem anterior para voltar — confirmando a atual");
       if (otaUpdater.confirmRunningImage()) {
-        Serial.println("Firmware: imagem atual confirmada por falta de alternativa");
+        logSerial.println("Firmware: imagem atual confirmada por falta de alternativa");
       } else {
-        Serial.println("Firmware: NAO foi possivel confirmar a imagem atual");
+        logSerial.println("Firmware: NAO foi possivel confirmar a imagem atual");
       }
       return;
   }
@@ -429,7 +435,7 @@ void reportPppDrops(unsigned long now) {
   uint32_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
   if (pending > 0) {
-    Serial.println(describeDropWindow(pending, freeInternal));
+    logSerial.println(describeDropWindow(pending, freeInternal));
     pending = 0;
     quietWindows = 0;
     return;
@@ -442,7 +448,7 @@ void reportPppDrops(unsigned long now) {
   quietWindows++;
   if (!quietReportDue(quietWindows)) return;
 
-  Serial.println(describeQuietWindows(quietWindows, freeInternal));
+  logSerial.println(describeQuietWindows(quietWindows, freeInternal));
   quietWindows = 0;
 }
 
@@ -450,7 +456,7 @@ void applyPendingRestart(unsigned long now) {
   if (restartRequestedAtMs == 0) return;
   if (now - restartRequestedAtMs < kRestartGraceMs) return;
 
-  Serial.println("Firmware: reiniciando para subir a imagem nova");
+  logSerial.println("Firmware: reiniciando para subir a imagem nova");
   Serial.flush();
   esp_restart();
 }

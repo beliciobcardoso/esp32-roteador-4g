@@ -4,6 +4,7 @@
 #include <esp_system.h>
 
 #include "../domain/loop_health.h"
+#include "timestamped_serial.h"
 
 namespace {
 
@@ -27,7 +28,7 @@ bool LoopWatchdog::begin() {
   const BaseType_t created = xTaskCreate(&LoopWatchdog::taskEntry, "loop_wdt",
                                          kTaskStackBytes, this, kTaskPriority, &task_);
   if (created != pdPASS) {
-    Serial.println("LoopWatchdog: task nao subiu — sem rede de seguranca para travamento do loop");
+    logSerial.println("LoopWatchdog: task nao subiu — sem rede de seguranca para travamento do loop");
     task_ = nullptr;
     return false;
   }
@@ -50,7 +51,7 @@ void LoopWatchdog::run() {
     // `esp_restart()` o motivo do reset e `SW_CPU_RESET`, igual ao de um OTA e ao de um
     // reinicio pedido pela pagina. Sem esta linha, um travamento em campo vira "a placa
     // reiniciou sozinha" e nao se distingue de nada.
-    Serial.printf("LoopWatchdog: loop parado ha %lu ms — reiniciando\n",
+    logSerial.printf("LoopWatchdog: loop parado ha %lu ms — reiniciando\n",
                   static_cast<unsigned long>(now - lastBeat));
     Serial.flush();
 

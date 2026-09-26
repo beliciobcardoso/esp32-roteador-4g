@@ -3,6 +3,8 @@
 #include <esp_sntp.h>
 #include <time.h>
 
+#include "timestamped_serial.h"
+
 namespace {
 
 // Servidor nacional primeiro: o NIC.br mantem o ntp.br e o RTT daqui e menor. O pool
@@ -42,7 +44,7 @@ void onTimeSynchronized(struct timeval* /*received*/) {
   // A unica evidencia de relogio que existe sem um cliente associado. Em campo a placa fica
   // sozinha com o cabo serial, e "a hora esta certa?" nao pode depender de abrir a pagina.
   // Uma linha por sincronizacao: a cadencia e o CONFIG_LWIP_SNTP_UPDATE_DELAY, 1 h.
-  Serial.printf("Relogio: sincronizado — %s\n", formatNow().c_str());
+  logSerial.printf("Relogio: sincronizado — %s\n", formatNow().c_str());
 }
 
 }  // namespace

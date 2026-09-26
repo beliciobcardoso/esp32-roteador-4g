@@ -462,7 +462,7 @@ void HttpConfigHandler::handleUpdateUpload() {
     updateAuthorized_ = true;
 
     if (!firmwareWriter_.begin()) {
-      Serial.printf("OTA: abertura do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
+      log_->printf("OTA: abertura do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
       updateError_ = "não foi possível abrir a partição de destino";
       updateReason_ = "abertura_do_slot_falhou";
     }
@@ -512,7 +512,7 @@ void HttpConfigHandler::handleUpdateUpload() {
     }
 
     if (!firmwareWriter_.write(upload.buf, upload.currentSize)) {
-      Serial.printf("OTA: escrita falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
+      log_->printf("OTA: escrita falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
       firmwareWriter_.abort();
       updateError_ = "falha ao gravar no slot de destino: arquivo grande demais ou flash com defeito";
       updateReason_ = "escrita_falhou";
@@ -536,7 +536,7 @@ void HttpConfigHandler::handleUpdateUpload() {
     // Aqui dentro roda a verificacao da imagem inteira, com o SHA-256 que ela carrega:
     // arquivo truncado ou corrompido morre neste ponto, sem trocar o slot de boot.
     if (!firmwareWriter_.finish()) {
-      Serial.printf("OTA: ativacao do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
+      log_->printf("OTA: ativacao do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
       updateError_ = "a imagem enviada não passou na verificação";
       updateReason_ = "verificacao_falhou";
     }
@@ -566,7 +566,7 @@ void HttpConfigHandler::handleUpdateAborted() {
     }
     reason = updateReason_ != nullptr ? updateReason_ : "desconhecido";
   }
-  Serial.println(describeUpdateOutcome(reason, updateBytes_));
+  log_->println(describeUpdateOutcome(reason, updateBytes_));
 
   // Nada responde a esta requisicao, entao ninguem mais limparia o estado. Sujo, ele seria
   // lido pelo proximo POST /update que chegasse sem parte de arquivo.
@@ -589,10 +589,10 @@ void HttpConfigHandler::handleUpdateDone() {
     // nao foi conferida.
     RouterSettings current = loadUseCase_.execute();
     if (!authenticate(current)) {
-      Serial.println(describeUpdateOutcome("sem_credencial", 0));
+      log_->println(describeUpdateOutcome("sem_credencial", 0));
       return;
     }
-    Serial.println(describeUpdateOutcome(updateReasonToken(FirmwareUpdateError::EmptyImage), 0));
+    log_->println(describeUpdateOutcome(updateReasonToken(FirmwareUpdateError::EmptyImage), 0));
     sendJsonError(400, to_string(FirmwareUpdateError::EmptyImage));
     return;
   }
@@ -607,19 +607,19 @@ void HttpConfigHandler::handleUpdateDone() {
   // respostas na mesma conexao. A linha do serial sai assim mesmo: e a prova de que a
   // requisicao chegou, que e o que quem esta com o cabo nao consegue ver de outro jeito.
   if (!authorized) {
-    Serial.println(describeUpdateOutcome("sem_credencial", bytes));
+    log_->println(describeUpdateOutcome("sem_credencial", bytes));
     return;
   }
 
   if (error.length() > 0) {
     // Toda falha acima grava o motivo junto da mensagem; o "desconhecido" so apareceria se
     // um caminho novo esquecesse de fazer isso.
-    Serial.println(describeUpdateOutcome(reason != nullptr ? reason : "desconhecido", bytes));
+    log_->println(describeUpdateOutcome(reason != nullptr ? reason : "desconhecido", bytes));
     sendJsonError(400, error);
     return;
   }
 
-  Serial.println(describeUpdateOutcome(nullptr, bytes));
+  log_->println(describeUpdateOutcome(nullptr, bytes));
 
   // O prazo vem do dominio e nao de um numero digitado aqui: e o mesmo que o loop() usa
   // para decidir, e duas redacoes do mesmo prazo divergem na primeira vez que uma delas
