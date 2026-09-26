@@ -425,6 +425,24 @@
             padding: 0.55rem 0.7rem;
         }
 
+        /* A regra de input acima deixa todo campo com 100% de largura e a altura do alvo de
+           toque; num checkbox isso vira um quadrado do tamanho da tela. O alvo de toque fica
+           no label inteiro, que e clicavel, e nao na caixa. */
+        label.toggle {
+            grid-template-columns: auto 1fr;
+            align-items: center;
+            gap: 0.6rem;
+            min-height: var(--tap);
+        }
+
+        input[type="checkbox"] {
+            width: 1.2rem;
+            min-height: 1.2rem;
+            height: 1.2rem;
+            margin: 0;
+            accent-color: var(--accent);
+        }
+
         .hint {
             font-size: 0.72rem;
             color: var(--ink-faint);
@@ -639,6 +657,39 @@
                         <input type="number" name="battery_ratio" id="battery_ratio" step="0.01" min="1.4"
                             max="10" required inputmode="decimal">
                         <span class="hint">Calibrado por multímetro, por placa. Use ponto, não vírgula.</span>
+                    </label>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Telemetria (MQTT)</legend>
+                    <label class="toggle">
+                        <input type="checkbox" name="telemetry_enabled" id="telemetry_enabled">
+                        Enviar telemetria ao broker
+                    </label>
+                    <label>Host do broker
+                        <input type="text" name="mqtt_host" id="mqtt_host" maxlength="253"
+                            autocomplete="off" autocapitalize="none" spellcheck="false"
+                            placeholder="broker.exemplo.com.br">
+                        <span class="hint">Só o nome ou o IP, sem mqtts:// e sem porta. Conexão sempre por TLS.</span>
+                    </label>
+                    <label>Porta
+                        <input type="number" name="mqtt_port" id="mqtt_port" min="1" max="65535"
+                            step="1" inputmode="numeric">
+                    </label>
+                    <label>Usuário do broker
+                        <input type="text" name="mqtt_user" id="mqtt_user" maxlength="64"
+                            autocomplete="off" autocapitalize="none" spellcheck="false">
+                    </label>
+                    <label>Senha do broker
+                        <input type="password" name="mqtt_password" id="mqtt_password" maxlength="64"
+                            autocomplete="new-password">
+                        <span class="hint">A senha nunca volta para esta página: depois de gravada, aparece só
+                            como definida.</span>
+                    </label>
+                    <label>Intervalo (segundos)
+                        <input type="number" name="telemetry_interval_s" id="telemetry_interval_s"
+                            min="30" max="3600" step="1" inputmode="numeric">
+                        <span class="hint">Entre 30 e 3600. A 60 s são ~20–25 MB/mês de dado móvel.</span>
                     </label>
                 </fieldset>
 
@@ -885,6 +936,14 @@
             pollTimer = setInterval(pollStatus, POLL_MS);
         }
 
+        // O firmware só diz se a senha do broker existe, nunca qual é (critério 7 do PRD 14).
+        // O placeholder é o único lugar em que essa informação aparece.
+        function showMqttPasswordState(isSet) {
+            el('mqtt_password').placeholder = isSet
+                ? 'definida — deixe em branco para manter'
+                : 'não definida';
+        }
+
         async function loadConfig() {
             try {
                 const data = await apiFetch('/api/config');
@@ -894,6 +953,12 @@
                 el('apn_user').value = data.apn_user;
                 el('admin_user').value = data.admin_user;
                 el('battery_ratio').value = data.battery_ratio;
+                el('telemetry_enabled').checked = data.telemetry_enabled;
+                el('mqtt_host').value = data.mqtt_host;
+                el('mqtt_port').value = data.mqtt_port;
+                el('mqtt_user').value = data.mqtt_user;
+                el('telemetry_interval_s').value = data.telemetry_interval_s;
+                showMqttPasswordState(data.mqtt_password_set);
 
                 const select = el('timezone');
                 select.textContent = '';
@@ -938,6 +1003,7 @@
                 // O flag vem do firmware junto com a frase. Trocar SSID ou senha só vale no
                 // próximo boot, e quem acabou de fazer isso precisa da instrução na tela.
                 showToast(result.mensagem, 'ok', result.wifi_exige_reboot);
+                if (body.get('mqtt_password')) showMqttPasswordState(true);
                 for (const field of form.querySelectorAll('input[type="password"]')) {
                     field.value = '';
                 }

@@ -29,6 +29,16 @@ const char* kKeyAdminPending = "admin_pend";
 // dominio aceite — fuso vazio e ratio 0.0 sao reprovados pelo validate(), de proposito.
 const char* kKeyTimezone = "tz";
 const char* kKeyBatteryRatio = "bat_ratio";
+// Chaves da telemetria (PRD 14). Lidas com default, sem subir o schema, pelo mesmo
+// raciocinio do `admin_pend`: todas tem default seguro — desligada nao precisa de broker —,
+// e registro anterior a elas cai nos defaults do dominio e segue valido. Nomes curtos
+// porque a NVS limita a chave a 15 caracteres.
+const char* kKeyTelemetryOn = "tlm_on";
+const char* kKeyMqttHost = "mqtt_host";
+const char* kKeyMqttPort = "mqtt_port";
+const char* kKeyMqttUser = "mqtt_user";
+const char* kKeyMqttPass = "mqtt_pass";
+const char* kKeyTelemetryInterval = "tlm_interval";
 
 // putString devolve strlen(value) quando gravou e 0 quando falhou (erro no nvs_set_str ou
 // no nvs_commit — particao cheia cai aqui). Comparar com o comprimento esperado e o que
@@ -37,7 +47,9 @@ const char* kKeyBatteryRatio = "bat_ratio";
 //
 // Ponto cego que sobra: falha ao gravar campo vazio tambem devolve 0, e 0 == 0 passa por
 // sucesso. Separar os dois exigiria reler a chave. Na pratica nao esconde nada: as causas
-// de falha derrubam o handle inteiro, e os outros cinco campos nao sao vazios.
+// de falha derrubam o handle inteiro, e os campos obrigatorios (SSID, senhas, APN, admin,
+// fuso) nao sao vazios. Os do broker sao vazios com a telemetria desligada, e ai tambem
+// caem neste ponto cego — mesma protecao, pelo mesmo motivo.
 bool wrote(size_t written, const String& value) {
   return written == value.length();
 }
@@ -76,6 +88,12 @@ bool NvsSettingsRepository::load(RouterSettings& out) {
   // bateria lida como 0 V.
   stored.timezone = prefs.getString(kKeyTimezone, "");
   stored.battery_divider_ratio = prefs.getFloat(kKeyBatteryRatio, 0.0f);
+  stored.telemetry_enabled = prefs.getBool(kKeyTelemetryOn, false);
+  stored.mqtt_host = prefs.getString(kKeyMqttHost, "");
+  stored.mqtt_port = prefs.getUInt(kKeyMqttPort, kDefaultMqttPort);
+  stored.mqtt_user = prefs.getString(kKeyMqttUser, "");
+  stored.mqtt_password = prefs.getString(kKeyMqttPass, "");
+  stored.telemetry_interval_s = prefs.getUInt(kKeyTelemetryInterval, kDefaultTelemetryIntervalS);
 
   prefs.end();
 
@@ -110,7 +128,10 @@ bool NvsSettingsRepository::save(const RouterSettings& settings) {
             wrote(prefs.putString(kKeyApnPass, settings.apn_password), settings.apn_password) &&
             wrote(prefs.putString(kKeyAdminUser, settings.admin_user), settings.admin_user) &&
             wrote(prefs.putString(kKeyAdminPass, settings.admin_password), settings.admin_password) &&
-            wrote(prefs.putString(kKeyTimezone, settings.timezone), settings.timezone);
+            wrote(prefs.putString(kKeyTimezone, settings.timezone), settings.timezone) &&
+            wrote(prefs.putString(kKeyMqttHost, settings.mqtt_host), settings.mqtt_host) &&
+            wrote(prefs.putString(kKeyMqttUser, settings.mqtt_user), settings.mqtt_user) &&
+            wrote(prefs.putString(kKeyMqttPass, settings.mqtt_password), settings.mqtt_password);
 
   // putBool devolve 1 quando gravou, para true e para false (putUChar no core Arduino),
   // entao 0 aqui e falha e nao "gravou false".
@@ -119,6 +140,11 @@ bool NvsSettingsRepository::save(const RouterSettings& settings) {
   // putFloat devolve 4 quando grava (sizeof(float)) e 0 quando falha. Sem a ambiguidade do
   // campo vazio das strings: nao existe float de comprimento zero.
   ok = ok && prefs.putFloat(kKeyBatteryRatio, settings.battery_divider_ratio) != 0;
+
+  // Mesmos valores fixos de retorno do putBool e do putInt acima: 1 e 4 quando gravam.
+  ok = ok && prefs.putBool(kKeyTelemetryOn, settings.telemetry_enabled) != 0;
+  ok = ok && prefs.putUInt(kKeyMqttPort, settings.mqtt_port) != 0;
+  ok = ok && prefs.putUInt(kKeyTelemetryInterval, settings.telemetry_interval_s) != 0;
 
   // putInt devolve 4 e putBool devolve 1 quando gravam — valores fixos, entao aqui 0 so
   // pode ser falha e nao ha a ambiguidade do campo vazio.

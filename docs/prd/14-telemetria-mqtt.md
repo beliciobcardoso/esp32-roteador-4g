@@ -602,6 +602,17 @@ Três decisões que só apareceram na implementação:
   corretos com `count` corrompido levariam o drenar a ler fora do array — pior que perder o
   buffer, porque é leitura de memória alheia
 
+**Convenção de nomes e buffers TLS em 25/09/2026** (#56) — chaves do payload renomeadas
+(`router_*`, unidades base), convenção fixada neste PRD (critério 16) e
+`MBEDTLS_SSL_IN/OUT_CONTENT_LEN` em 8192/2048.
+
+**Configuração em 26/09/2026** — `RouterSettings` ganhou `telemetry_enabled`, `mqtt_host`,
+`mqtt_port`, `mqtt_user`, `mqtt_password` e `telemetry_interval_s`; NVS lida com default
+(sem subir o schema), página com a seção "Telemetria (MQTT)", desligada de fábrica, senha só
+de escrita. Validação no domínio com 21 testes nativos: host só nome ou IPv4 (vira parte da
+URI), porta 1–65535, credencial até 64 e senha mínima de 8 com a telemetria ligada, intervalo
+de 30 a 3600 s. Nada ainda consome esses campos — é o `infra/mqtt_client`, próximo PR.
+
 ## Validação em hardware
 
 Pendente — nada desta fase rodou em placa.

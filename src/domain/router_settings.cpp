@@ -23,7 +23,65 @@ const size_t kMaxWifiPasswordLength = 63;
 // e a resolucao vira ruido), e o que ele barra e dedo trocado — 21.9 no lugar de 2.19.
 const float kMinBatteryDividerRatio = 1.4f;
 const float kMaxBatteryDividerRatio = 10.0f;
+
+// Maximo de um nome DNS completo (RFC 1035). Um IPv4 cabe folgado.
+const size_t kMaxMqttHostLength = 253;
+const uint32_t kMaxTcpPort = 65535;
+// Teto das credenciais do broker. Nao vem de norma: limita o que vai para a NVS e para o
+// CONNECT, e 64 sobra para qualquer usuario e senha gerados por gerenciador.
+const size_t kMaxMqttCredentialLength = 64;
+// Faixa do intervalo. Piso de 30 s: o dobro do dado da cadencia padrao, e abaixo disso o
+// custo passa de ~50 MB/mes por unidade (PRD 14, "Custo de dado"). Teto de 1 h: acima disso
+// o painel deixa de responder "como esta agora", que e o primeiro objetivo da fase.
+const uint32_t kMinTelemetryIntervalS = 30;
+const uint32_t kMaxTelemetryIntervalS = 3600;
+
+// So letra, digito, ponto e hifen — o alfabeto de um nome DNS e de um IPv4. Recusa esquema,
+// porta, espaco e barra, que produziriam uma URI malformada ou escrita pelo formulario.
+bool isHostnameChar(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+         c == '.' || c == '-';
 }
+
+bool isWellFormedHost(const String& host) {
+  if (host.length() > kMaxMqttHostLength) return false;
+  for (size_t i = 0; i < host.length(); ++i) {
+    if (!isHostnameChar(host[i])) return false;
+  }
+  return true;
+}
+
+// As regras da telemetria. O formato e checado sempre, a presenca so com a chave ligada:
+// desligada, broker em branco e o estado normal de uma unidade nova, mas lixo gravado
+// apareceria como erro so no dia em que alguem ligasse a chave.
+SettingsValidationError validateTelemetry(const RouterSettings& settings) {
+  if (!isWellFormedHost(settings.mqtt_host)) return SettingsValidationError::MqttHostInvalid;
+  if (settings.mqtt_port == 0 || settings.mqtt_port > kMaxTcpPort) {
+    return SettingsValidationError::MqttPortOutOfRange;
+  }
+  if (settings.mqtt_user.length() > kMaxMqttCredentialLength) {
+    return SettingsValidationError::MqttUserTooLong;
+  }
+  if (settings.mqtt_password.length() > kMaxMqttCredentialLength) {
+    return SettingsValidationError::MqttPasswordTooLong;
+  }
+  if (settings.telemetry_interval_s < kMinTelemetryIntervalS ||
+      settings.telemetry_interval_s > kMaxTelemetryIntervalS) {
+    return SettingsValidationError::TelemetryIntervalOutOfRange;
+  }
+
+  if (!settings.telemetry_enabled) return SettingsValidationError::None;
+  if (settings.mqtt_host.length() == 0) return SettingsValidationError::EmptyMqttHost;
+  if (settings.mqtt_user.length() == 0) return SettingsValidationError::EmptyMqttUser;
+  if (settings.mqtt_password.length() < kMinPasswordLength) {
+    return SettingsValidationError::MqttPasswordTooShort;
+  }
+  return SettingsValidationError::None;
+}
+}  // namespace
+
+const uint32_t kDefaultMqttPort = 8883;
+const uint32_t kDefaultTelemetryIntervalS = 60;
 
 SettingsValidationError validate(const RouterSettings& settings) {
   if (settings.wifi_ssid.length() == 0) return SettingsValidationError::EmptySsid;
@@ -38,7 +96,7 @@ SettingsValidationError validate(const RouterSettings& settings) {
       settings.battery_divider_ratio > kMaxBatteryDividerRatio) {
     return SettingsValidationError::BatteryDividerOutOfRange;
   }
-  return SettingsValidationError::None;
+  return validateTelemetry(settings);
 }
 
 const char* to_string(SettingsValidationError error) {
@@ -54,6 +112,14 @@ const char* to_string(SettingsValidationError error) {
     case SettingsValidationError::AdminPasswordMustChange: return "troque a senha de admin sorteada no primeiro boot antes de salvar qualquer configuração";
     case SettingsValidationError::UnknownTimezone: return "fuso horário precisa ser um dos da lista";
     case SettingsValidationError::BatteryDividerOutOfRange: return "divisor da bateria precisa ficar entre 1.4 e 10.0";
+    case SettingsValidationError::EmptyMqttHost: return "com a telemetria ligada, o host do broker não pode ser vazio";
+    case SettingsValidationError::MqttHostInvalid: return "host do broker precisa ser um nome ou IP, sem mqtts:// e sem porta";
+    case SettingsValidationError::MqttPortOutOfRange: return "porta do broker precisa ficar entre 1 e 65535";
+    case SettingsValidationError::EmptyMqttUser: return "com a telemetria ligada, o usuário do broker não pode ser vazio";
+    case SettingsValidationError::MqttUserTooLong: return "usuário do broker não pode passar de 64 caracteres";
+    case SettingsValidationError::MqttPasswordTooShort: return "com a telemetria ligada, a senha do broker precisa ter no mínimo 8 caracteres";
+    case SettingsValidationError::MqttPasswordTooLong: return "senha do broker não pode passar de 64 caracteres";
+    case SettingsValidationError::TelemetryIntervalOutOfRange: return "intervalo da telemetria precisa ficar entre 30 e 3600 segundos";
   }
   return "erro desconhecido";
 }

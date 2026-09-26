@@ -17,8 +17,8 @@ não apaga a configuração**. Só um `erase_flash` ou um `nvs_flash_erase` expl
 
 ## Chaves
 
-Quase todas as chaves de conteúdo são string; `bat_ratio` é float, `schema` é int e
-`configured`/`admin_pend` são bool. O limite de nome de chave da NVS é 15 caracteres — daí
+Quase todas as chaves de conteúdo são string; `bat_ratio` é float, `schema` é int,
+`mqtt_port`/`tlm_interval` são uint32 e `configured`/`admin_pend`/`tlm_on` são bool. O limite de nome de chave da NVS é 15 caracteres — daí
 os nomes abreviados (`wifi_pass` e não `wifi_password`).
 
 | Chave NVS | Campo em `RouterSettings` | Tipo | Default de fábrica | Validação |
@@ -33,6 +33,12 @@ os nomes abreviados (`wifi_pass` e não `wifi_password`).
 | `admin_pend` | `admin_password_pending` | bool | `true` no provisionamento | interno, ver abaixo |
 | `tz` | `timezone` | String | `<-03>3` (Brasília) | precisa ser uma das opções de `domain/timezone.h` |
 | `bat_ratio` | `battery_divider_ratio` | float | `BATTERY_VOLTAGE_DIVIDER_RATIO` (2.19) | entre 1.4 e 10.0 |
+| `tlm_on` | `telemetry_enabled` | bool | `false` | — |
+| `mqtt_host` | `mqtt_host` | String | vazio | nome DNS ou IPv4 (letra, dígito, `.`, `-`), até 253; obrigatório com `tlm_on` |
+| `mqtt_port` | `mqtt_port` | uint32 | `8883` (`kDefaultMqttPort`) | entre 1 e 65535 |
+| `mqtt_user` | `mqtt_user` | String | vazio | até 64; obrigatório com `tlm_on` |
+| `mqtt_pass` | `mqtt_password` | String | vazio | até 64; mínimo 8 com `tlm_on`. **Nunca sai da placa** (PRD 14, critério 7) |
+| `tlm_interval` | `telemetry_interval_s` | uint32 | `60` (`kDefaultTelemetryIntervalS`) | entre 30 e 3600 |
 | `schema` | — | int | `3` | interno, ver abaixo |
 | `configured` | — | bool | `true` após o primeiro save | interno, ver abaixo |
 
@@ -57,6 +63,7 @@ Regras de validação em [src/domain/router_settings.cpp](../src/domain/router_s
 | `timezone` | [src/infra/clock.cpp](../src/infra/clock.cpp) | `setenv("TZ", ...)` + `tzset()`; trocar pela página vale a quente, sem reboot |
 | `battery_divider_ratio` | [src/infra/battery_adc.cpp](../src/infra/battery_adc.cpp) | multiplica a tensão do pino; trocar pela página vale na leitura seguinte |
 | `admin_password_pending` | [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) | enquanto `true`, o `GET /` mostra o aviso e o `POST /` recusa gravação que mantenha a senha sorteada |
+| `telemetry_enabled`, `mqtt_*`, `telemetry_interval_s` | ninguém ainda — o `infra/mqtt_client` entra no PR seguinte da Fase 9 ([PRD 14](prd/14-telemetria-mqtt.md)) | gravados e validados pela página; o `GET /api/config` devolve só `mqtt_password_set`, nunca a senha |
 
 Valores fixos em código, **não** configuráveis pela NVS: IP do AP (192.168.10.1/24),
 canal Wi-Fi (1), limite de clientes, porta HTTP (80), pinagem do modem, baud da UART.
@@ -117,9 +124,14 @@ ser verdade, mas o padrão continua sendo o melhor para campo novo com default s
 chave é lida com default `false`, que é o comportamento certo para registro antigo (unidade
 configurada por uma pessoa não tem senha pendente) e não precisa de degrau nenhum.
 
+As seis chaves da telemetria (`tlm_on`, `mqtt_*`, `tlm_interval`) entraram do mesmo jeito,
+em 26/09/2026, com o schema em `3`. Todas têm default seguro: registro anterior a elas cai em
+telemetria desligada, porta 8883 e 60 s, que o `validate()` aceita — desligada não exige
+broker.
+
 ## Comportamento de escrita parcial
 
-`save()` grava os 9 campos de uma vez, sempre. Não existe update de campo isolado.
+`save()` grava os 16 campos de uma vez, sempre (mais `schema` e `configured`). Não existe update de campo isolado.
 
 O formulário HTTP tem um atalho: **campo de senha em branco mantém a senha atual** (as três
 — Wi-Fi, APN e admin). Serve para trocar só o SSID sem retypar tudo. Isso acontece no
