@@ -236,8 +236,17 @@ Regras:
 - **Unidade base no sufixo:** `_volts`, `_bytes`, `_seconds`, `_celsius`. Carga e fração em
   **razão 0–1** (`_ratio`), não porcentagem
 - **`_total` só em counter.** Hoje é um só: `router_ppp_drops_total`
-- **Booleano sai como `true`/`false`** e o Telegraf grava 1/0. Texto é descartado pelo
-  serializer — nenhum campo de texto no payload de telemetria
+- **Booleano sai como número `0`/`1`, nunca como `true`/`false`.** O parser `json` do
+  Telegraf só aproveita número: string e booleano são **descartados em silêncio**, a menos
+  que virem tag ou `json_string_fields` (`plugins/parsers/json/README.md`). E como string o
+  campo também não serviria, porque o serializer de `remote_write` descarta texto. Corrigido
+  em 26/09/2026 — a versão anterior desta regra dizia que o Telegraf gravava o booleano como
+  1/0, e está errada para o parser `json`.
+  O firmware seguia a regra errada até 26/09/2026: `router_uplink_rebooted` e
+  `router_uplink_reboot_budget_exhausted` saíam como `true`/`false`, e teriam sumido no
+  Telegraf — o segundo é o alerta mais importante da fase. Corrigido no mesmo dia, antes da
+  primeira série, com teste nativo que recusa `true`/`false` no payload
+- **Texto não entra no payload de telemetria**, pelo mesmo motivo: o serializer descarta
 - **`ts` não é métrica:** é o `json_time_key`, em segundos de epoch
 
 Três decisões de identificação que saem das regras:
@@ -448,6 +457,11 @@ Host, porta, usuário, senha, intervalo e liga/desliga entram em `RouterSettings
 Campo novo com default seguro **não exige subir `kCurrentSchema`** — é a regra do AGENTS.md, e
 foi assim com `admin_pend`. Default de fábrica: telemetria **desligada**, para que uma unidade
 gravada sem configuração não fique tentando conectar em host inexistente e gastando dado.
+
+**Porta padrão: 443** (`kDefaultMqttPort`), decidido em 26/09/2026 — não a 8883 registrada do
+MQTT sobre TLS. A conexão continua sendo MQTT sobre TLS, `mqtts://<host>:443`; no servidor, a
+443 é dividida com o HTTPS por SNI, com um subdomínio exclusivo do broker. A porta segue
+editável na página.
 
 ## Custo de dado
 
