@@ -21,6 +21,7 @@ pio run                    # build
 pio run --target upload    # flash (fecha o monitor serial antes)
 pio run -e release         # imagem de campo: recusa árvore suja (débito 25)
 pio device monitor         # monitor serial
+python3 scripts/serial_monitor.py --reset --log serial.log   # bancada: grava e pega o boot
 pio test -e native         # testes das regras puras, no host (sem placa)
 ```
 
