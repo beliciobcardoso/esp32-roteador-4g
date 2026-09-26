@@ -1224,8 +1224,9 @@ celular.
 
 **O watchdog foi validado em placa em 25/09/2026**, numa rodada separada. No caso real o
 keepalive age antes, então o disparo só aparece com travamento artificial: firmware
-descartável `a31eb2c`, na branch local `tmp/prova-loop-watchdog` (commit "wip … do not
-merge", nunca publicado), que 120 s depois do boot prende o `loop()` em `for (;;) delay(2);`.
+descartável `a31eb2c` (commit "wip … do not merge" numa branch `tmp/` local, nunca
+publicado e apagado depois da prova; para refazer, as 13 linhas estão descritas aqui), que
+120 s depois do boot prende o `loop()` em `for (;;) delay(2);`.
 É a mesma espera cedendo a CPU do `_uploadReadByte`, então as idle tasks seguem vigiadas e
 alimentadas, como no defeito. A trava só arma quando o motivo do reset não é `ESP_RST_SW`:
 o boot que vem do próprio watchdog roda normal, e isso prova a recuperação além do
