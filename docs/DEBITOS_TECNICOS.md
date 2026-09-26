@@ -1222,12 +1222,39 @@ A rodada anterior é o controle do experimento: o mesmo aparelho, na mesma açã
 placa com o firmware antigo. O que mudou foi o firmware, e não o comportamento de rede do
 celular.
 
-**O watchdog segue sem validação em placa.** Ele não regrediu nada — 204 batidas acumuladas
-sem disparo espúrio — e o limite tem teste nativo, mas o caminho de disparo nunca foi
-exercitado em hardware, justamente porque o keepalive age antes. Exercitá-lo pede um firmware
-de teste com travamento artificial no `loop()`, gravado e revertido em seguida. Fica como
-rodada separada: a camada que age no caso real está provada, e esta é a que só entra quando
-a outra falha.
+**O watchdog foi validado em placa em 25/09/2026**, numa rodada separada. No caso real o
+keepalive age antes, então o disparo só aparece com travamento artificial: firmware
+descartável `a31eb2c`, na branch local `tmp/prova-loop-watchdog` (commit "wip … do not
+merge", nunca publicado), que 120 s depois do boot prende o `loop()` em `for (;;) delay(2);`.
+É a mesma espera cedendo a CPU do `_uploadReadByte`, então as idle tasks seguem vigiadas e
+alimentadas, como no defeito. A trava só arma quando o motivo do reset não é `ESP_RST_SW`:
+o boot que vem do próprio watchdog roda normal, e isso prova a recuperação além do
+reinício.
+
+```
+Bateria: 4.16V | ~96%                       ← a cada 3 s até aqui
+BENCH: travando o loop() em t=120000 ms
+LoopWatchdog: loop parado ha 30393 ms — reiniciando
+I (151227) wifi:flush txq
+rst:0xc (SW_CPU_RESET),boot:0x12 (SPI_FAST_FLASH_BOOT)
+cpu_start: App version:      a31eb2c
+Uplink: online — clientes do AP saem pelo 4G
+```
+
+- Nenhuma linha de bateria entre `BENCH:` e `LoopWatchdog:`: o `loop()` parou de verdade
+- Disparo 393 ms acima do limite, dentro da verificação de 1 s (`kCheckIntervalMs`)
+- A linha `LoopWatchdog:` saiu inteira antes do reset: o `Serial.flush()` basta para que o
+  reinício por travamento se distinga, em campo, de um OTA ou de um reinício pela página
+- Reset por `SW_CPU_RESET`, ou seja, `esp_restart()` — não panic nem task WDT do core
+- Segundo boot sem `BENCH:`, uplink online, 59 batidas de bateria em ~3 min
+
+A placa voltou ao firmware do `developer` (`c7ec57e`) logo depois, conferida por 170 s de
+serial depois de um reset por energia — justamente o boot em que a trava armaria —, sem
+`BENCH:` nem `LoopWatchdog:`.
+
+Fica sem prova a espera ocupada que não cede a CPU (`for (;;) {}`). Nela o task WDT das idle
+tasks pode disparar antes e confundir a leitura, e não é o defeito deste débito. A
+prioridade 2 da task, acima do `loopTask`, é o que cobriria esse caso.
 
 **Resíduo conhecido:** no abort, nenhuma linha `OTA:` sai. `_parseForm` devolve `false` e o
 `_handleRequest()` nem chega a ser chamado, então `handleUpdateDone()` — que é quem imprime o

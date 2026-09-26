@@ -11,12 +11,12 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 25/09/2026, manhã no trabalho (depois do merge #42).
+Última atualização: 25/09/2026, noite no trabalho (depois do merge #45).
 
 ## Ao abrir numa máquina
 
 1. `git fetch && git switch developer && git pull` — `main` e `developer` ficaram iguais em
-   25/09/2026 (última promoção: #42)
+   25/09/2026 no código (última promoção: #44; o #45 só mexeu neste arquivo)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20)
 3. `pio test -e native` (229 testes) e `pio run`. Se o build falhar dizendo que o
@@ -39,7 +39,7 @@ Fechado em 24/09 (PRs #18 a #36, tudo em `main`):
 - **Débito 23 fechado**: uma linha `OTA:` por upload no serial; arquivo maior que o slot
   recusado antes de gravar
 
-Fechado na virada de 24 para 25/09 (#41, promovido em #42):
+Fechado na virada de 24 para 25/09 (#41 e #43, promovidos em #42 e #44):
 
 - **Débito 27 aberto, corrigido e validado no mesmo ciclo.** Subir firmware pela página e sair
   de alcance antes do fim **parava a placa**, e ela não voltava sozinha — medido em 137 s de
@@ -58,11 +58,20 @@ Fechado na virada de 24 para 25/09 (#41, promovido em #42):
   imagem antiga subiu por engano, ninguém confirmou, e o rollback do bootloader devolveu a
   placa ao slot anterior sozinho, como documentado
 - **O `/continuar` rodou pela primeira vez numa sessão nova** e funcionou fim a fim
+- Este arquivo (#43, promovido em #44) e a placa regravada a partir dele. As branches do
+  ciclo foram apagadas; sobrou só a `tmp/captura-gnss`, que é para durar
 
-A placa fica na bancada do **trabalho** e roda **`ba48fb5-dirty`**. O sufixo `-dirty` é de
-build de árvore suja: pelo débito 25 esse rótulo não serve como prova de versão, então, se for
-preciso conferir o que está gravado, regrave a partir de um commit limpo antes. Em casa, sem
-placa, só vale trabalho que se prove com `pio test -e native` e `pio run`.
+Fechado na noite de 25/09:
+
+- **O `LoopWatchdog` disparou em placa.** Firmware descartável `a31eb2c` travou o `loop()` em
+  `for (;;) delay(2);` aos 120 s; a linha `LoopWatchdog: loop parado ha 30393 ms` saiu,
+  o reset veio como `SW_CPU_RESET` e o boot seguinte rodou normal, uplink online. Detalhes no
+  débito 27. A branch `tmp/prova-loop-watchdog` ficou **só local**, na máquina do trabalho
+
+A placa fica na bancada do **trabalho** e roda **`c7ec57e`** — o `developer`, mesmo código do
+`00d8844` (a diferença é só este arquivo), regravado de árvore limpa em 25/09 depois da prova,
+com uplink online. O `App version` do boot vale como prova de versão. Em casa, sem placa, só vale trabalho que se prove
+com `pio test -e native` e `pio run`.
 
 ## Próximo passo recomendado
 
@@ -73,11 +82,10 @@ a fase destrava a publicação da posição da Fase 11. Dá para escrever e comp
 validar exige a bancada e o broker. Referência colhida em 24/09 para o orçamento de memória:
 heap interno livre em ~206–210 KB com PPP e AP de pé.
 
-**No trabalho (com placa):** o disparo do `LoopWatchdog` continua sem prova em hardware —
-ele nunca chegou a agir, porque o keepalive resolve antes. Exercitá-lo pede um firmware
-descartável com travamento artificial no `loop()`, gravado e revertido em seguida. Se a antena
-de GNSS tiver chegado, ela ganha da validação do watchdog: retomar a Fase 11 pela captura de
-`+CGNSSINFO` destrava uma fase inteira.
+**No trabalho (com placa):** se a antena de GNSS tiver chegado, retomar a Fase 11 pela
+captura de `+CGNSSINFO` — destrava uma fase inteira. Sem antena, a linha `OTA:` que falta no
+abort do upload (ressalva do débito 27): pequena, e só se valida abortando um upload de
+verdade na bancada.
 
 ## Pendências
 
@@ -113,8 +121,7 @@ Domínio pronto e contador acumulado feito. Falta `infra/mqtt_client` e tudo o q
 
 ### Débito 27 — o que ficou aberto depois da correção
 
-- **O `LoopWatchdog` nunca disparou em placa.** Não regrediu nada (204 batidas acumuladas sem
-  disparo espúrio) e o limite tem teste nativo, mas o gatilho segue sem prova em hardware
+- ~~O `LoopWatchdog` nunca disparou em placa~~ — provado em 25/09/2026 (ver débito 27)
 - **No abort não sai linha `OTA:`.** `_parseForm` devolve `false` e o `_handleRequest()` nem é
   chamado, então `handleUpdateDone()` não roda. É um furo no contrato do débito 23 — hoje
   cosmético, porque o caminho se recupera, mas real
@@ -128,7 +135,7 @@ Domínio pronto e contador acumulado feito. Falta `infra/mqtt_client` e tudo o q
 | 11 — NAPT entre sessões PPP | medir antes de mexer |
 | 3, 7, 8 | aceitos, esperando gatilho |
 | 24 | é a Fase 10 inteira (PRD 13) |
-| 27 | corrigido e validado; restam as duas ressalvas acima |
+| 27 | corrigido e validado, watchdog incluso; resta a linha `OTA:` do abort |
 
 Resíduo anotado no débito 13: `uart_terminal: Ring Buffer Full` e `HW FIFO Overflow`, uma vez
 cada, sob carga pesada (UART do modem a 115200). Não mexer sem recorrência.
