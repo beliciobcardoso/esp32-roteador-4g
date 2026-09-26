@@ -66,7 +66,8 @@ Fechado na noite de 25/09:
 - **O `LoopWatchdog` disparou em placa.** Firmware descartável `a31eb2c` travou o `loop()` em
   `for (;;) delay(2);` aos 120 s; a linha `LoopWatchdog: loop parado ha 30393 ms` saiu,
   o reset veio como `SW_CPU_RESET` e o boot seguinte rodou normal, uplink online. Detalhes no
-  débito 27. A branch `tmp/prova-loop-watchdog` ficou **só local**, na máquina do trabalho
+  débito 27. A branch `tmp/` do teste foi apagada depois da prova, junto com as do ciclo;
+  segue valendo que a única `tmp/` publicada é a `tmp/captura-gnss`
 
 A placa fica na bancada do **trabalho** e roda **`c7ec57e`** — o `developer`, mesmo código do
 `00d8844` (a diferença é só este arquivo), regravado de árvore limpa em 25/09 depois da prova,
