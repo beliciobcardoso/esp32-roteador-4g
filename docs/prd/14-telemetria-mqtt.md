@@ -673,13 +673,46 @@ intervalo de 30 s:
 | Critério | Resultado |
 |---|---|
 | 1 | conectado 4 s depois de salvar a página; bateria e uplink no Prometheus |
-| 2 | broker parado ~10 min: as 20 amostras do intervalo chegaram na volta, a cada 30 s e com a hora da coleta. A queda do 4G em si não foi testada |
+| 2 | broker parado ~10 min: as 20 amostras do intervalo chegaram na volta, a cada 30 s e com a hora da coleta. Queda real do 4G em 26/09 (abaixo, rodada do critério 3): 12 amostras drenadas na volta — **a hora delas no Prometheus ainda não foi conferida** na escala certa |
+| 3 | **reset por software (OTA) com amostras no anel, 26/09/2026:** `rst:0xc (SW_CPU_RESET)` e `Telemetria: anel com 3 amostra(s) do boot anterior`, nenhuma descartada; publicadas depois, junto com as do boot novo (rodada abaixo) |
 | 5 | esperas entre tentativas de 21 → 36 → 86 → 160 → 266 s (5 s × 2ⁿ, ±20 %, teto de 300 s); 20 amostras drenadas em 23 s na volta |
 | 6 | placa parada com o EN em nível baixo (sem fechar socket): `offline` retido em **75 s** |
 | 7 | serial mostra host, porta e código; nunca a senha |
 | 9 | heap interno mínimo desde o boot com TLS ativo: **147 816 B** no pior caso, contra o piso de 32 KB. A PSRAM não é necessária |
 | — | desligar e ligar a telemetria pela página: `router_online` 1 → 0 → 1, página respondendo, sem reinício |
 
-Pendentes: o **3** — o reset pela USB derruba o EN, que é reset de chip e apaga a RTC RAM como
-uma queda de energia; falta provar com reset por software (OTA ou reboot do `LinkSupervisor`)
-— e o **8**, consumo de dado em 24 h.
+**26/09/2026, rodada do critério 3** — mesma unidade, mesmo broker, firmware `ae369cc`
+regravado sobre ele mesmo por OTA:
+
+| Hora | Serial |
+|---|---|
+| 20:24:05 | `MQTT: conectado … \| anel 4 amostra(s)`; drenado em 6 s |
+| 20:27 → 20:31 | antena do 4G retirada: três quedas do MQTT (`Writing didn't complete … errno=119`), **com o PPP de pé** |
+| 20:31:22 | broker inalcançável (`tls 0x8006`), backoff 19 → 39 s, amostras acumulando |
+| 20:32:25 | `OTA: gravado \| 1202912 B \| reiniciando` |
+| boot | `rst:0xc (SW_CPU_RESET)`, `Telemetria: anel com 3 amostra(s) do boot anterior` |
+| boot | uplink de pé com RSSI 12, MQTT falhando (`tls 0x8001`), depois `Uplink: enlace caiu` e 51 s sem registro; antena de volta, RSSI 28 |
+| 20:35:15 | relógio sincronizado neste boot |
+| 20:35:16 | `MQTT: conectado … \| anel 12 amostra(s)` — as 3 do boot anterior e 9 colhidas neste boot **antes do SNTP** |
+| 20:35:30 | `MQTT: anel drenado, 12 amostra(s) acumulada(s) enviada(s)` |
+
+Fecha o **3**: o anel atravessou o reset por software e o conteúdo foi publicado. O firmware
+foi confirmado pela página com o uplink caído, e o rollback não disparou. Heap interno mínimo
+na rodada: 141 960 B.
+
+Aberto por esta rodada:
+
+- **Critérios 2 (queda real do 4G) e 4 (amostra de antes do SNTP com a hora certa):** o serial
+  mostra as 12 amostras entregues, mas não a hora com que foram gravadas. Falta conferir no
+  Grafana `router_battery_volts{unit_id="bancada1"}` entre 20:31 e 20:36 em escala de
+  minutos: um ponto a cada ~30 s, sem buraco e sem amontoado em 20:35. As capturas de tela
+  desta rodada estavam na escala do dia e não resolvem isso
+- **Tirar a antena não derruba o 4G de forma confiável:** o modem seguiu registrado com RSSI 12
+  e o PPP de pé; só o MQTT falhou. Para simular queda do 4G, outro método
+- **O reset pelo EN não apagou o anel nesta rodada.** Abrir a porta serial (o CH340 pulsa o EN,
+  mesmo com `dtr`/`rts` em `False` no `scripts/serial_monitor.py`) deu `POWERON_RESET`, e o
+  boot seguinte mostrou `anel com 1 amostra(s) do boot anterior`. Isso contradiz a premissa da
+  rodada anterior, de que reset pela USB apaga a RTC RAM como queda de energia. Uma ocorrência
+  só: não prova que o EN preserva sempre, mas derruba a certeza de que apaga
+
+Pendente: o **8**, consumo de dado em 24 h.
