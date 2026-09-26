@@ -49,26 +49,48 @@ void test_payload_carries_the_timestamp() {
 }
 
 // Tensao sai em volts e a carga sai da regra do dominio, nao de uma conta no consumidor.
-// 3840 mV sao 3,84 V, que e ponto tabelado em battery.cpp: 50%.
+// 3840 mV sao 3,84 V, que e ponto tabelado em battery.cpp: 50%, publicado como razao 0,50
+// porque o Prometheus usa unidade base e razao, nao porcentagem (convencao do PRD 14).
 void test_payload_converts_millivolts_and_reuses_the_battery_curve() {
   const String json = buildTelemetryPayload(baseline());
-  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"battery_volts\":3.84"), json.c_str());
-  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"battery_percent\":50"), json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_battery_volts\":3.84"), json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_battery_charge_ratio\":0.50"), json.c_str());
+}
+
+// Heap e uptime sao guardados no anel em KB e em minutos para caber em 20 B, mas saem em
+// bytes e segundos: e a unidade base que o nome da metrica promete. Converter no consumidor
+// deixaria o nome mentindo para quem le o Prometheus sem ler este arquivo.
+void test_payload_converts_ring_units_to_base_units() {
+  const String json = buildTelemetryPayload(baseline());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_heap_internal_free_bytes\":115712"),
+                           json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uptime_seconds\":2520"), json.c_str());
+}
+
+// Toda chave que nao e o tempo carrega o prefixo da familia. E o que deixa o Telegraf, com
+// `name_override = "prometheus"`, usar a chave como nome da metrica sem configuracao por
+// campo — e o que impede `sensor_*` de colidir com o diagnostico da placa.
+void test_payload_metric_keys_carry_the_router_prefix() {
+  const String json = buildTelemetryPayload(baseline());
+  TEST_ASSERT_FALSE_MESSAGE(contains(json, "\"battery_volts\""), json.c_str());
+  TEST_ASSERT_FALSE_MESSAGE(contains(json, "\"uplink_state\""), json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uplink_state\":"), json.c_str());
 }
 
 // ppp_drops sai como acumulado, que e o que faz rate() sobreviver a mensagem perdida e a
 // unidade que ficou offline. Delta perdido seria erro permanente na soma.
 void test_payload_carries_the_cumulative_drop_counter() {
   const String json = buildTelemetryPayload(baseline());
-  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"ppp_drops_total\":1727"), json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_ppp_drops_total\":1727"), json.c_str());
 }
 
 void test_payload_carries_the_uplink_flags_as_booleans() {
   TelemetrySample sample = baseline();
   sample.flags = kTelemetryFlagRebootedForUplink | kTelemetryFlagRebootBudgetExhausted;
   const String json = buildTelemetryPayload(sample);
-  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"uplink_rebooted\":true"), json.c_str());
-  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"uplink_exhausted\":true"), json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uplink_rebooted\":true"), json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(
+      contains(json, "\"router_uplink_reboot_budget_exhausted\":true"), json.c_str());
 }
 
 void test_payload_is_a_closed_json_object() {
@@ -155,6 +177,8 @@ int main(int, char**) {
   RUN_TEST(test_uplink_states_encode_distinctly);
   RUN_TEST(test_payload_carries_the_timestamp);
   RUN_TEST(test_payload_converts_millivolts_and_reuses_the_battery_curve);
+  RUN_TEST(test_payload_converts_ring_units_to_base_units);
+  RUN_TEST(test_payload_metric_keys_carry_the_router_prefix);
   RUN_TEST(test_payload_carries_the_cumulative_drop_counter);
   RUN_TEST(test_payload_carries_the_uplink_flags_as_booleans);
   RUN_TEST(test_payload_is_a_closed_json_object);
