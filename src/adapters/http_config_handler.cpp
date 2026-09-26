@@ -72,6 +72,21 @@ const char* firmwareImageStateName(FirmwareImageState state) {
   }
   return "unknown";
 }
+
+// Numero inteiro do formulario, estrito. O toInt() le "8883abc" como 8883 e "" como 0 sem
+// avisar, e a porta errada passaria calada. Aqui qualquer coisa que nao seja so digito
+// devolve 0, que o validate() reprova com a mensagem certa. Onze digitos ja nao cabem em
+// uint32_t, e sao recusados antes da conta para ela nao dar a volta e virar um numero
+// valido.
+uint32_t parseUnsignedField(const String& raw) {
+  if (raw.length() == 0 || raw.length() > 10) return 0;
+  uint64_t value = 0;
+  for (size_t i = 0; i < raw.length(); ++i) {
+    if (raw[i] < '0' || raw[i] > '9') return 0;
+    value = value * 10 + static_cast<uint64_t>(raw[i] - '0');
+  }
+  return value > UINT32_MAX ? 0 : static_cast<uint32_t>(value);
+}
 }  // namespace
 
 HttpConfigHandler::HttpConfigHandler(LoadSettingsUseCase& loadUseCase, SaveSettingsUseCase& saveUseCase,
@@ -310,6 +325,14 @@ void HttpConfigHandler::handleGetConfig() {
       .text("admin_user", current.admin_user)
       .text("timezone", current.timezone)
       .number("battery_ratio", current.battery_divider_ratio, 2)
+      .boolean("telemetry_enabled", current.telemetry_enabled)
+      .text("mqtt_host", current.mqtt_host)
+      .number("mqtt_port", current.mqtt_port)
+      .text("mqtt_user", current.mqtt_user)
+      // So se existe, nunca o valor (criterio 7 do PRD 14): e o que a pagina precisa para
+      // dizer "definida" no placeholder, e nada alem disso.
+      .boolean("mqtt_password_set", current.mqtt_password.length() > 0)
+      .number("telemetry_interval_s", current.telemetry_interval_s)
       .raw("timezones", timezoneOptionsJson());
 
   sendJson(200, body.finish());
@@ -359,6 +382,21 @@ void HttpConfigHandler::handlePostConfig() {
   }
   updated.battery_divider_ratio = rawRatio.toFloat();
 
+  // Checkbox desmarcado nao vai no formulario, entao ausencia e "desligada" — que e tambem o
+  // lado seguro para um POST direto que nao conhece o campo. Os outros campos da telemetria
+  // fazem o contrario: ausentes, mantem o valor atual, para um cliente que ainda nao os
+  // conhece nao gravar porta zero e ser recusado por um campo que nem mandou.
+  updated.telemetry_enabled = server_.arg("telemetry_enabled") == "on";
+  updated.mqtt_host = server_.hasArg("mqtt_host") ? server_.arg("mqtt_host") : current.mqtt_host;
+  updated.mqtt_port = server_.hasArg("mqtt_port") ? parseUnsignedField(server_.arg("mqtt_port"))
+                                                  : current.mqtt_port;
+  updated.mqtt_user = server_.hasArg("mqtt_user") ? server_.arg("mqtt_user") : current.mqtt_user;
+  String newMqttPassword = server_.arg("mqtt_password");
+  updated.mqtt_password = newMqttPassword.length() > 0 ? newMqttPassword : current.mqtt_password;
+  updated.telemetry_interval_s = server_.hasArg("telemetry_interval_s")
+                                     ? parseUnsignedField(server_.arg("telemetry_interval_s"))
+                                     : current.telemetry_interval_s;
+
   // A pendencia cai sozinha quando a senha muda, e sobrevive a qualquer outra gravacao.
   // Checar aqui em vez de dentro do validate() porque a regra compara duas configuracoes e
   // o validate() ve uma sozinha.
@@ -382,6 +420,12 @@ void HttpConfigHandler::handlePostConfig() {
                    updated.wifi_password != current.wifi_password;
   bool localChanged = updated.timezone != current.timezone ||
                       updated.battery_divider_ratio != current.battery_divider_ratio;
+  bool telemetryChanged = updated.telemetry_enabled != current.telemetry_enabled ||
+                          updated.mqtt_host != current.mqtt_host ||
+                          updated.mqtt_port != current.mqtt_port ||
+                          updated.mqtt_user != current.mqtt_user ||
+                          updated.mqtt_password != current.mqtt_password ||
+                          updated.telemetry_interval_s != current.telemetry_interval_s;
 
   String message = "Configuração salva.";
   if (uplinkChanged) {
@@ -400,6 +444,12 @@ void HttpConfigHandler::handlePostConfig() {
     // Fuso e divisor valem na proxima leitura, sem reconectar nem reiniciar nada. Dizer
     // isso evita que a pessoa fique esperando um efeito que ja aconteceu.
     message += " Fuso e calibração da bateria já valem.";
+  }
+
+  if (telemetryChanged) {
+    // Honesto enquanto o cliente MQTT nao existe: a configuracao fica gravada e nada mais
+    // acontece. Sem esta frase, quem liga a telemetria espera ver dado chegando no broker.
+    message += " Telemetria gravada; o envio ao broker ainda não existe neste firmware.";
   }
 
   // Os flags acompanham a frase em vez de a pagina reler a frase: quem muda SSID precisa de
