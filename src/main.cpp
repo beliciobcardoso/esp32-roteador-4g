@@ -273,7 +273,15 @@ void setup() {
 // ~3s: o handleClient() so rodava uma vez a cada 3s (a pagina de config demorava a
 // responder) e a supervisao do modem so reagiria a uma queda com ate 3s de atraso.
 constexpr unsigned long kLedBlinkIntervalMs = 500;
-constexpr unsigned long kBatteryReportIntervalMs = 3000;
+constexpr unsigned long kBatteryReadIntervalMs = 3000;
+
+// A linha `Bateria:` sai com cadencia propria, mais lenta que a leitura. A 3 s ela era a
+// maior parte do serial em repouso. A leitura segue a 3 s porque e ela que alimenta a
+// pagina e o /api/status; so a impressao espaca. 30 s e nao mais porque a linha tambem e o
+// sinal de vida da bancada, e a janela silenciosa do PPP so imprime a cada 2 min. Travamento
+// do loop() nao depende mais deste buraco para ser visto: passa de 30 s e o LoopWatchdog
+// imprime a linha dele.
+constexpr unsigned long kBatteryReportIntervalMs = 30000;
 
 // Folga entre a resposta do POST /update e o reboot. Tempo de a ultima volta do
 // handleClient() empurrar a resposta e fechar a conexao.
@@ -283,7 +291,11 @@ constexpr unsigned long kRestartGraceMs = 1000;
 // subtracao trata o overflow de millis() (~49 dias) corretamente — nao trocar por
 // comparacao direta de instantes, que quebra na virada.
 unsigned long lastLedToggleMs = 0;
+unsigned long lastBatteryReadMs = 0;
 unsigned long lastBatteryReportMs = 0;
+// A primeira leitura imprime sem esperar a cadencia: no boot ela mostra que o ADC e o divisor
+// estao respondendo, em vez de deixar o serial 30 s sem noticia da bateria.
+bool hasReportedBattery = false;
 // uint32_t e nao unsigned long: e instante consumido pelo dominio, e a regra do AGENTS.md
 // existe porque `unsigned long` tem 8 bytes no host e 4 na placa, o que faz o teste de virada
 // passar sem exercitar a virada.
@@ -300,17 +312,23 @@ void blinkLed(unsigned long now) {
 }
 
 void reportBattery(unsigned long now) {
-  if (now - lastBatteryReportMs < kBatteryReportIntervalMs) {
+  if (now - lastBatteryReadMs < kBatteryReadIntervalMs) {
     return;
   }
-  lastBatteryReportMs = now;
+  lastBatteryReadMs = now;
 
   // Ainda bloqueia ~100ms dentro do readVoltage(). Mantido: a media e o que tira o ruido
   // do ADC, e 100ms a cada 3s nao atrapalha nem o HTTP nem a supervisao do modem.
   float batteryVoltage = batteryAdc.readVoltage();
   lastBatteryVoltage = batteryVoltage;
-  int percent = voltageToPercent(batteryVoltage);
 
+  if (hasReportedBattery && now - lastBatteryReportMs < kBatteryReportIntervalMs) {
+    return;
+  }
+  hasReportedBattery = true;
+  lastBatteryReportMs = now;
+
+  int percent = voltageToPercent(batteryVoltage);
   Serial.print("Bateria: ");
   Serial.print(batteryVoltage, 2);
   Serial.print("V | ~");
