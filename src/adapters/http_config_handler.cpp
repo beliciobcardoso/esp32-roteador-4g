@@ -447,9 +447,11 @@ void HttpConfigHandler::handlePostConfig() {
   }
 
   if (telemetryChanged) {
-    // Honesto enquanto o cliente MQTT nao existe: a configuracao fica gravada e nada mais
-    // acontece. Sem esta frase, quem liga a telemetria espera ver dado chegando no broker.
-    message += " Telemetria gravada; o envio ao broker ainda não existe neste firmware.";
+    // Vale a quente: o cliente MQTT e recriado com a configuracao nova. A conexao em si
+    // depende de ha uplink e do broker aceitar o codigo e a senha, dai o "tentando".
+    message += updated.telemetry_enabled
+                   ? " Telemetria aplicada: conectando ao broker, se houver 4G."
+                   : " Telemetria desligada.";
   }
 
   // Os flags acompanham a frase em vez de a pagina reler a frase: quem muda SSID precisa de
@@ -464,6 +466,10 @@ void HttpConfigHandler::handlePostConfig() {
 
   if (localChanged && localChanged_ != nullptr) {
     localChanged_(updated);
+  }
+
+  if (telemetryChanged && telemetryChanged_ != nullptr) {
+    telemetryChanged_(updated);
   }
 
   // Depois do send: a reconexao e assincrona, mas manter a resposta na frente evita que

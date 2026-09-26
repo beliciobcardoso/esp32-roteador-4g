@@ -676,9 +676,11 @@
                         <input type="number" name="mqtt_port" id="mqtt_port" min="1" max="65535"
                             step="1" inputmode="numeric">
                     </label>
-                    <label>Usuário do broker
-                        <input type="text" name="mqtt_user" id="mqtt_user" maxlength="64"
-                            autocomplete="off" autocapitalize="none" spellcheck="false">
+                    <label>Código da unidade (usuário do broker)
+                        <input type="text" name="mqtt_user" id="mqtt_user" minlength="3" maxlength="8"
+                            pattern="[a-z0-9]{3,8}" autocomplete="off" autocapitalize="none" spellcheck="false">
+                        <span class="hint">3 a 8 letras minúsculas ou dígitos, igual ao cadastrado no broker. É também o
+                            nome da unidade nos painéis.</span>
                     </label>
                     <label>Senha do broker
                         <input type="password" name="mqtt_password" id="mqtt_password" maxlength="64"

@@ -7,6 +7,12 @@ const uint8_t kTelemetryFlagClockUnsynced = 0x01;
 const uint8_t kTelemetryFlagRebootedForUplink = 0x02;
 const uint8_t kTelemetryFlagRebootBudgetExhausted = 0x04;
 
+const char* const kTopicTelemetry = "tel";
+const char* const kTopicStatus = "status";
+const char* const kTopicInfo = "info";
+const char* const kStatusOnline = "online";
+const char* const kStatusOffline = "offline";
+
 const uint8_t kTelemetryStateFlagsMask =
     kTelemetryFlagRebootedForUplink | kTelemetryFlagRebootBudgetExhausted;
 
@@ -70,4 +76,32 @@ bool shouldPublishTelemetry(uint32_t now, uint32_t lastPublishMs, uint32_t inter
                             const TelemetrySample& previous, const TelemetrySample& current) {
   return telemetryIntervalDue(now, lastPublishMs, intervalMs) ||
          telemetryStateChanged(previous, current);
+}
+
+String unitTopic(const String& unitCode, const char* leaf) {
+  String topic = "roteador/";
+  topic += unitCode;
+  topic += "/";
+  topic += leaf;
+  return topic;
+}
+
+const char* firmwareImageStateCode(FirmwareImageState state) {
+  switch (state) {
+    case FirmwareImageState::Valid:
+      return "valid";
+    case FirmwareImageState::PendingVerify:
+      return "pending_verify";
+    case FirmwareImageState::Unmarked:
+      return "unmarked";
+    case FirmwareImageState::Unknown:
+      return "unknown";
+  }
+  return "unknown";
+}
+
+String buildInfoPayload(const String& firmwareVersion, FirmwareImageState state) {
+  JsonObject body;
+  body.text("fw_version", firmwareVersion).text("image_state", firmwareImageStateCode(state));
+  return body.finish();
 }
