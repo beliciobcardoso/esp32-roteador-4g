@@ -11,84 +11,76 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 25/09/2026, noite no trabalho (depois do merge #45).
+Última atualização: 26/09/2026, manhã em casa, sessão rodando na máquina do trabalho (depois do merge #57).
 
 ## Ao abrir numa máquina
 
-1. `git fetch && git switch developer && git pull` — `main` e `developer` ficaram iguais em
-   25/09/2026 no código (última promoção: #44; o #45 só mexeu neste arquivo)
+1. `git fetch && git switch developer && git pull` — `main` e `developer` iguais no código em
+   26/09/2026 (última promoção: #57)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
-   com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20)
-3. `pio test -e native` (229 testes) e `pio run`. Se o build falhar dizendo que o
-   `sdkconfig.esp-wrover-kit diverge do sdkconfig.defaults`, é o débito 26 fazendo o trabalho
-   dele: `rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run`
+   com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20). O
+   `scripts/serial_monitor.py` lê a mesma chave
+3. `pio test -e native` (231 testes) e `pio run`. **O #56 mudou o `sdkconfig.defaults`**: na
+   primeira compilação depois dele, em qualquer máquina, o build falha pelo débito 26, como
+   deve. Rodar o que a mensagem indica: `rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run`
 4. Relatar o resultado ao usuário e sugerir o próximo trabalho — **sem começar antes de ele
    escolher**
 
-## Estado em 25/09/2026
+## Estado em 26/09/2026
 
-Fechado em 24/09 (PRs #18 a #36, tudo em `main`):
+Até 25/09 de manhã (#18 a #45, detalhes nos débitos 13, 23, 25, 26 e 27): descarte PPP resolvido
+com `CORE_LOCKING`, build que recusa `sdkconfig` divergente e árvore suja, veredito `OTA:` no
+serial, modem identificado como **`A7670E-FASE`** (GNSS interno), e o débito 27 — upload
+interrompido parava a placa — corrigido com keepalive no socket e `LoopWatchdog`.
 
-- Janela silenciosa do descarte PPP: 2 min sem descarte viram uma linha com o zero escrito
-- **Débito 13 fechado**: download completo com `CORE_LOCKING`, zero descartes
-- **Débito 26 fechado**: build falha se o `sdkconfig` gerado diverge do defaults
-- Contador acumulado de descartes PPP em `/api/status` e na página
-- Identificação do modem por `AT+SIMCOMATI`: **`A7670E-FASE`**, com GNSS interno
-- Versão do firmware acompanha o `git describe` em build incremental
-- **Débito 25 fechado**: `pio run -e release` recusa árvore suja
-- **Débito 23 fechado**: uma linha `OTA:` por upload no serial; arquivo maior que o slot
-  recusado antes de gravar
+Fechado na noite de 25/09 (#46 a #57, tudo promovido):
 
-Fechado na virada de 24 para 25/09 (#41 e #43, promovidos em #42 e #44):
+- **Débito 27 fechado por inteiro.** O `LoopWatchdog` disparou em placa (#46, #48): trava
+  artificial aos 120 s, `LoopWatchdog: loop parado ha 30393 ms`, `SW_CPU_RESET` e boot normal.
+  E o abort de upload passou a deixar linha `OTA:` (#52), validado por modo avião e por aba
+  fechada; o estado do upload é limpo no abort
+- **Linha `Bateria:` a cada 30 s** (#50); a leitura segue a cada 3 s, então página e
+  `/api/status` continuam atuais. A bancada perdeu o sinal de vida de 3 s — travamento acima
+  de 30 s aparece pelo `LoopWatchdog`
+- **Hora `HH:MM:SS` nas linhas do projeto** (#54), `--:--:--` antes do SNTP, e
+  **`scripts/serial_monitor.py`** com `--log` e `--reset`. Ver "Bancada"
+- **Fase 9, PR 1 de 4** (#56): convenção de nomes das métricas fixada no PRD 14 (critério 16),
+  chaves do payload renomeadas (`router_*`, unidades base) e buffers TLS em 8 KB/2 KB
 
-- **Débito 27 aberto, corrigido e validado no mesmo ciclo.** Subir firmware pela página e sair
-  de alcance antes do fim **parava a placa**, e ela não voltava sozinha — medido em 137 s de
-  serial mudo, que não terminaram nem quando o celular voltou. A causa é o
-  `WebServer::_uploadReadByte` do core, que espera em `while(!client.available() &&
-  client.connected()) delay(2);`: desligar o Wi-Fi não manda FIN, e sem keepalive
-  `connected()` nunca vira falso. Corrigido em duas camadas — keepalive no socket do upload
-  (~11 s) ataca a causa, `infra/loop_watchdog` + `domain/loop_health` (30 s) é a rede de
-  segurança. Na validação, 348 s com o cliente fora e a placa seguiu viva, 113 batidas de
-  bateria, sem reiniciar. Quem agiu foi o keepalive
-- **O `AGENTS.md` afirmava uma proteção que não existia.** `CONFIG_ESP_TASK_WDT_PANIC=y` não
-  cobre o `loop()`: o core deixa `loopTaskWDTEnabled = false` e o projeto nunca chamou
-  `enableLoopWDT()`. A frase foi corrigida
-- **O critério de bancada aberto da Fase 8 foi respondido** — era exatamente o upload
-  interrompido. E o desfecho "não confirmar" do OTA foi exercitado de verdade no caminho: uma
-  imagem antiga subiu por engano, ninguém confirmou, e o rollback do bootloader devolveu a
-  placa ao slot anterior sozinho, como documentado
-- **O `/continuar` rodou pela primeira vez numa sessão nova** e funcionou fim a fim
-- Este arquivo (#43, promovido em #44) e a placa regravada a partir dele. As branches do
-  ciclo foram apagadas; sobrou só a `tmp/captura-gnss`, que é para durar
-
-Fechado na noite de 25/09:
-
-- **O `LoopWatchdog` disparou em placa.** Firmware descartável `a31eb2c` travou o `loop()` em
-  `for (;;) delay(2);` aos 120 s; a linha `LoopWatchdog: loop parado ha 30393 ms` saiu,
-  o reset veio como `SW_CPU_RESET` e o boot seguinte rodou normal, uplink online. Detalhes no
-  débito 27. A branch `tmp/` do teste foi apagada depois da prova, junto com as do ciclo;
-  segue valendo que a única `tmp/` publicada é a `tmp/captura-gnss`
-
-A placa fica na bancada do **trabalho** e roda **`c7ec57e`** — o `developer`, mesmo código do
-`00d8844` (a diferença é só este arquivo), regravado de árvore limpa em 25/09 depois da prova,
-com uplink online. O `App version` do boot vale como prova de versão. Em casa, sem placa, só vale trabalho que se prove
-com `pio test -e native` e `pio run`.
+A placa fica na bancada do **trabalho** e roda **`e77d718`** — o `developer`, regravado de árvore
+limpa em 25/09 às 23:38, uplink online. O `App version` do boot vale como prova de versão.
+Heap interno livre com PPP e AP de pé: **212432 B** (25/09), sem TLS aberto — os buffers
+menores só aparecem com o cliente MQTT de pé.
 
 ## Próximo passo recomendado
 
-**Em casa (sem placa): Fase 9, `infra/mqtt_client`** ([PRD 14](prd/14-telemetria-mqtt.md)). O
-domínio já está pronto e testado (`domain/telemetry`, `telemetry_buffer`, `mqtt_backoff`), o
-contador acumulado de descartes e a identificação do modem já existem para irem no payload, e
-a fase destrava a publicação da posição da Fase 11. Dá para escrever e compilar sem placa;
-validar exige a bancada e o broker. Referência colhida em 24/09 para o orçamento de memória:
-heap interno livre em ~206–210 KB com PPP e AP de pé.
+**Fase 9, PR 2 — configuração** ([PRD 14](prd/14-telemetria-mqtt.md), "Configuração nova").
+Host, porta, usuário, senha, intervalo e liga/desliga em `RouterSettings`, NVS e página;
+**desligado de fábrica**; campo novo com default seguro, sem subir `kCurrentSchema`. Prova-se
+com `pio test -e native` e `pio run`; ver a página exige a bancada. Não depende do broker.
 
-**No trabalho (com placa):** se a antena de GNSS tiver chegado, retomar a Fase 11 pela
-captura de `+CGNSSINFO` — destrava uma fase inteira. Sem antena, a linha `OTA:` que falta no
-abort do upload (ressalva do débito 27): pequena, e só se valida abortando um upload de
-verdade na bancada.
+Depois: **PR 3**, `infra/mqtt_client` e fiação — anel em `RTC_NOINIT`, amostra no `loop()`, LWT
+retido, `enqueue` (nunca `publish`), conexão comandada pelo uplink com o backoff do domínio,
+`unit_id` do MAC e `roteador/<id>/info` com a versão. **PR 4**, validação contra o broker real.
+
+**No trabalho (com placa), se a antena de GNSS tiver chegado:** Fase 11 pela captura de
+`+CGNSSINFO`. Sem antena, medir o `HW FIFO Overflow` durante OTA (ver pendências).
 
 ## Pendências
+
+### Fase 9 — telemetria MQTT (PRD 14): PR 1 de 4 feito
+
+Decidido em 25/09/2026, e registrado no PRD 14 (seções "Segurança" e "Convenção de nomes"):
+
+- **Não existe broker ainda.** Os PRs 2 e 3 são escritos e compilados sem ele; o PR 4 espera
+- **A credencial do broker é digitada pelo operador**, num campo só de escrita da página. O
+  sorteio na placa, do desenho original, contradizia o critério 7
+- **TLS pelo pacote de CAs públicas** (`esp_crt_bundle`, já ligado no `sdkconfig`), não por CA
+  própria embutida
+- Risco anotado no `sdkconfig.defaults`: cadeia de certificados do broker acima de 8 KB derruba
+  o handshake
+
+A seção "Estado da implementação" do PRD 14 ainda não cita o #56 — atualizar junto com o PR 2.
 
 ### Fase 11 — GNSS (PRD 15): pausada, esperando hardware
 
@@ -97,9 +89,10 @@ fora da janela. O IPEX marcado `GNSS` existe na PCB e estava vazio.
 
 A captura de bancada está na branch **`tmp/captura-gnss`** (commit `1722f0c`, "wip … do not
 merge", sobre `86357f4`). **Nunca mergear.** Para usar: branch `tmp/` nova a partir do
-`developer` atual e cherry-pick do `1722f0c`; o `developer` andou depois, então pode haver
-conflito. Ela segura o PPP por até 15 min no boot e mostra o resultado numa linha temporária
-da página, porque a placa vai para a janela na bateria, longe do USB.
+`developer` atual e cherry-pick do `1722f0c`; o `developer` andou muito depois (#54 trocou
+todos os `Serial.print*` por `logSerial`), então conta com conflito. Ela segura o PPP por até
+15 min no boot e mostra o resultado numa linha temporária da página, porque a placa vai para a
+janela na bateria, longe do USB.
 
 Achados de bancada **ainda não registrados no PRD 15** — registrar junto com o primeiro fix:
 
@@ -116,40 +109,37 @@ Achados de bancada **ainda não registrados no PRD 15** — registrar junto com 
 Próximo passo com a antena: capturar `+CGNSSINFO` real em modo comando, antes do PPP — ela vira
 o caso de teste do parser —, e só depois a migração para CMUX.
 
-### Fase 9 — telemetria MQTT (PRD 14)
+### `HW FIFO Overflow` durante OTA — achado de 25/09, ainda não no débito 13
 
-Domínio pronto e contador acumulado feito. Falta `infra/mqtt_client` e tudo o que toca rede.
-
-### Débito 27 — o que ficou aberto depois da correção
-
-- ~~O `LoopWatchdog` nunca disparou em placa~~ — provado em 25/09/2026 (ver débito 27)
-- **No abort não sai linha `OTA:`.** `_parseForm` devolve `false` e o `_handleRequest()` nem é
-  chamado, então `handleUpdateDone()` não roda. É um furo no contrato do débito 23 — hoje
-  cosmético, porque o caminho se recupera, mas real
+O débito 13 anota `uart_terminal: HW FIFO Overflow` como "uma vez, sob carga pesada, não mexer
+sem recorrência". **Recorreu**: ~200 linhas em 25 s durante um upload de 4 MiB pela página, em
+25/09/2026, parando junto com o upload. Suspeita, não confirmada: as escritas na flash do OTA
+seguram a interrupção da UART do modem. Primeiro passo é medir, sem código: um upload válido
+com o serial gravado, vendo se os avisos acompanham as escritas. Registrar no débito 13 junto
+com a medição.
 
 ### Débitos abertos
 
 | Débito | Situação |
 |---|---|
-| 10 — TLS na página, NVS criptografada | depende de decisão do usuário; NVS exige queimar eFuse, permanente |
+| 10 — TLS na página, NVS criptografada | depende de decisão do usuário; NVS exige queimar eFuse, permanente. Com a Fase 9 a NVS passa a guardar credencial do broker |
 | 5 — clientes navegando juntos | medir com vários aparelhos |
 | 11 — NAPT entre sessões PPP | medir antes de mexer |
 | 3, 7, 8 | aceitos, esperando gatilho |
 | 24 | é a Fase 10 inteira (PRD 13) |
-| 27 | corrigido e validado, watchdog incluso; resta a linha `OTA:` do abort |
-
-Resíduo anotado no débito 13: `uart_terminal: Ring Buffer Full` e `HW FIFO Overflow`, uma vez
-cada, sob carga pesada (UART do modem a 115200). Não mexer sem recorrência.
+| 13 | fechado, mas o resíduo de `HW FIFO Overflow` recorreu (acima) |
 
 ## Bancada — o que funcionou
 
-- Gravar: `pio run -t upload`. Monitor: `pio device monitor`, fechado antes de gravar. Porta
-  presa: `fuser <porta>` dá o PID
+- Gravar: `pio run -t upload`. Monitor: `python3 scripts/serial_monitor.py` ou `pio device
+  monitor`, **fechado antes de gravar**. Porta presa: `fuser <porta>` dá o PID
 - A linha `cpu_start: App version:` do boot prova qual firmware está na placa
 - O usuário valida pelo celular no AP (`http://192.168.10.1`) e manda print ou o JSON do
   `/api/status`. A placa tem bateria e funciona sem USB
 - Testes que o usuário faz pelo celular (OTA, página): gravar o serial em arquivo durante o
-  teste e filtrar depois (`grep -a "OTA:"`)
+  teste e filtrar depois (`grep -a "OTA:"`). **Antes, confirmar no serial o `wifi:station: …
+  join` do celular**: em 25/09 duas rodadas de teste não chegaram à placa porque o celular não
+  estava no AP, e o serial só mostrava bateria
 - Arquivos de teste de OTA: `docs/TESTE_OTA.md`. Recopiar o `firmware.bin` depois de cada build
 - **Gravar o serial em arquivo: `python3 scripts/serial_monitor.py --log <arquivo>`**, e
   `--reset` para reiniciar a placa com a captura já aberta — a única forma de o log pegar o
