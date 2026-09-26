@@ -11,7 +11,7 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 26/09/2026, manhã em casa, sessão rodando na máquina do trabalho (depois do merge #57).
+Última atualização: 26/09/2026, noite, bancada em casa (branch `feat/fase9-mqtt-client`).
 
 ## Ao abrir numa máquina
 
@@ -47,32 +47,41 @@ Fechado na noite de 25/09 (#46 a #57, tudo promovido):
 - **Fase 9, PR 1 de 4** (#56): convenção de nomes das métricas fixada no PRD 14 (critério 16),
   chaves do payload renomeadas (`router_*`, unidades base) e buffers TLS em 8 KB/2 KB
 
-A placa fica na bancada do **trabalho** e roda **`e77d718`** — o `developer`, regravado de árvore
-limpa em 25/09 às 23:38, uplink online. O `App version` do boot vale como prova de versão.
-Heap interno livre com PPP e AP de pé: **212432 B** (25/09), sem TLS aberto — os buffers
-menores só aparecem com o cliente MQTT de pé.
+- **Fase 9, PR 3 de 4** (branch `feat/fase9-mqtt-client`): `infra/mqtt_client` e
+  `infra/telemetry_publisher`, validados em placa contra o broker de produção — ver
+  "Validação em hardware" no PRD 14. `unit_id` passou a ser o código da unidade, dado pelo
+  operador, e não mais o MAC
+
+A placa da bancada roda o **firmware de desenvolvimento desta branch** (`bb9c94d-dirty`,
+gravado por USB em 26/09 à noite), com a telemetria ligada como `bancada1`, a cada 30 s.
+Regravar do `developer` depois do merge. Heap interno com PPP, AP e TLS de pé: livre
+~168 KB, mínimo desde o boot ~148 KB.
 
 ## Próximo passo recomendado
 
-**Fase 9, PR 2 — configuração** ([PRD 14](prd/14-telemetria-mqtt.md), "Configuração nova").
-Host, porta, usuário, senha, intervalo e liga/desliga em `RouterSettings`, NVS e página;
-**desligado de fábrica**; campo novo com default seguro, sem subir `kCurrentSchema`. Prova-se
-com `pio test -e native` e `pio run`; ver a página exige a bancada. Não depende do broker.
+**Fechar a Fase 9** ([PRD 14](prd/14-telemetria-mqtt.md), critérios pendentes):
 
-Depois: **PR 3**, `infra/mqtt_client` e fiação — anel em `RTC_NOINIT`, amostra no `loop()`, LWT
-retido, `enqueue` (nunca `publish`), conexão comandada pelo uplink com o backoff do domínio,
-`unit_id` do MAC e `roteador/<id>/info` com a versão. **PR 4**, validação contra o broker real.
+- **Critério 3** — reset por software com amostras no anel (um OTA pela página serve) e
+  conferir no boot `Telemetria: anel com N amostra(s) do boot anterior`
+- **Critério 8** — placa ligada 24 h com a telemetria a 60 s, e o consumo medido
+- **Critério 2 com queda real do 4G** — tirar a antena por uns minutos; na bancada o que caiu
+  foi o broker
+
+Servidor, painéis e alertas: [telemetria-mqtt](https://github.com/beliciobcardoso/telemetria-mqtt).
+Cadastro de unidade pelo `registrar-unidade` no container do broker (Terminal do Coolify).
+A `bancada1` já está cadastrada; a senha está na NVS da placa da bancada.
 
 **No trabalho (com placa), se a antena de GNSS tiver chegado:** Fase 11 pela captura de
 `+CGNSSINFO`. Sem antena, medir o `HW FIFO Overflow` durante OTA (ver pendências).
 
 ## Pendências
 
-### Fase 9 — telemetria MQTT (PRD 14): PR 1 de 4 feito
+### Fase 9 — telemetria MQTT (PRD 14): PR 3 de 4 feito
 
 Decidido em 25/09/2026, e registrado no PRD 14 (seções "Segurança" e "Convenção de nomes"):
 
-- **Não existe broker ainda.** Os PRs 2 e 3 são escritos e compilados sem ele; o PR 4 espera
+- **O broker existe desde 26/09/2026**, em `mqtt.belloinfo.com.br:443` (repositório
+  `telemetria-mqtt`)
 - **A credencial do broker é digitada pelo operador**, num campo só de escrita da página. O
   sorteio na placa, do desenho original, contradizia o critério 7
 - **TLS pelo pacote de CAs públicas** (`esp_crt_bundle`, já ligado no `sdkconfig`), não por CA
@@ -80,7 +89,6 @@ Decidido em 25/09/2026, e registrado no PRD 14 (seções "Segurança" e "Conven�
 - Risco anotado no `sdkconfig.defaults`: cadeia de certificados do broker acima de 8 KB derruba
   o handshake
 
-A seção "Estado da implementação" do PRD 14 ainda não cita o #56 — atualizar junto com o PR 2.
 
 ### Fase 11 — GNSS (PRD 15): pausada, esperando hardware
 
