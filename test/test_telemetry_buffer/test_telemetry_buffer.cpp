@@ -211,6 +211,95 @@ void test_correction_never_underflows() {
   TEST_ASSERT_FALSE(sampleIsPublishable(sample));
 }
 
+// --- Drenagem (PRD 14, "Buffer que mente") ---------------------------------------------
+
+namespace {
+
+TelemetrySample unsyncedAt(uint32_t monotonicS) {
+  TelemetrySample sample = sampleWithTs(monotonicS);
+  sample.flags |= kTelemetryFlagClockUnsynced;
+  return sample;
+}
+
+}  // namespace
+
+void test_a_synced_sample_is_published_as_is() {
+  TelemetrySample sample = sampleWithTs(1758585600);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(DrainAction::Publish),
+                        static_cast<int>(decideDrain(sample, false, 100, 0)));
+  TEST_ASSERT_EQUAL_UINT32(1758585600, sample.ts);
+}
+
+// Sem relogio ainda, a amostra sem hora espera: ela e corrigivel assim que o SNTP chegar.
+void test_an_unsynced_sample_waits_for_the_clock() {
+  TelemetrySample sample = unsyncedAt(40);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(DrainAction::Wait),
+                        static_cast<int>(decideDrain(sample, false, 100, 0)));
+  TEST_ASSERT_FALSE(sampleIsPublishable(sample));
+}
+
+void test_an_unsynced_sample_is_corrected_once_the_clock_arrives() {
+  TelemetrySample sample = unsyncedAt(40);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(DrainAction::Publish),
+                        static_cast<int>(decideDrain(sample, true, 100, 1758585600)));
+  TEST_ASSERT_EQUAL_UINT32(1758585600 - 60, sample.ts);
+  TEST_ASSERT_TRUE(sampleIsPublishable(sample));
+}
+
+// Correcao que nao fecha nao pode travar a fila: a amostra ficaria na cabeca do anel para
+// sempre e nada atras dela sairia. Descartar uma amostra e melhor que parar a unidade.
+void test_an_uncorrectable_sample_is_discarded_instead_of_blocking() {
+  TelemetrySample fromTheFuture = unsyncedAt(500);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(DrainAction::Discard),
+                        static_cast<int>(decideDrain(fromTheFuture, true, 100, 1758585600)));
+}
+
+// Carimbo monotonico so vale no boot em que foi colhido: o contador volta a zero no reset,
+// e a conta de correcao com o monotonico de outro boot da uma hora plausivel e errada.
+void test_boot_discards_unsynced_samples_and_keeps_the_rest_in_order() {
+  ringPush(gRing, sampleWithTs(1000));
+  ringPush(gRing, unsyncedAt(10));
+  ringPush(gRing, sampleWithTs(2000));
+  ringPush(gRing, unsyncedAt(20));
+  ringPush(gRing, sampleWithTs(3000));
+
+  TEST_ASSERT_EQUAL_UINT16(2, ringDiscardUnsynced(gRing));
+  TEST_ASSERT_EQUAL_UINT16(3, ringSize(gRing));
+
+  TelemetrySample out{};
+  for (uint32_t expected : {1000u, 2000u, 3000u}) {
+    TEST_ASSERT_TRUE(ringPopOldest(gRing, out));
+    TEST_ASSERT_EQUAL_UINT32(expected, out.ts);
+  }
+  TEST_ASSERT_TRUE(ringIsEmpty(gRing));
+}
+
+// O descarte tambem tem que funcionar com o anel dado a volta, que e o caso de uma unidade
+// que ficou fora mais de 3 h: a mais velha nao esta no indice zero.
+void test_boot_discard_works_across_the_wrap() {
+  for (uint32_t i = 0; i < kTelemetryRingCapacity + 7; ++i) {
+    ringPush(gRing, (i % 2 == 0) ? sampleWithTs(10000 + i) : unsyncedAt(i));
+  }
+  const uint16_t before = ringSize(gRing);
+  const uint16_t dropped = ringDiscardUnsynced(gRing);
+  TEST_ASSERT_EQUAL_UINT16(before - dropped, ringSize(gRing));
+  TEST_ASSERT_TRUE(ringHeaderIsValid(gRing));
+
+  TelemetrySample out{};
+  uint32_t previous = 0;
+  while (ringPopOldest(gRing, out)) {
+    TEST_ASSERT_TRUE(sampleIsPublishable(out));
+    TEST_ASSERT_TRUE(out.ts > previous);
+    previous = out.ts;
+  }
+}
+
+void test_boot_discard_on_an_empty_ring_is_a_no_op() {
+  TEST_ASSERT_EQUAL_UINT16(0, ringDiscardUnsynced(gRing));
+  TEST_ASSERT_TRUE(ringIsEmpty(gRing));
+  TEST_ASSERT_TRUE(ringHeaderIsValid(gRing));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_reset_leaves_a_valid_and_empty_ring);
@@ -232,5 +321,12 @@ int main(int, char**) {
   RUN_TEST(test_a_synced_sample_is_left_alone);
   RUN_TEST(test_a_sample_from_the_future_is_refused);
   RUN_TEST(test_correction_never_underflows);
+  RUN_TEST(test_a_synced_sample_is_published_as_is);
+  RUN_TEST(test_an_unsynced_sample_waits_for_the_clock);
+  RUN_TEST(test_an_unsynced_sample_is_corrected_once_the_clock_arrives);
+  RUN_TEST(test_an_uncorrectable_sample_is_discarded_instead_of_blocking);
+  RUN_TEST(test_boot_discards_unsynced_samples_and_keeps_the_rest_in_order);
+  RUN_TEST(test_boot_discard_works_across_the_wrap);
+  RUN_TEST(test_boot_discard_on_an_empty_ring_is_a_no_op);
   return UNITY_END();
 }

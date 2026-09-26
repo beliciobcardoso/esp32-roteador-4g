@@ -160,13 +160,19 @@ vez" da Fase 7 é a entrada que decide qual caminho tomar.
 Tópicos:
 
 ```
-roteador/<unit_id>/tel      # telemetria, QoS 0, sem retain
+roteador/<unit_id>/tel      # telemetria, QoS 1, sem retain (ver "Estado da implementação")
 roteador/<unit_id>/status   # online/offline, QoS 1, retido, é o LWT
+roteador/<unit_id>/info     # {"fw_version", "image_state"}, QoS 1, retido
 ```
 
-`unit_id` derivado do MAC. **Isso não contradiz o PRD 08**, que rejeitou derivar a *senha* do
-MAC: o MAC é o BSSID e vai em todo beacon, o que o desqualifica como segredo e o qualifica
-como identificador estável.
+**`unit_id` é o código da unidade, dado pelo operador, e é o usuário MQTT** — decidido em
+26/09/2026, substituindo o "derivado do MAC" desta seção. Formato `[a-z0-9]{3,8}`, tratado
+como texto (`042` e `42` são unidades diferentes). O operador precisa identificar as unidades
+por um código curto, e o MAC tinha ainda uma ambiguidade sem dono: o MAC base e o do SoftAP
+(o BSSID) diferem no último byte, e o firmware nunca mostrou nenhum dos dois. Como o código é
+o usuário, o tópico casa com o `%u` da ACL do broker sem campo novo na página; o `client_id`
+é o mesmo código, então duas placas com o mesmo código se derrubam em vez de misturar dado
+no mesmo tópico.
 
 Payload JSON, montado com `domain/json` — o mesmo que já serve o `/api/status`, e pelo mesmo
 motivo de existir: escape correto sem arrastar um alocador de documento para um objeto plano
@@ -632,6 +638,48 @@ registrada do MQTT sobre TLS; `kDefaultMqttPort` vale 443. O protocolo continua 
 TLS — muda só a porta. Unidade com registro anterior não tem a chave `mqtt_port` gravada e
 passa a ler 443 pelo default.
 
+**Cliente MQTT e fiação em 26/09/2026** — `infra/mqtt_client` (casca fina sobre o
+`esp_mqtt_client` da IDF 4.4) e `infra/telemetry_publisher` (orquestração no `loop()`).
+Decisões que só apareceram aqui:
+
+- **Um caminho só, e `tel` em QoS 1.** Toda amostra, inclusive a ao vivo, entra no anel e sai
+  da mais velha para a mais nova, uma por vez, removida só no PUBACK. Em QoS 0 não existe
+  "aceito" para esperar, e remover antes perderia a amostra numa conexão que caiu no meio. A
+  ordem cronológica também protege o servidor: no mesmo lote do Telegraf, amostra velha
+  depois da nova é descartada em silêncio pelo serializer do `remote_write`
+- **Payload só com o núcleo do anel.** Com um caminho só, campo que não está nos 20 B da
+  amostra não sai. Heap mínimo, clientes do AP e motivo do reset ficam para o `reserved` ou
+  para um bump de layout
+- **Carimbo monotônico só vale no boot em que foi colhido.** `ringDiscardUnsynced()` tira no
+  boot as amostras sem relógio que atravessaram o reset — corrigidas com o monotônico do
+  boot novo, sairiam com hora plausível e errada. E `decideDrain()` descarta, em vez de
+  segurar, a amostra cuja correção não fecha: ela travaria a fila atrás dela
+- **Telemetria inválida não derruba o AP.** O boot passou a usar `validateRouting()`; a
+  telemetria é validada à parte e, reprovada, desliga só a telemetria. Sem isso, uma unidade
+  com usuário MQTT gravado antes da regra do código subiria sem AP e sem página
+- **Trocar a configuração não bloqueia o `loop()`.** O `esp_mqtt_client_stop()` espera o lock
+  do cliente, que a task do esp-mqtt segura por uma tentativa inteira de conexão (até ~20 s
+  em 4G ruim) — chamado do handler HTTP, passaria do limite do `LoopWatchdog` e reiniciaria a
+  placa. A desmontagem vai em etapas: espera a tentativa em curso, publica `offline` retido,
+  pede o DISCONNECT assíncrono e só então para o cliente, com `reconnect_timeout_ms = 500` e
+  `network_timeout_ms = 8000` limitando o pior caso abaixo dos 30 s
+
 ## Validação em hardware
 
-Pendente — nada desta fase rodou em placa.
+**26/09/2026, bancada, contra o broker de produção** (`mqtt.belloinfo.com.br:443`, servidor em
+[telemetria-mqtt](https://github.com/beliciobcardoso/telemetria-mqtt)), unidade `bancada1`,
+intervalo de 30 s:
+
+| Critério | Resultado |
+|---|---|
+| 1 | conectado 4 s depois de salvar a página; bateria e uplink no Prometheus |
+| 2 | broker parado ~10 min: as 20 amostras do intervalo chegaram na volta, a cada 30 s e com a hora da coleta. A queda do 4G em si não foi testada |
+| 5 | esperas entre tentativas de 21 → 36 → 86 → 160 → 266 s (5 s × 2ⁿ, ±20 %, teto de 300 s); 20 amostras drenadas em 23 s na volta |
+| 6 | placa parada com o EN em nível baixo (sem fechar socket): `offline` retido em **75 s** |
+| 7 | serial mostra host, porta e código; nunca a senha |
+| 9 | heap interno mínimo desde o boot com TLS ativo: **147 816 B** no pior caso, contra o piso de 32 KB. A PSRAM não é necessária |
+| — | desligar e ligar a telemetria pela página: `router_online` 1 → 0 → 1, página respondendo, sem reinício |
+
+Pendentes: o **3** — o reset pela USB derruba o EN, que é reset de chip e apaga a RTC RAM como
+uma queda de energia; falta provar com reset por software (OTA ou reboot do `LinkSupervisor`)
+— e o **8**, consumo de dado em 24 h.

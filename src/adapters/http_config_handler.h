@@ -26,6 +26,11 @@ class HttpConfigHandler {
   // porque derrubar o PPP por causa de um fuso seria estrago sem motivo.
   using LocalSettingsChanged = void (*)(const RouterSettings& updated);
 
+  // Avisada quando a gravacao muda algo da telemetria MQTT. Separada da de cima porque o
+  // efeito e outro — recriar o cliente MQTT —, e juntar as duas faria trocar o fuso derrubar
+  // a conexao com o broker.
+  using TelemetrySettingsChanged = void (*)(const RouterSettings& updated);
+
   // Avisada quando o firmware novo ja esta gravado e ativado. Nao reinicia aqui dentro:
   // a resposta ainda esta na fila do socket, e um esp_restart() no meio do handler cortaria
   // ela — o navegador mostraria erro de conexao depois de uma atualizacao bem-sucedida.
@@ -54,6 +59,7 @@ class HttpConfigHandler {
   void onUplinkSettingsChanged(UplinkSettingsChanged callback) { uplinkChanged_ = callback; }
   void onUplinkStatusRequested(UplinkStatusProvider provider) { uplinkStatus_ = provider; }
   void onLocalSettingsChanged(LocalSettingsChanged callback) { localChanged_ = callback; }
+  void onTelemetrySettingsChanged(TelemetrySettingsChanged callback) { telemetryChanged_ = callback; }
 
   // Consultado a cada GET / para a linha do relogio. Devolve string vazia enquanto o NTP
   // nao sincronizou — a pagina diz isso em vez de mostrar um horario inventado.
@@ -141,6 +147,7 @@ class HttpConfigHandler {
   UplinkSettingsChanged uplinkChanged_ = nullptr;
   UplinkStatusProvider uplinkStatus_ = nullptr;
   LocalSettingsChanged localChanged_ = nullptr;
+  TelemetrySettingsChanged telemetryChanged_ = nullptr;
   ClockTextProvider clockText_ = nullptr;
   BatteryVoltageProvider batteryVoltage_ = nullptr;
   PppDropsProvider pppDrops_ = nullptr;

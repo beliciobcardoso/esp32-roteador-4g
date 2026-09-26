@@ -85,3 +85,29 @@ bool correctSampleTimestamp(TelemetrySample& sample, uint32_t nowMonotonicS, uin
   sample.flags &= static_cast<uint8_t>(~kTelemetryFlagClockUnsynced);
   return true;
 }
+
+DrainAction decideDrain(TelemetrySample& sample, bool clockSynced, uint32_t nowMonotonicS,
+                        uint32_t nowEpochS) {
+  if (sampleIsPublishable(sample)) return DrainAction::Publish;
+  if (!clockSynced) return DrainAction::Wait;
+  return correctSampleTimestamp(sample, nowMonotonicS, nowEpochS) ? DrainAction::Publish
+                                                                  : DrainAction::Discard;
+}
+
+uint16_t ringDiscardUnsynced(TelemetryRing& ring) {
+  // Compactacao no lugar, da mais velha para a mais nova: o indice de escrita nunca passa
+  // o de leitura, entao nada e sobrescrito antes de ser lido. Copiar para um anel
+  // temporario custaria 4 KB de pilha, e a task do loop() tem 8 KB.
+  const uint16_t start = oldestIndex(ring);
+  const uint16_t total = ring.count;
+  uint16_t kept = 0;
+  for (uint16_t i = 0; i < total; ++i) {
+    const TelemetrySample& sample = ring.samples[(start + i) % kTelemetryRingCapacity];
+    if (!sampleIsPublishable(sample)) continue;
+    ring.samples[(start + kept) % kTelemetryRingCapacity] = sample;
+    ++kept;
+  }
+  ring.count = kept;
+  ring.head = static_cast<uint16_t>((start + kept) % kTelemetryRingCapacity);
+  return static_cast<uint16_t>(total - kept);
+}
