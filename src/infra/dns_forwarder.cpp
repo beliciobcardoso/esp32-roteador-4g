@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "../domain/dns_message.h"
+#include "timestamped_serial.h"
 
 namespace {
 
@@ -39,7 +40,7 @@ bool DnsForwarder::begin(uint32_t listenIp) {
   clientSocket_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   upstreamSocket_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (clientSocket_ < 0 || upstreamSocket_ < 0) {
-    Serial.printf("DNS: socket() falhou (errno %d)\n", errno);
+    logSerial.printf("DNS: socket() falhou (errno %d)\n", errno);
     closeSockets();
     return false;
   }
@@ -52,14 +53,14 @@ bool DnsForwarder::begin(uint32_t listenIp) {
   listenAddress.sin_addr.s_addr = listenIp_;
   if (bind(clientSocket_, reinterpret_cast<sockaddr*>(&listenAddress), sizeof(listenAddress)) <
       0) {
-    Serial.printf("DNS: bind em %s:53 falhou (errno %d)\n",
+    logSerial.printf("DNS: bind em %s:53 falhou (errno %d)\n",
                   IPAddress(listenIp_).toString().c_str(), errno);
     closeSockets();
     return false;
   }
 
   if (xTaskCreate(&DnsForwarder::taskEntry, "dns_fwd", 3072, this, 5, &task_) != pdPASS) {
-    Serial.println("DNS: nao foi possivel criar a task do forwarder");
+    logSerial.println("DNS: nao foi possivel criar a task do forwarder");
     task_ = nullptr;
     closeSockets();
     return false;

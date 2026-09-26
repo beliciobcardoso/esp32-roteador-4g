@@ -151,11 +151,14 @@ cada, sob carga pesada (UART do modem a 115200). Não mexer sem recorrência.
 - Testes que o usuário faz pelo celular (OTA, página): gravar o serial em arquivo durante o
   teste e filtrar depois (`grep -a "OTA:"`)
 - Arquivos de teste de OTA: `docs/TESTE_OTA.md`. Recopiar o `firmware.bin` depois de cada build
-- **`pio device monitor` não aceita stdin redirecionado** — para gravar o serial em arquivo,
-  falar direto com a porta por pyserial. Abrir a porta com `dtr`/`rts` em `False` não reinicia
-  a placa; para reiniciar de propósito, pulso de `rts = True` por 200 ms com `dtr` em `False`
-  (EN baixo, IO0 alto). Anexar a captura **antes** do pulso é a única forma de o log pegar o
-  boot inteiro
+- **Gravar o serial em arquivo: `python3 scripts/serial_monitor.py --log <arquivo>`**, e
+  `--reset` para reiniciar a placa com a captura já aberta — a única forma de o log pegar o
+  boot inteiro. O `pio device monitor` não aceita stdin redirecionado. O script abre a porta
+  com `dtr`/`rts` em `False`, que não reinicia a placa, e o `--reset` é um pulso de `rts` de
+  200 ms (EN baixo, IO0 alto). A porta vem do `monitor_port` do override ou do `platformio.ini`
+- **As linhas do projeto saem com `HH:MM:SS`** (`infra/timestamped_serial`), no fuso
+  configurado; antes da primeira sincronização do relógio, `--:--:--`. As do ESP-IDF e do core
+  Arduino seguem com o tick delas (`I (56015)`)
 - **A barra de progresso do upload não serve de cronômetro.** Ela é o `upload.onprogress` do
   XHR, que mede o buffer do socket do celular, não a rede: um `firmware.bin` de ~1 MB cabe
   quase inteiro nesse buffer e a barra vai a 100% enquanto a placa ainda está recebendo. Para

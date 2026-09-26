@@ -85,6 +85,11 @@ class HttpConfigHandler {
   void onFirmwareConfirmed(FirmwareConfirmed callback) { firmwareConfirmed_ = callback; }
   void onUploadProgress(UploadProgress callback) { uploadProgress_ = callback; }
 
+  // Para onde vao as linhas do serial (o veredito `OTA:` do debito 23 e as falhas de
+  // gravacao). Injetado pelo mesmo motivo dos providers: o adaptador nao conhece infra, e
+  // quem poe a hora na linha e o `infra/timestamped_serial`. Sem chamada, sai no Serial cru.
+  void logTo(Print& out) { log_ = &out; }
+
  private:
   // GET / — devolve a pagina embutida byte a byte, sem montar String nenhuma.
   void handleGetPage();
@@ -144,6 +149,7 @@ class HttpConfigHandler {
   RestartRequested restartRequested_ = nullptr;
   FirmwareConfirmed firmwareConfirmed_ = nullptr;
   UploadProgress uploadProgress_ = nullptr;
+  Print* log_ = &Serial;
 
   // Estado de um upload de firmware, valido so entre o inicio e o fim de um POST /update.
   // Mora aqui e nao em variaveis locais porque o upload chega picado em varias chamadas do
