@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include "domain/firmware_update.h"
 #include "domain/telemetry.h"
 
 namespace {
@@ -183,6 +184,38 @@ void test_quiet_link_publishes_only_on_the_interval() {
   TEST_ASSERT_TRUE(shouldPublishTelemetry(60000, 0, 60000, previous, current));
 }
 
+// --- Topicos e info (contrato com o servidor, telemetria-mqtt/README.md) --------------
+
+// O topico sai do usuario MQTT, que e o codigo da unidade: e o que a ACL do broker casa com
+// o %u. Montado num lugar so para tel, status e info nao divergirem.
+void test_topics_are_built_from_the_unit_code() {
+  TEST_ASSERT_EQUAL_STRING("roteador/sp042/tel", unitTopic("sp042", kTopicTelemetry).c_str());
+  TEST_ASSERT_EQUAL_STRING("roteador/sp042/status", unitTopic("sp042", kTopicStatus).c_str());
+  TEST_ASSERT_EQUAL_STRING("roteador/sp042/info", unitTopic("sp042", kTopicInfo).c_str());
+}
+
+// Os valores viram label no Prometheus e o alerta de OTA casa com "pending_verify". Texto
+// fixo em snake_case, nunca a frase da pagina: a frase muda de redacao, o label nao pode.
+void test_image_states_have_stable_codes() {
+  TEST_ASSERT_EQUAL_STRING("valid", firmwareImageStateCode(FirmwareImageState::Valid));
+  TEST_ASSERT_EQUAL_STRING("pending_verify", firmwareImageStateCode(FirmwareImageState::PendingVerify));
+  TEST_ASSERT_EQUAL_STRING("unmarked", firmwareImageStateCode(FirmwareImageState::Unmarked));
+  TEST_ASSERT_EQUAL_STRING("unknown", firmwareImageStateCode(FirmwareImageState::Unknown));
+}
+
+void test_info_payload_carries_version_and_image_state() {
+  const String json = buildInfoPayload("1.5.0-3-gabc1234", FirmwareImageState::PendingVerify);
+  TEST_ASSERT_EQUAL_STRING("{\"fw_version\":\"1.5.0-3-gabc1234\",\"image_state\":\"pending_verify\"}",
+                           json.c_str());
+}
+
+// A versao vem do git describe e pode ter qualquer coisa que o operador puser numa tag.
+// Aspas cruas quebrariam o JSON, e o Telegraf descartaria a mensagem inteira em silencio.
+void test_info_payload_escapes_the_version() {
+  const String json = buildInfoPayload("v1\"quoted", FirmwareImageState::Valid);
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"fw_version\":\"v1\\\"quoted\""), json.c_str());
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_sample_layout_is_twenty_bytes);
@@ -204,5 +237,9 @@ int main(int, char**) {
   RUN_TEST(test_the_clock_flag_is_not_a_state_change);
   RUN_TEST(test_state_change_publishes_before_the_window_closes);
   RUN_TEST(test_quiet_link_publishes_only_on_the_interval);
+  RUN_TEST(test_topics_are_built_from_the_unit_code);
+  RUN_TEST(test_image_states_have_stable_codes);
+  RUN_TEST(test_info_payload_carries_version_and_image_state);
+  RUN_TEST(test_info_payload_escapes_the_version);
   return UNITY_END();
 }

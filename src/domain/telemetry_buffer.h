@@ -82,3 +82,27 @@ bool ringPopOldest(TelemetryRing& ring, TelemetrySample& out);
 // futuro em relacao a agora e sinal de anel corrompido ou de relogio que andou para tras,
 // e nos dois casos inventar um instante e pior do que segurar a amostra.
 bool correctSampleTimestamp(TelemetrySample& sample, uint32_t nowMonotonicS, uint32_t nowEpochS);
+
+// O que fazer com a amostra mais velha na hora de drenar.
+enum class DrainAction {
+  Publish,  // pode sair; se estava sem relogio, ja foi corrigida no lugar
+  Wait,     // sem relogio ainda — segura, e corrigivel quando o SNTP chegar
+  Discard,  // a correcao nao fecha: segurar travaria a fila atras dela para sempre
+};
+
+// Decide e, quando e o caso, corrige o carimbo de `sample` no lugar.
+//
+// O Discard existe por causa da cabeca do anel. A drenagem so avanca pela mais velha, entao
+// uma amostra que nunca fica publicavel pararia tudo o que veio depois — uma unidade que
+// deixa de publicar por causa de uma amostra de tres horas atras e pior do que uma unidade
+// que perde uma amostra.
+DrainAction decideDrain(TelemetrySample& sample, bool clockSynced, uint32_t nowMonotonicS,
+                        uint32_t nowEpochS);
+
+// Tira do anel as amostras sem relogio, preservando a ordem das demais. Devolve quantas.
+//
+// Roda no boot, depois do ringValidateOrReset(). O carimbo monotonico conta desde o boot em
+// que a amostra foi colhida, e o contador volta a zero no reset: corrigir com o monotonico
+// deste boot daria uma hora plausivel e errada, sem erro nenhum. Amostra que atravessou um
+// reset sem relogio nao tem como ser datada.
+uint16_t ringDiscardUnsynced(TelemetryRing& ring);

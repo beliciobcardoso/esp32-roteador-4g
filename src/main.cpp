@@ -16,9 +16,11 @@
 #include "infra/link_supervisor.h"
 #include "infra/loop_watchdog.h"
 #include "infra/modem_ppp.h"
+#include "infra/mqtt_client.h"
 #include "infra/nat_bridge.h"
 #include "infra/ota_updater.h"
 #include "infra/ppp_drop_counter.h"
+#include "infra/telemetry_publisher.h"
 #include "infra/timestamped_serial.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
@@ -47,6 +49,8 @@ NatBridge natBridge;
 DnsForwarder dnsForwarder;
 LinkSupervisor linkSupervisor(modemPpp, natBridge);
 LoopWatchdog loopWatchdog;
+MqttClient mqttClient;
+TelemetryPublisher telemetryPublisher(mqttClient);
 
 // Ponte entre o adaptador HTTP e o watchdog: o handler avisa que chegou pedaco de
 // firmware, e so isso; quem sabe o que fazer com a noticia e o watchdog.
@@ -63,6 +67,22 @@ void onUplinkSettingsChanged(const RouterSettings& updated) {
 void onLocalSettingsChanged(const RouterSettings& updated) {
   systemClock.applyTimezone(updated.timezone);
   batteryAdc.applyDividerRatio(updated.battery_divider_ratio);
+}
+
+// Telemetria nova pela pagina. Chamada de dentro do handler HTTP, na task do loop(), que
+// e a mesma em que o publisher roda — sem lock.
+void onTelemetrySettingsChanged(const RouterSettings& updated) {
+  telemetryPublisher.applySettings(updated);
+}
+
+// "Ja sincronizou alguma vez", nao "esta sincronizado agora": e o que decide se a amostra
+// sai com epoch ou com carimbo monotonico (PRD 14, "Timestamp antes do primeiro SNTP").
+bool clockSynchronized() {
+  return systemClock.synchronized();
+}
+
+FirmwareImageState currentImageState() {
+  return otaUpdater.runningImageState();
 }
 
 // Gatilho da sincronizacao: o unico momento em que se sabe que ha rota para fora. Roda na
@@ -154,7 +174,10 @@ bool startRouting(const RouterSettings& settings) {
   // Sem AP nao ha pagina de configuracao para desfazer nada, entao configuracao invalida
   // para aqui em vez de virar softAP em estado indefinido. Acontece com NVS ilegivel: o
   // fallback do LoadSettingsUseCase devolve senhas vazias de proposito.
-  SettingsValidationError invalid = validate(settings);
+  // So o roteamento. Telemetria invalida desliga so a telemetria (o TelemetryPublisher diz
+  // isso no serial): uma unidade com usuario MQTT gravado antes da regra do codigo nao pode
+  // subir sem AP, porque sem AP nao ha pagina para corrigir.
+  SettingsValidationError invalid = validateRouting(settings);
   if (invalid != SettingsValidationError::None) {
     logSerial.printf("Roteamento: configuracao invalida (%s) — AP nao vai subir\n",
                   to_string(invalid));
@@ -238,6 +261,7 @@ void setup() {
   httpConfigHandler.onUplinkSettingsChanged(&onUplinkSettingsChanged);
   httpConfigHandler.onUplinkStatusRequested(&currentUplinkStatus);
   httpConfigHandler.onLocalSettingsChanged(&onLocalSettingsChanged);
+  httpConfigHandler.onTelemetrySettingsChanged(&onTelemetrySettingsChanged);
   httpConfigHandler.onClockTextRequested(&currentClockText);
   httpConfigHandler.onBatteryVoltageRequested(&currentBatteryVoltage);
   httpConfigHandler.onPppDropsRequested(&currentPppDrops);
@@ -266,6 +290,17 @@ void setup() {
     firmwareHealth.http_up = true;
   } else {
     logSerial.println("Roteamento: sem AP — servidor HTTP nao sobe, e o loop segue para decidir o firmware");
+  }
+
+  // Depois do AP pelo mesmo motivo do servidor HTTP: o cliente MQTT abre socket, e sem o
+  // esp_netif_init() do AP o lwIP nao existe. O anel e validado mesmo assim, no begin().
+  telemetryPublisher.onBatteryVoltageRequested(&currentBatteryVoltage);
+  telemetryPublisher.onUplinkStatusRequested(&currentUplinkStatus);
+  telemetryPublisher.onClockSyncedRequested(&clockSynchronized);
+  telemetryPublisher.onImageStateRequested(&currentImageState);
+  telemetryPublisher.logTo(logSerial);
+  if (firmwareHealth.ap_up) {
+    telemetryPublisher.begin(provision.settings);
   }
 
   // Por ultimo, de proposito: o watchdog mede o intervalo entre voltas do loop() e comeca a
@@ -473,5 +508,6 @@ void loop() {
   reportBattery(now);
   reportPppDrops(now);
   settleFirmwareConfirmation(now);
+  telemetryPublisher.loop(static_cast<uint32_t>(now));
   applyPendingRestart(now);
 }

@@ -71,13 +71,27 @@ enum class SettingsValidationError {
   MqttHostInvalid,
   MqttPortOutOfRange,
   EmptyMqttUser,
-  MqttUserTooLong,
+  MqttUserInvalid,
   MqttPasswordTooShort,
   MqttPasswordTooLong,
   TelemetryIntervalOutOfRange,
 };
 
+// Configuracao inteira: roteamento e telemetria. E o que o salvamento exige.
 SettingsValidationError validate(const RouterSettings& settings);
+
+// So o que o roteamento precisa para subir o AP e o 4G. E o que o boot usa: telemetria
+// invalida desliga a telemetria, nunca o AP — sem AP nao ha pagina para corrigir nada. O
+// caso real e a unidade que gravou um usuario MQTT antes da regra do codigo existir.
+SettingsValidationError validateRouting(const RouterSettings& settings);
+
+// So os campos do broker e do intervalo.
+SettingsValidationError validateTelemetry(const RouterSettings& settings);
+
+// Codigo da unidade: 3 a 8 de [a-z0-9]. E o usuario MQTT e entra no topico e no %u da ACL
+// do broker, entao nada que vire curinga (+ #) ou separador (/). Texto, nao numero: 042 e
+// 42 sao unidades diferentes.
+bool isValidUnitCode(const String& code);
 
 // Regra da troca obrigatoria: enquanto a pendencia estiver de pe, gravar sem mexer na senha
 // de admin e recusado. Recusar so o campo em branco nao bastaria — reenviar a mesma senha

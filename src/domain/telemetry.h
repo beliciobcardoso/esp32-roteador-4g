@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "firmware_update.h"
 #include "string_type.h"
 #include "uplink_status.h"
 
@@ -72,3 +73,28 @@ bool telemetryStateChanged(const TelemetrySample& previous, const TelemetrySampl
 // A decisao completa: publica por tempo ou por mudanca.
 bool shouldPublishTelemetry(uint32_t now, uint32_t lastPublishMs, uint32_t intervalMs,
                             const TelemetrySample& previous, const TelemetrySample& current);
+
+// --- Topicos e info (contrato com o servidor em beliciobcardoso/telemetria-mqtt) ---------
+
+// Folhas dos topicos da unidade. O prefixo e o codigo vem de unitTopic().
+extern const char* const kTopicTelemetry;
+extern const char* const kTopicStatus;
+extern const char* const kTopicInfo;
+
+// Payloads de status. "offline" e o Last Will: o broker publica sozinho quando a conexao
+// morre, e o texto tem que ser exatamente o que o Telegraf converte em router_online 0.
+extern const char* const kStatusOnline;
+extern const char* const kStatusOffline;
+
+// `roteador/<unidade>/<folha>`. A unidade e o usuario MQTT, e e isso que faz o topico casar
+// com o `%u` da ACL do broker: publicar com outro codigo e descartado em silencio.
+String unitTopic(const String& unitCode, const char* leaf);
+
+// O estado da imagem como label. Texto fixo e nao a frase da pagina: a frase muda de
+// redacao, e o label muda o nome da serie e quebra o alerta de OTA pendente.
+const char* firmwareImageStateCode(FirmwareImageState state);
+
+// Payload retido de `info`: vira router_build_info{fw_version, image_state} = 1 no servidor.
+// A versao nunca vai no payload de telemetria — viraria label de toda metrica, e um OTA
+// criaria serie nova para cada uma.
+String buildInfoPayload(const String& firmwareVersion, FirmwareImageState state);

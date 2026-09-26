@@ -221,7 +221,7 @@ void test_every_error_code_has_its_own_message() {
       SettingsValidationError::MqttHostInvalid,
       SettingsValidationError::MqttPortOutOfRange,
       SettingsValidationError::EmptyMqttUser,
-      SettingsValidationError::MqttUserTooLong,
+      SettingsValidationError::MqttUserInvalid,
       SettingsValidationError::MqttPasswordTooShort,
       SettingsValidationError::MqttPasswordTooLong,
       SettingsValidationError::TelemetryIntervalOutOfRange,
@@ -245,7 +245,7 @@ RouterSettings telemetryOn() {
   RouterSettings settings = validSettings();
   settings.telemetry_enabled = true;
   settings.mqtt_host = "broker.exemplo.com.br";
-  settings.mqtt_user = "unidade-01";
+  settings.mqtt_user = "bancada1";
   settings.mqtt_password = "senha-do-broker";
   return settings;
 }
@@ -345,10 +345,53 @@ void test_enabled_telemetry_without_user_is_rejected() {
   TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::EmptyMqttUser), code(validate(settings)));
 }
 
-void test_user_above_the_limit_is_rejected() {
+// O usuario e o codigo da unidade e entra no topico (roteador/<usuario>/tel) e na ACL do
+// broker pelo %u. So [a-z0-9], de 3 a 8: nada que vire curinga (+ #) ou separador (/), e
+// o mesmo formato que o registrar-unidade do servidor aceita.
+void test_unit_codes_in_the_format_are_accepted() {
+  const char* codes[] = {"abc", "sp042", "00731", "042", "12345678", "bancada1"};
+  for (const char* unit : codes) {
+    RouterSettings settings = telemetryOn();
+    settings.mqtt_user = unit;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(code(SettingsValidationError::None), code(validate(settings)), unit);
+  }
+}
+
+void test_unit_codes_out_of_the_format_are_rejected() {
+  const char* codes[] = {"ab", "123456789", "SP042", "sp-42", "a+b", "x/y", "rt#1", "roteador-4g",
+                         "sp 42", "bancadá"};
+  for (const char* unit : codes) {
+    RouterSettings settings = telemetryOn();
+    settings.mqtt_user = unit;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(code(SettingsValidationError::MqttUserInvalid),
+                                  code(validate(settings)), unit);
+  }
+}
+
+// Mesmo com a telemetria desligada: o campo preenchido fora do formato e recusado ao salvar,
+// como o host. Vazio continua valendo, que e o estado de fabrica.
+void test_unit_code_out_of_the_format_is_rejected_with_telemetry_off() {
+  RouterSettings settings = validSettings();
+  settings.mqtt_user = "roteador-4g";
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::MqttUserInvalid), code(validate(settings)));
+}
+
+// O boot valida so o roteamento. Uma unidade que gravou um usuario MQTT antes da regra do
+// codigo existir sobe o firmware novo e reprova a telemetria — e isso nao pode derrubar o AP,
+// porque sem AP nao ha pagina para corrigir o usuario.
+void test_invalid_telemetry_does_not_block_routing() {
   RouterSettings settings = telemetryOn();
-  settings.mqtt_user = repeat(65);
-  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::MqttUserTooLong), code(validate(settings)));
+  settings.mqtt_user = "roteador-4g";
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::MqttUserInvalid), code(validate(settings)));
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::MqttUserInvalid),
+                        code(validateTelemetry(settings)));
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::None), code(validateRouting(settings)));
+}
+
+void test_routing_validation_still_rejects_routing_errors() {
+  RouterSettings settings = telemetryOn();
+  settings.apn = "";
+  TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::EmptyApn), code(validateRouting(settings)));
 }
 
 void test_enabled_telemetry_with_short_password_is_rejected() {
@@ -470,7 +513,11 @@ int main(int, char**) {
   RUN_TEST(test_port_above_the_tcp_range_is_rejected);
   RUN_TEST(test_port_at_the_top_of_the_tcp_range_is_accepted);
   RUN_TEST(test_enabled_telemetry_without_user_is_rejected);
-  RUN_TEST(test_user_above_the_limit_is_rejected);
+  RUN_TEST(test_unit_codes_in_the_format_are_accepted);
+  RUN_TEST(test_unit_codes_out_of_the_format_are_rejected);
+  RUN_TEST(test_unit_code_out_of_the_format_is_rejected_with_telemetry_off);
+  RUN_TEST(test_invalid_telemetry_does_not_block_routing);
+  RUN_TEST(test_routing_validation_still_rejects_routing_errors);
   RUN_TEST(test_enabled_telemetry_with_short_password_is_rejected);
   RUN_TEST(test_password_above_the_limit_is_rejected);
   RUN_TEST(test_interval_below_the_floor_is_rejected);

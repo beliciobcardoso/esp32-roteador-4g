@@ -51,6 +51,28 @@ bool isWellFormedHost(const String& host) {
   return true;
 }
 
+// Codigo da unidade (ver isValidUnitCode). Minusculas e digitos, e so: e o alfabeto que o
+// registrar-unidade do servidor aceita, e divergir daqui produziria unidade que a pagina
+// aceita e o broker recusa.
+const size_t kMinUnitCodeLength = 3;
+const size_t kMaxUnitCodeLength = 8;
+
+bool isUnitCodeChar(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+}
+}  // namespace
+
+const uint32_t kDefaultMqttPort = 443;
+const uint32_t kDefaultTelemetryIntervalS = 60;
+
+bool isValidUnitCode(const String& code) {
+  if (code.length() < kMinUnitCodeLength || code.length() > kMaxUnitCodeLength) return false;
+  for (size_t i = 0; i < code.length(); ++i) {
+    if (!isUnitCodeChar(code[i])) return false;
+  }
+  return true;
+}
+
 // As regras da telemetria. O formato e checado sempre, a presenca so com a chave ligada:
 // desligada, broker em branco e o estado normal de uma unidade nova, mas lixo gravado
 // apareceria como erro so no dia em que alguem ligasse a chave.
@@ -59,8 +81,8 @@ SettingsValidationError validateTelemetry(const RouterSettings& settings) {
   if (settings.mqtt_port == 0 || settings.mqtt_port > kMaxTcpPort) {
     return SettingsValidationError::MqttPortOutOfRange;
   }
-  if (settings.mqtt_user.length() > kMaxMqttCredentialLength) {
-    return SettingsValidationError::MqttUserTooLong;
+  if (settings.mqtt_user.length() > 0 && !isValidUnitCode(settings.mqtt_user)) {
+    return SettingsValidationError::MqttUserInvalid;
   }
   if (settings.mqtt_password.length() > kMaxMqttCredentialLength) {
     return SettingsValidationError::MqttPasswordTooLong;
@@ -78,12 +100,14 @@ SettingsValidationError validateTelemetry(const RouterSettings& settings) {
   }
   return SettingsValidationError::None;
 }
-}  // namespace
-
-const uint32_t kDefaultMqttPort = 443;
-const uint32_t kDefaultTelemetryIntervalS = 60;
 
 SettingsValidationError validate(const RouterSettings& settings) {
+  SettingsValidationError routing = validateRouting(settings);
+  if (routing != SettingsValidationError::None) return routing;
+  return validateTelemetry(settings);
+}
+
+SettingsValidationError validateRouting(const RouterSettings& settings) {
   if (settings.wifi_ssid.length() == 0) return SettingsValidationError::EmptySsid;
   if (settings.wifi_ssid.length() > kMaxSsidLength) return SettingsValidationError::SsidTooLong;
   if (settings.wifi_password.length() < kMinPasswordLength) return SettingsValidationError::WifiPasswordTooShort;
@@ -96,7 +120,7 @@ SettingsValidationError validate(const RouterSettings& settings) {
       settings.battery_divider_ratio > kMaxBatteryDividerRatio) {
     return SettingsValidationError::BatteryDividerOutOfRange;
   }
-  return validateTelemetry(settings);
+  return SettingsValidationError::None;
 }
 
 const char* to_string(SettingsValidationError error) {
@@ -116,7 +140,7 @@ const char* to_string(SettingsValidationError error) {
     case SettingsValidationError::MqttHostInvalid: return "host do broker precisa ser um nome ou IP, sem mqtts:// e sem porta";
     case SettingsValidationError::MqttPortOutOfRange: return "porta do broker precisa ficar entre 1 e 65535";
     case SettingsValidationError::EmptyMqttUser: return "com a telemetria ligada, o usuário do broker não pode ser vazio";
-    case SettingsValidationError::MqttUserTooLong: return "usuário do broker não pode passar de 64 caracteres";
+    case SettingsValidationError::MqttUserInvalid: return "usuário do broker é o código da unidade: 3 a 8 letras minúsculas ou dígitos";
     case SettingsValidationError::MqttPasswordTooShort: return "com a telemetria ligada, a senha do broker precisa ter no mínimo 8 caracteres";
     case SettingsValidationError::MqttPasswordTooLong: return "senha do broker não pode passar de 64 caracteres";
     case SettingsValidationError::TelemetryIntervalOutOfRange: return "intervalo da telemetria precisa ficar entre 30 e 3600 segundos";
