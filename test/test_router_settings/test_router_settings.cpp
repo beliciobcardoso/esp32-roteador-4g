@@ -254,11 +254,11 @@ RouterSettings telemetryOn() {
 
 // Default de fabrica desligado: unidade gravada sem configurar nao pode ficar tentando
 // conectar num host que nao existe, gastando dado movel (PRD 14, "Configuracao nova").
-void test_telemetry_defaults_are_off_on_tls_port_every_minute() {
+void test_telemetry_defaults_are_off_on_port_443_every_minute() {
   RouterSettings settings;
   TEST_ASSERT_FALSE(settings.telemetry_enabled);
   TEST_ASSERT_EQUAL_UINT32(kDefaultMqttPort, settings.mqtt_port);
-  TEST_ASSERT_EQUAL_UINT32(8883, kDefaultMqttPort);
+  TEST_ASSERT_EQUAL_UINT32(443, kDefaultMqttPort);
   TEST_ASSERT_EQUAL_UINT32(kDefaultTelemetryIntervalS, settings.telemetry_interval_s);
   TEST_ASSERT_EQUAL_UINT32(60, kDefaultTelemetryIntervalS);
 }
@@ -289,7 +289,7 @@ void test_host_with_a_scheme_is_rejected() {
 
 void test_host_with_a_port_is_rejected() {
   RouterSettings settings = telemetryOn();
-  settings.mqtt_host = "broker.exemplo.com.br:8883";
+  settings.mqtt_host = "broker.exemplo.com.br:443";
   TEST_ASSERT_EQUAL_INT(code(SettingsValidationError::MqttHostInvalid), code(validate(settings)));
 }
 
@@ -456,7 +456,7 @@ int main(int, char**) {
   RUN_TEST(test_a_zero_divider_ratio_is_rejected);
   RUN_TEST(test_a_negative_divider_ratio_is_rejected);
   RUN_TEST(test_every_error_code_has_its_own_message);
-  RUN_TEST(test_telemetry_defaults_are_off_on_tls_port_every_minute);
+  RUN_TEST(test_telemetry_defaults_are_off_on_port_443_every_minute);
   RUN_TEST(test_disabled_telemetry_needs_no_broker);
   RUN_TEST(test_complete_enabled_telemetry_is_accepted);
   RUN_TEST(test_enabled_telemetry_without_host_is_rejected);

@@ -80,7 +80,7 @@ SettingsValidationError validateTelemetry(const RouterSettings& settings) {
 }
 }  // namespace
 
-const uint32_t kDefaultMqttPort = 8883;
+const uint32_t kDefaultMqttPort = 443;
 const uint32_t kDefaultTelemetryIntervalS = 60;
 
 SettingsValidationError validate(const RouterSettings& settings) {

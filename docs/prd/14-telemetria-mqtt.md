@@ -613,6 +613,11 @@ de escrita. Validação no domínio com 21 testes nativos: host só nome ou IPv4
 URI), porta 1–65535, credencial até 64 e senha mínima de 8 com a telemetria ligada, intervalo
 de 30 a 3600 s. Nada ainda consome esses campos — é o `infra/mqtt_client`, próximo PR.
 
+**Porta 443 por padrão, decidido em 26/09/2026.** O broker atende na 443, e não na 8883
+registrada do MQTT sobre TLS; `kDefaultMqttPort` vale 443. O protocolo continua MQTT sobre
+TLS — muda só a porta. Unidade com registro anterior não tem a chave `mqtt_port` gravada e
+passa a ler 443 pelo default.
+
 ## Validação em hardware
 
 Pendente — nada desta fase rodou em placa.
