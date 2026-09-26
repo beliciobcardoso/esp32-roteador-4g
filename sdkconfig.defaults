@@ -87,3 +87,19 @@ CONFIG_ESP_TASK_WDT_PANIC=y
 # aborta em runtime a cada chamada de API feita fora do lock.
 CONFIG_LWIP_TCPIP_CORE_LOCKING=y
 CONFIG_LWIP_TCPIP_CORE_LOCKING_INPUT=y
+
+# Buffers de registro do TLS dimensionados para a telemetria MQTT (PRD 14, Fase 9), e nao
+# para HTTPS de pagina inteira, que e para o que o default de 16 KB + 4 KB foi pensado. Sao
+# ~10 KB de DRAM interna de volta por conexao, e a DRAM e o risco numero um da fase: o
+# handshake do mbedTLS tem pico de ~40-50 KB e a PSRAM nao esta compilada.
+#
+# Nenhum outro caminho do firmware usa TLS hoje (a pagina e HTTP, o OTA vem pela pagina, o
+# SNTP e UDP), entao nada alem do MQTT e afetado.
+#
+# O IN precisa acomodar o maior registro que o broker mandar. Durante o handshake e a cadeia
+# de certificados, ~4-5 KB com Let's Encrypt; depois disso a placa so recebe CONNACK e PUBACK,
+# de poucos bytes, porque nao assina topico nenhum. Broker que mande cadeia maior que 8 KB
+# derruba o handshake com erro de registro grande demais — e o sintoma a procurar se o
+# primeiro contato com o broker falhar ali.
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=8192
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048

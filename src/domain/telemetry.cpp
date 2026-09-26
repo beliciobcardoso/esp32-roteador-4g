@@ -24,21 +24,28 @@ uint8_t encodeUplinkState(UplinkState state) {
   return 255;
 }
 
+// As chaves sao o nome final da metrica no Prometheus (convencao do PRD 14): o Telegraf,
+// com `name_override = "prometheus"`, usa a chave como esta. Por isso o prefixo `router_`,
+// a unidade base no sufixo e `_total` so no counter — renomear depois quebra painel e
+// historico ao mesmo tempo.
 String buildTelemetryPayload(const TelemetrySample& sample) {
   const float volts = sample.battery_mv / 1000.0f;
 
   JsonObject body;
   body.number("ts", sample.ts)
-      .number("battery_volts", volts, 2)
+      .number("router_battery_volts", volts, 2)
       // A carga sai da curva do dominio, nao de uma conta no consumidor: a relacao
       // tensao/carga de Li-ion nao e linear, e quem so tem os volts nao consegue refazer.
-      .number("battery_percent", static_cast<uint32_t>(voltageToPercent(volts)))
-      .number("uplink_state", sample.uplink_state)
-      .boolean("uplink_rebooted", (sample.flags & kTelemetryFlagRebootedForUplink) != 0)
-      .boolean("uplink_exhausted", (sample.flags & kTelemetryFlagRebootBudgetExhausted) != 0)
-      .number("ppp_drops_total", sample.ppp_drops_total)
-      .number("free_heap_kb", sample.free_heap_kb)
-      .number("uptime_min", sample.uptime_min);
+      // Razao 0-1 e nao porcentagem, que e o que o Prometheus recomenda.
+      .number("router_battery_charge_ratio", voltageToPercent(volts) / 100.0f, 2)
+      .number("router_uplink_state", sample.uplink_state)
+      .boolean("router_uplink_rebooted", (sample.flags & kTelemetryFlagRebootedForUplink) != 0)
+      .boolean("router_uplink_reboot_budget_exhausted",
+               (sample.flags & kTelemetryFlagRebootBudgetExhausted) != 0)
+      .number("router_ppp_drops_total", sample.ppp_drops_total)
+      // O anel guarda KB e minutos para caber em 20 B; o nome promete bytes e segundos.
+      .number("router_heap_internal_free_bytes", static_cast<uint32_t>(sample.free_heap_kb) * 1024u)
+      .number("router_uptime_seconds", static_cast<uint32_t>(sample.uptime_min) * 60u);
   return body.finish();
 }
 
