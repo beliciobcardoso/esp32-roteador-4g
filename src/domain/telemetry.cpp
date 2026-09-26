@@ -39,9 +39,13 @@ String buildTelemetryPayload(const TelemetrySample& sample) {
       // Razao 0-1 e nao porcentagem, que e o que o Prometheus recomenda.
       .number("router_battery_charge_ratio", voltageToPercent(volts) / 100.0f, 2)
       .number("router_uplink_state", sample.uplink_state)
-      .boolean("router_uplink_rebooted", (sample.flags & kTelemetryFlagRebootedForUplink) != 0)
-      .boolean("router_uplink_reboot_budget_exhausted",
-               (sample.flags & kTelemetryFlagRebootBudgetExhausted) != 0)
+      // Flag como numero 0/1, nunca como booleano JSON: o parser `json` do Telegraf so
+      // aproveita numero e descarta booleano em silencio — e o segundo destes e o alerta
+      // mais importante da fase.
+      .number("router_uplink_rebooted",
+              static_cast<uint32_t>((sample.flags & kTelemetryFlagRebootedForUplink) != 0))
+      .number("router_uplink_reboot_budget_exhausted",
+              static_cast<uint32_t>((sample.flags & kTelemetryFlagRebootBudgetExhausted) != 0))
       .number("router_ppp_drops_total", sample.ppp_drops_total)
       // O anel guarda KB e minutos para caber em 20 B; o nome promete bytes e segundos.
       .number("router_heap_internal_free_bytes", static_cast<uint32_t>(sample.free_heap_kb) * 1024u)
