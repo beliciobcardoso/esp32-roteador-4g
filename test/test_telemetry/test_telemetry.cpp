@@ -84,13 +84,25 @@ void test_payload_carries_the_cumulative_drop_counter() {
   TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_ppp_drops_total\":1727"), json.c_str());
 }
 
-void test_payload_carries_the_uplink_flags_as_booleans() {
+// Os flags saem como numero 0/1, e nao como booleano JSON: o parser `json` do Telegraf
+// descarta booleano em silencio, e `router_uplink_reboot_budget_exhausted` e o alerta mais
+// importante da fase (PRD 14, "Convencao de nomes").
+void test_payload_carries_the_uplink_flags_as_numbers() {
   TelemetrySample sample = baseline();
   sample.flags = kTelemetryFlagRebootedForUplink | kTelemetryFlagRebootBudgetExhausted;
   const String json = buildTelemetryPayload(sample);
-  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uplink_rebooted\":true"), json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uplink_rebooted\":1"), json.c_str());
   TEST_ASSERT_TRUE_MESSAGE(
-      contains(json, "\"router_uplink_reboot_budget_exhausted\":true"), json.c_str());
+      contains(json, "\"router_uplink_reboot_budget_exhausted\":1"), json.c_str());
+}
+
+void test_payload_carries_cleared_uplink_flags_as_zero() {
+  const String json = buildTelemetryPayload(baseline());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uplink_rebooted\":0"), json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(
+      contains(json, "\"router_uplink_reboot_budget_exhausted\":0"), json.c_str());
+  TEST_ASSERT_FALSE_MESSAGE(contains(json, "false"), json.c_str());
+  TEST_ASSERT_FALSE_MESSAGE(contains(json, "true"), json.c_str());
 }
 
 void test_payload_is_a_closed_json_object() {
@@ -180,7 +192,8 @@ int main(int, char**) {
   RUN_TEST(test_payload_converts_ring_units_to_base_units);
   RUN_TEST(test_payload_metric_keys_carry_the_router_prefix);
   RUN_TEST(test_payload_carries_the_cumulative_drop_counter);
-  RUN_TEST(test_payload_carries_the_uplink_flags_as_booleans);
+  RUN_TEST(test_payload_carries_the_uplink_flags_as_numbers);
+  RUN_TEST(test_payload_carries_cleared_uplink_flags_as_zero);
   RUN_TEST(test_payload_is_a_closed_json_object);
   RUN_TEST(test_sample_without_a_clock_is_not_publishable);
   RUN_TEST(test_interval_holds_until_the_window_closes);
