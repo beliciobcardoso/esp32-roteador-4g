@@ -178,17 +178,21 @@ caminhos de código.
 
 Tudo já existe no firmware. Nenhuma medição nova precisa ser inventada:
 
+Os nomes abaixo são os finais, pela [convenção de nomes](#convenção-de-nomes) fixada em
+25/09/2026. Os da primeira linha de cada grupo já saem do `buildTelemetryPayload()`; os
+demais entram com o `infra/mqtt_client`.
+
 | Campo | Fonte | Tipo no Prometheus |
 |---|---|---|
-| `battery_volts`, `battery_percent` | `BatteryAdc` + `domain/battery` | gauge |
-| `uplink_state` | `LinkSupervisor::status()` | gauge (enum numérico) |
-| `uplink_failures` | idem | gauge |
-| `uplink_rebooted`, `uplink_exhausted` | idem | gauge 0/1 |
-| `ppp_drops_total` | `infra/ppp_drop_counter` | **counter** |
-| `free_internal_heap`, `min_free_heap` | `esp_heap_caps` | gauge |
-| `uptime_s`, `reset_reason` | `esp_system` | gauge |
-| `ap_clients` | `WifiAp` | gauge |
-| `fw_version`, `image_state` | `domain/firmware_update` | `router_build_info` |
+| `router_battery_volts`, `router_battery_charge_ratio` | `BatteryAdc` + `domain/battery` | gauge |
+| `router_uplink_state` | `LinkSupervisor::status()` | gauge (enum numérico) |
+| `router_uplink_failures` | idem | gauge |
+| `router_uplink_rebooted`, `router_uplink_reboot_budget_exhausted` | idem | gauge 0/1 |
+| `router_ppp_drops_total` | `infra/ppp_drop_counter` | **counter** |
+| `router_heap_internal_free_bytes`, `router_heap_internal_min_free_bytes` | `esp_heap_caps` | gauge |
+| `router_uptime_seconds`, `router_reset_reason` | `esp_system` | gauge |
+| `router_ap_clients` | `WifiAp` | gauge |
+| `router_build_info{fw_version, image_state}` | `domain/firmware_update` | info, em tópico próprio |
 
 Três observações que mudam código ou schema:
 
@@ -211,6 +215,59 @@ Três observações que mudam código ou schema:
 comando, ou seja, arriscar derrubar o enlace para medir o enlace. É investigação própria, com
 risco próprio, e não cabe carregar na primeira fase de telemetria.
 
+### Convenção de nomes
+
+Fixada e revisada em **25/09/2026**, antes da primeira série — critério 16. É a única
+decisão desta fase sem conserto barato depois: renomear métrica quebra painel e histórico
+ao mesmo tempo.
+
+**A chave do JSON é o nome final da métrica.** O serializer de `remote_write` do Telegraf
+monta o nome como `<measurement>_<campo>`, com uma exceção documentada: measurement chamado
+`prometheus` usa o campo como está (`plugins/serializers/prometheus/convert.go`, função
+`MetricName`). O `mqtt_consumer` fica com `name_override = "prometheus"`, e a chave
+`router_battery_volts` vira a métrica `router_battery_volts`. Sem isso ela sairia
+`mqtt_consumer_router_battery_volts`, e `sensor_*` precisaria de configuração própria no
+servidor — o contrário do critério 13.
+
+Regras:
+
+- **Prefixo da família:** `router_` para o diagnóstico da placa, `sensor_` para grandeza do
+  ambiente, com o sensor no nome (`sensor_temperature_celsius`)
+- **Unidade base no sufixo:** `_volts`, `_bytes`, `_seconds`, `_celsius`. Carga e fração em
+  **razão 0–1** (`_ratio`), não porcentagem
+- **`_total` só em counter.** Hoje é um só: `router_ppp_drops_total`
+- **Booleano sai como `true`/`false`** e o Telegraf grava 1/0. Texto é descartado pelo
+  serializer — nenhum campo de texto no payload de telemetria
+- **`ts` não é métrica:** é o `json_time_key`, em segundos de epoch
+
+Três decisões de identificação que saem das regras:
+
+- **`unit_id` vem do tópico, não do payload** (`topic_parsing` do `mqtt_consumer`). A ACL
+  do broker garante o tópico, não o conteúdo (critério 10): um `unit_id` no JSON poderia
+  mentir, o do tópico não
+- **A versão de firmware tem tópico próprio**, `roteador/<unit_id>/info`, retido e publicado
+  a cada conexão: `router_build_info = 1` com `fw_version` e `image_state` como tags. Campo
+  de texto no payload de telemetria só sobreviveria ao Telegraf como tag, e aí viraria
+  label de todas as métricas — um OTA criaria série nova para cada uma
+- **O anel guarda em unidade compacta, o payload publica em unidade base.** Heap em KB e
+  uptime em minutos cabem nos 20 B da amostra; `buildTelemetryPayload()` converte para
+  bytes e segundos na saída, e é coberto por teste nativo. A resolução do uptime continua
+  de um minuto
+
+A configuração do servidor que a convenção pressupõe:
+
+```toml
+[[inputs.mqtt_consumer]]
+  topics = ["roteador/+/tel"]
+  data_format = "json"
+  json_time_key = "ts"
+  json_time_format = "unix"
+  name_override = "prometheus"
+  [[inputs.mqtt_consumer.topic_parsing]]
+    topic = "roteador/+/tel"
+    tags = "_/unit_id/_"
+```
+
 ### A lista é aberta — e o que isso custa em cada camada
 
 Esta tabela vai crescer. Campo novo vai aparecer porque alguém quer investigar algo que hoje
@@ -220,8 +277,8 @@ não se enxerga, e o desenho tem que aceitar isso **sem reescrever a fase**. O r
 **Servidor: não quebra, com duas condições.** Métrica nova vira série nova sozinha, sem
 schema e sem migração — desde que a convenção de nome esteja fixada no primeiro campo
 (`router_` para a placa, `sensor_` para o ambiente, unidade no sufixo, `_total` só em counter)
-e que o Telegraf use `data_format = "json"` com `tag_keys = ["unit_id"]` e
-`json_time_key = "ts"`. Com o parser `json_v2` enumerando nomes, campo novo é **descartado em
+e que o Telegraf use `data_format = "json"` com `json_time_key = "ts"`, `name_override =
+"prometheus"` e o `unit_id` tirado do tópico — ver [Convenção de nomes](#convenção-de-nomes). Com o parser `json_v2` enumerando nomes, campo novo é **descartado em
 silêncio** e a adição parece não ter funcionado, sem erro dos dois lados. Duas linhas de
 configuração, uma vez, e o servidor sai do caminho.
 
@@ -338,11 +395,22 @@ armazenamento que vão durar mais que ela.
 1. **Só de subida.** A placa publica e não assina nada. Broker comprometido vê dados de
    bateria e de enlace; não manda comando, porque não há caminho para comando. É a diferença
    entre um incidente chato e um incidente que alcança a frota.
-2. **TLS com verificação do servidor.** CA embutida no firmware, `esp-mqtt` sobre
-   `esp-tls`/mbedTLS. Sem isso a senha do broker trafega em claro pela internet — e essa
-   senha, num broker mal segregado, vale para todas as unidades.
-3. **Credencial por unidade**, sorteada no primeiro boot por `infra/entropy`, o mesmo caminho
-   das senhas de AP e de admin (PRD 08). Nunca em código versionado.
+2. **TLS com verificação do servidor.** `esp-mqtt` sobre `esp-tls`/mbedTLS. Sem isso a
+   senha do broker trafega em claro pela internet — e essa senha, num broker mal segregado,
+   vale para todas as unidades.
+   **Decidido em 25/09/2026: a confiança vem do pacote de CAs públicas do mbedTLS**
+   (`esp_crt_bundle`, `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y`, já ligado no `sdkconfig`), e
+   não de um PEM de CA própria embutido. Serve a qualquer broker com certificado de CA
+   pública (Let's Encrypt), e a renovação do certificado do servidor não exige regravar a
+   frota. O custo é confiar em qualquer CA do pacote, que é o mesmo modelo de um navegador
+3. **Credencial por unidade, nunca em código versionado.**
+   **Decidido em 25/09/2026: o operador cadastra a credencial no broker e a digita na
+   página**, num campo só de escrita — a página mostra "definida", nunca o valor. O desenho
+   original, sorteio no primeiro boot por `infra/entropy` como as senhas do AP e de admin
+   (PRD 08), esbarrava no critério 7: se a senha não pode aparecer em log, serial nem
+   página, o operador não tem como lê-la para cadastrar no broker. Um dos dois tinha de
+   ceder, e cedeu o sorteio. O custo é o segredo passar pela mão de uma pessoa, uma vez por
+   unidade
 4. **ACL no broker por unidade**: cada credencial publica só no próprio prefixo de tópico.
    Sem isso, uma unidade comprometida falsifica os dados de todas as outras, e o painel vira
    fonte de conclusão errada — que é pior que painel nenhum.
