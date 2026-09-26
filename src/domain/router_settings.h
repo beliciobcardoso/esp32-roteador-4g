@@ -8,7 +8,8 @@
 // porque a NVS le as mesmas chaves com default quando o registro e anterior a elas — duas
 // redacoes do mesmo numero divergem na primeira vez que uma mudar.
 //
-// 8883 e a porta registrada do MQTT sobre TLS, e so TLS e aceito (PRD 14, "Seguranca").
+// 443 e nao a 8883 registrada do MQTT sobre TLS: decisao de 26/09/2026, o broker atende na
+// 443. Continua so TLS (PRD 14, "Seguranca") — a porta muda, o protocolo nao.
 // 60 s e a cadencia que o PRD dimensionou para o piloto (~20-25 MB/mes por unidade).
 extern const uint32_t kDefaultMqttPort;
 extern const uint32_t kDefaultTelemetryIntervalS;

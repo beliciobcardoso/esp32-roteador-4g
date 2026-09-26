@@ -35,7 +35,7 @@ os nomes abreviados (`wifi_pass` e não `wifi_password`).
 | `bat_ratio` | `battery_divider_ratio` | float | `BATTERY_VOLTAGE_DIVIDER_RATIO` (2.19) | entre 1.4 e 10.0 |
 | `tlm_on` | `telemetry_enabled` | bool | `false` | — |
 | `mqtt_host` | `mqtt_host` | String | vazio | nome DNS ou IPv4 (letra, dígito, `.`, `-`), até 253; obrigatório com `tlm_on` |
-| `mqtt_port` | `mqtt_port` | uint32 | `8883` (`kDefaultMqttPort`) | entre 1 e 65535 |
+| `mqtt_port` | `mqtt_port` | uint32 | `443` (`kDefaultMqttPort`) | entre 1 e 65535 |
 | `mqtt_user` | `mqtt_user` | String | vazio | até 64; obrigatório com `tlm_on` |
 | `mqtt_pass` | `mqtt_password` | String | vazio | até 64; mínimo 8 com `tlm_on`. **Nunca sai da placa** (PRD 14, critério 7) |
 | `tlm_interval` | `telemetry_interval_s` | uint32 | `60` (`kDefaultTelemetryIntervalS`) | entre 30 e 3600 |
@@ -126,7 +126,7 @@ configurada por uma pessoa não tem senha pendente) e não precisa de degrau nen
 
 As seis chaves da telemetria (`tlm_on`, `mqtt_*`, `tlm_interval`) entraram do mesmo jeito,
 em 26/09/2026, com o schema em `3`. Todas têm default seguro: registro anterior a elas cai em
-telemetria desligada, porta 8883 e 60 s, que o `validate()` aceita — desligada não exige
+telemetria desligada, porta 443 e 60 s, que o `validate()` aceita — desligada não exige
 broker.
 
 ## Comportamento de escrita parcial

@@ -73,7 +73,7 @@ const char* firmwareImageStateName(FirmwareImageState state) {
   return "unknown";
 }
 
-// Numero inteiro do formulario, estrito. O toInt() le "8883abc" como 8883 e "" como 0 sem
+// Numero inteiro do formulario, estrito. O toInt() le "443abc" como 443 e "" como 0 sem
 // avisar, e a porta errada passaria calada. Aqui qualquer coisa que nao seja so digito
 // devolve 0, que o validate() reprova com a mensagem certa. Onze digitos ja nao cabem em
 // uint32_t, e sao recusados antes da conta para ela nao dar a volta e virar um numero
