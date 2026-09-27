@@ -55,7 +55,9 @@ String buildTelemetryPayload(const TelemetrySample& sample) {
       .number("router_ppp_drops_total", sample.ppp_drops_total)
       // O anel guarda KB e minutos para caber em 20 B; o nome promete bytes e segundos.
       .number("router_heap_internal_free_bytes", static_cast<uint32_t>(sample.free_heap_kb) * 1024u)
-      .number("router_uptime_seconds", static_cast<uint32_t>(sample.uptime_min) * 60u);
+      .number("router_uptime_seconds", static_cast<uint32_t>(sample.uptime_min) * 60u)
+      .number("router_uplink_rx_bytes_total", static_cast<uint32_t>(sample.uplink_rx_kb) * 1024u)
+      .number("router_uplink_tx_bytes_total", static_cast<uint32_t>(sample.uplink_tx_kb) * 1024u);
   return body.finish();
 }
 

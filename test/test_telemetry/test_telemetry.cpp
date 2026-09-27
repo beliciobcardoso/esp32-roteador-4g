@@ -16,7 +16,8 @@ TelemetrySample baseline() {
   sample.uptime_min = 42;
   sample.uplink_state = encodeUplinkState(UplinkState::Online);
   sample.flags = 0;
-  sample.reserved = 0;
+  sample.uplink_rx_kb = 1500;
+  sample.uplink_tx_kb = 320;
   return sample;
 }
 
@@ -66,6 +67,26 @@ void test_payload_converts_ring_units_to_base_units() {
   TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_heap_internal_free_bytes\":115712"),
                            json.c_str());
   TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uptime_seconds\":2520"), json.c_str());
+}
+
+// Os bytes do enlace 4G ficam no anel em KiB, para caber nos 20 B, e saem em bytes, que e
+// a unidade que o nome promete. `_total` porque sao counters desde o boot: e o
+// `increase(...[24h])` deles que mede o custo de dado da unidade (PRD 14, criterio 8).
+void test_payload_carries_the_uplink_byte_counters_in_bytes() {
+  const String json = buildTelemetryPayload(baseline());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uplink_rx_bytes_total\":1536000"),
+                           json.c_str());
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uplink_tx_bytes_total\":327680"),
+                           json.c_str());
+}
+
+// O maior valor que cabe no anel ainda sai certo: 65535 KiB e o teto antes da volta.
+void test_payload_byte_counters_do_not_overflow_at_the_ring_ceiling() {
+  TelemetrySample sample = baseline();
+  sample.uplink_rx_kb = 65535;
+  const String json = buildTelemetryPayload(sample);
+  TEST_ASSERT_TRUE_MESSAGE(contains(json, "\"router_uplink_rx_bytes_total\":67107840"),
+                           json.c_str());
 }
 
 // Toda chave que nao e o tempo carrega o prefixo da familia. E o que deixa o Telegraf, com
@@ -224,6 +245,8 @@ int main(int, char**) {
   RUN_TEST(test_payload_converts_millivolts_and_reuses_the_battery_curve);
   RUN_TEST(test_payload_converts_ring_units_to_base_units);
   RUN_TEST(test_payload_metric_keys_carry_the_router_prefix);
+  RUN_TEST(test_payload_carries_the_uplink_byte_counters_in_bytes);
+  RUN_TEST(test_payload_byte_counters_do_not_overflow_at_the_ring_ceiling);
   RUN_TEST(test_payload_carries_the_cumulative_drop_counter);
   RUN_TEST(test_payload_carries_the_uplink_flags_as_numbers);
   RUN_TEST(test_payload_carries_cleared_uplink_flags_as_zero);
