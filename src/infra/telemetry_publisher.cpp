@@ -11,6 +11,7 @@
 #include "../domain/mqtt_backoff.h"
 #include "../domain/telemetry_buffer.h"
 #include "ppp_drop_counter.h"
+#include "uplink_byte_counter.h"
 
 namespace {
 
@@ -239,6 +240,10 @@ TelemetrySample TelemetryPublisher::takeSample() const {
   sample.free_heap_kb = saturateU16(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024u);
   sample.uptime_min = saturateU16(monotonicSeconds() / 60u);
   sample.ppp_drops_total = PppDropCounter::totalCount();
+  // KiB em 16 bits, truncado de proposito: a volta em 64 MiB e reset de counter, que o
+  // Prometheus trata. Saturar travaria o valor e o increase() passaria a ler zero.
+  sample.uplink_rx_kb = static_cast<uint16_t>(UplinkByteCounter::rxBytes() >> 10);
+  sample.uplink_tx_kb = static_cast<uint16_t>(UplinkByteCounter::txBytes() >> 10);
 
   const UplinkStatus uplink = uplinkStatus_ != nullptr ? uplinkStatus_() : UplinkStatus{};
   sample.uplink_state = encodeUplinkState(uplink.state);
