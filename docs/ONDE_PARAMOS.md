@@ -11,15 +11,16 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 26/09/2026, noite, bancada em casa (depois da promoção #66).
+Última atualização: 26/09/2026, fim do dia, bancada em casa (depois do merge #70).
 
 ## Ao abrir numa máquina
 
-1. `git fetch && git switch developer && git pull` — `main` e `developer` iguais no código em
-   26/09/2026 (última promoção: #66)
+1. `git fetch && git switch developer && git pull` — `main` e `developer` iguais em
+   26/09/2026 (última promoção: #70)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20). O
-   `scripts/serial_monitor.py` lê a mesma chave
+   `scripts/serial_monitor.py` lê a mesma chave. **Abrir a porta reinicia a placa** (ver
+   "Bancada"): não reabrir o monitor no meio de um teste
 3. `pio test -e native` (268 testes) e `pio run`. **O #56 mudou o `sdkconfig.defaults`**: na
    primeira compilação depois dele, em qualquer máquina, o build falha pelo débito 26, como
    deve. Rodar o que a mensagem indica: `rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run`
@@ -44,28 +45,38 @@ Fechado na noite de 25/09 (#46 a #57, tudo promovido):
   de 30 s aparece pelo `LoopWatchdog`
 - **Hora `HH:MM:SS` nas linhas do projeto** (#54), `--:--:--` antes do SNTP, e
   **`scripts/serial_monitor.py`** com `--log` e `--reset`. Ver "Bancada"
-- **Fase 9, PR 1 de 4** (#56): convenção de nomes das métricas fixada no PRD 14 (critério 16),
+- **Fase 9, PR 1** (#56): convenção de nomes das métricas fixada no PRD 14 (critério 16),
   chaves do payload renomeadas (`router_*`, unidades base) e buffers TLS em 8 KB/2 KB
 
-- **Fase 9, PR 3 de 4** (#65, promovido no #66): `infra/mqtt_client` e
-  `infra/telemetry_publisher`, validados em placa contra o broker de produção — ver
-  "Validação em hardware" no PRD 14. `unit_id` passou a ser o código da unidade, dado pelo
-  operador, e não mais o MAC
+Fechado em 26/09 (#58 a #70, tudo promovido):
 
-A placa da bancada roda **`ae369cc`** — o `developer`, regravado de árvore limpa em 26/09 à
-noite —, com a telemetria ligada como `bancada1`, a cada 30 s. O `App version` do boot vale
-como prova de versão. Heap interno com PPP, AP e TLS de pé: livre ~171 KB, mínimo desde o
-boot ~148 KB.
+- **Fase 9, PR 2** (#60): configuração do broker em `RouterSettings`, NVS e página — desligada
+  de fábrica, senha só de escrita, validação no domínio
+- **Porta padrão 443** (#62), não 8883; o servidor divide a 443 com o HTTPS por SNI
+- **Flags da telemetria como `0`/`1`** (#63): o parser `json` do Telegraf descarta booleano em
+  silêncio, e `router_uplink_reboot_budget_exhausted` teria sumido. Regra corrigida no PRD 14
+- **Fase 9, PR 3** (#65): `infra/mqtt_client` e `infra/telemetry_publisher`, validados contra o
+  broker de produção. `unit_id` é o código da unidade dado pelo operador, não o MAC
+- **Critério 3 fechado** (#68): OTA com amostras no anel, `SW_CPU_RESET`, `anel com 3
+  amostra(s) do boot anterior`, publicadas depois. Rodada inteira no PRD 14, "Validação em
+  hardware"
+
+A placa da bancada roda **`ae369cc`** (o código do `developer`; depois dele só entrou
+documentação), com a telemetria ligada como `bancada1`, a cada 30 s. O `App version` do boot
+vale como prova de versão. Heap interno com PPP, AP e TLS de pé (26/09): livre ~168–171 KB,
+mínimo desde o boot ~142–148 KB.
 
 ## Próximo passo recomendado
 
 **Fechar a Fase 9** ([PRD 14](prd/14-telemetria-mqtt.md), critérios pendentes):
 
-- **Critério 3** — reset por software com amostras no anel (um OTA pela página serve) e
-  conferir no boot `Telemetria: anel com N amostra(s) do boot anterior`
+- **Critérios 2 e 4, sem placa** — no Grafana, `router_battery_volts{unit_id="bancada1"}` de
+  **26/09 20:31 a 20:36**, em escala de minutos: um ponto a cada ~30 s, sem buraco e sem
+  amontoado em 20:35. As 12 amostras drenadas incluem 9 colhidas antes do SNTP. As capturas de
+  tela de 26/09 estavam na escala do dia e não resolvem. É o passo mais barato da lista
 - **Critério 8** — placa ligada 24 h com a telemetria a 60 s, e o consumo medido
-- **Critério 2 com queda real do 4G** — tirar a antena por uns minutos; na bancada o que caiu
-  foi o broker
+- **Critério 2 com queda completa do 4G**, se a conferência acima não bastar — tirar a antena
+  **não** derrubou o 4G em 26/09 (RSSI 12, PPP de pé); precisa de outro método
 
 Servidor, painéis e alertas: [telemetria-mqtt](https://github.com/beliciobcardoso/telemetria-mqtt).
 Cadastro de unidade pelo `registrar-unidade` no container do broker (Terminal do Coolify).
@@ -76,7 +87,7 @@ A `bancada1` já está cadastrada; a senha está na NVS da placa da bancada.
 
 ## Pendências
 
-### Fase 9 — telemetria MQTT (PRD 14): PR 3 de 4 feito
+### Fase 9 — telemetria MQTT (PRD 14): código pronto, faltam os critérios 2, 4 e 8
 
 Decidido em 25/09/2026, e registrado no PRD 14 (seções "Segurança" e "Convenção de nomes"):
 
@@ -151,9 +162,14 @@ com a medição.
 - Arquivos de teste de OTA: `docs/TESTE_OTA.md`. Recopiar o `firmware.bin` depois de cada build
 - **Gravar o serial em arquivo: `python3 scripts/serial_monitor.py --log <arquivo>`**, e
   `--reset` para reiniciar a placa com a captura já aberta — a única forma de o log pegar o
-  boot inteiro. O `pio device monitor` não aceita stdin redirecionado. O script abre a porta
-  com `dtr`/`rts` em `False`, que não reinicia a placa, e o `--reset` é um pulso de `rts` de
-  200 ms (EN baixo, IO0 alto). A porta vem do `monitor_port` do override ou do `platformio.ini`
+  boot inteiro. O `pio device monitor` não aceita stdin redirecionado. A porta vem do
+  `monitor_port` do override ou do `platformio.ini`
+- **Abrir a porta reinicia a placa, mesmo sem `--reset`.** Em 26/09 o script abriu com
+  `dtr`/`rts` em `False` e o boot seguinte foi `POWERON_RESET`: o CH340 pulsa o EN na abertura.
+  O comentário do script diz o contrário e está errado para este adaptador. Na prática: abrir o
+  monitor **antes** do teste e não fechar até o fim
+- **Reset pelo EN não conta como reset por software** para o anel da telemetria, e em 26/09 ele
+  não apagou o anel (ver PRD 14) — uma ocorrência, não regra
 - **As linhas do projeto saem com `HH:MM:SS`** (`infra/timestamped_serial`), no fuso
   configurado; antes da primeira sincronização do relógio, `--:--:--`. As do ESP-IDF e do core
   Arduino seguem com o tick delas (`I (56015)`)
