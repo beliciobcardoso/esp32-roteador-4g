@@ -11,16 +11,16 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 26/09/2026, noite, bancada em casa (branch `feat/fase9-mqtt-client`).
+Última atualização: 26/09/2026, noite, bancada em casa (depois da promoção #66).
 
 ## Ao abrir numa máquina
 
 1. `git fetch && git switch developer && git pull` — `main` e `developer` iguais no código em
-   26/09/2026 (última promoção: #57)
+   26/09/2026 (última promoção: #66)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20). O
    `scripts/serial_monitor.py` lê a mesma chave
-3. `pio test -e native` (231 testes) e `pio run`. **O #56 mudou o `sdkconfig.defaults`**: na
+3. `pio test -e native` (268 testes) e `pio run`. **O #56 mudou o `sdkconfig.defaults`**: na
    primeira compilação depois dele, em qualquer máquina, o build falha pelo débito 26, como
    deve. Rodar o que a mensagem indica: `rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run`
 4. Relatar o resultado ao usuário e sugerir o próximo trabalho — **sem começar antes de ele
@@ -47,15 +47,15 @@ Fechado na noite de 25/09 (#46 a #57, tudo promovido):
 - **Fase 9, PR 1 de 4** (#56): convenção de nomes das métricas fixada no PRD 14 (critério 16),
   chaves do payload renomeadas (`router_*`, unidades base) e buffers TLS em 8 KB/2 KB
 
-- **Fase 9, PR 3 de 4** (branch `feat/fase9-mqtt-client`): `infra/mqtt_client` e
+- **Fase 9, PR 3 de 4** (#65, promovido no #66): `infra/mqtt_client` e
   `infra/telemetry_publisher`, validados em placa contra o broker de produção — ver
   "Validação em hardware" no PRD 14. `unit_id` passou a ser o código da unidade, dado pelo
   operador, e não mais o MAC
 
-A placa da bancada roda o **firmware de desenvolvimento desta branch** (`bb9c94d-dirty`,
-gravado por USB em 26/09 à noite), com a telemetria ligada como `bancada1`, a cada 30 s.
-Regravar do `developer` depois do merge. Heap interno com PPP, AP e TLS de pé: livre
-~168 KB, mínimo desde o boot ~148 KB.
+A placa da bancada roda **`ae369cc`** — o `developer`, regravado de árvore limpa em 26/09 à
+noite —, com a telemetria ligada como `bancada1`, a cada 30 s. O `App version` do boot vale
+como prova de versão. Heap interno com PPP, AP e TLS de pé: livre ~171 KB, mínimo desde o
+boot ~148 KB.
 
 ## Próximo passo recomendado
 
