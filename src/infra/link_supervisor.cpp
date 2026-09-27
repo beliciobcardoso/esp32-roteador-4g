@@ -7,6 +7,7 @@
 
 #include "../domain/firmware_update.h"
 #include "timestamped_serial.h"
+#include "uplink_byte_counter.h"
 
 namespace {
 
@@ -179,6 +180,10 @@ bool LinkSupervisor::connectOnce(const RouterSettings& settings) {
     logSerial.println("Uplink: modem nao subiu");
     return false;
   }
+
+  // Antes do IP, e nao depois: a negociacao LCP/IPCP tambem e dado do enlace. A netif e nova
+  // a cada tentativa (o stop() acima destruiu a anterior), entao o contador e reapontado aqui.
+  UplinkByteCounter::watch(modem_.netif());
 
   if (!modem_.waitForIp(kIpTimeoutMs)) {
     logSerial.println("Uplink: operadora nao entregou IP");

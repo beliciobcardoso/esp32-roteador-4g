@@ -29,10 +29,13 @@ extern const uint8_t kTelemetryFlagRebootBudgetExhausted;
 // sincronizacao publicar uma amostra extra sem nada de novo para contar.
 extern const uint8_t kTelemetryStateFlagsMask;
 
-// 20 bytes, sem preenchimento implicito. O `reserved` de 4 bytes no fim nao e sobra: e o
-// que permite o primeiro campo novo entrar sem subir a versao do anel e sem encurtar a
-// janela de backfill. Sem ele, o compilador poria 2 bytes de padding invisivel ali e a
-// primeira adicao custaria buffer.
+// 20 bytes, sem preenchimento implicito. Os 4 bytes do fim eram um `reserved`, guardado para
+// o primeiro campo novo entrar sem subir a versao do anel e sem encurtar a janela de
+// backfill — e foi o que aconteceu com os bytes do enlace (PRD 14, criterio 8). O layout e o
+// mesmo, entao a versao do anel nao sobe: amostra gravada por firmware anterior le zero nos
+// dois campos, o que o Prometheus toma por reset de counter, inofensivo.
+//
+// A proxima adicao ja nao tem folga: sobe kTelemetryLayoutVersion e encurta a janela.
 struct TelemetrySample {
   uint32_t ts;               // epoch em segundos, ou monotonico se kTelemetryFlagClockUnsynced
   uint32_t ppp_drops_total;  // acumulado desde o boot — counter, nao janela
@@ -41,7 +44,12 @@ struct TelemetrySample {
   uint16_t uptime_min;
   uint8_t uplink_state;
   uint8_t flags;
-  uint32_t reserved;
+  // Bytes IP do enlace 4G desde o boot, em KiB, nos dois sentidos. Inclui o trafego que o NAT
+  // repassa dos clientes do AP — sem cliente, e o custo de dado da propria unidade. Dao a
+  // volta em 64 MiB, o que para counter e reset: o `increase()` so erraria com mais de
+  // 64 MiB entre duas amostras, acima do que o enlace entrega.
+  uint16_t uplink_rx_kb;
+  uint16_t uplink_tx_kb;
 };
 
 static_assert(sizeof(TelemetrySample) == 20, "layout da amostra mudou — subir kTelemetryLayoutVersion");

@@ -195,6 +195,7 @@ demais entram com o `infra/mqtt_client`.
 | `router_uplink_failures` | idem | gauge |
 | `router_uplink_rebooted`, `router_uplink_reboot_budget_exhausted` | idem | gauge 0/1 |
 | `router_ppp_drops_total` | `infra/ppp_drop_counter` | **counter** |
+| `router_uplink_rx_bytes_total`, `router_uplink_tx_bytes_total` | `infra/uplink_byte_counter` | **counter** — mede o critério 8 |
 | `router_heap_internal_free_bytes`, `router_heap_internal_min_free_bytes` | `esp_heap_caps` | gauge |
 | `router_uptime_seconds`, `router_reset_reason` | `esp_system` | gauge |
 | `router_ap_clients` | `WifiAp` | gauge |
@@ -241,7 +242,8 @@ Regras:
   ambiente, com o sensor no nome (`sensor_temperature_celsius`)
 - **Unidade base no sufixo:** `_volts`, `_bytes`, `_seconds`, `_celsius`. Carga e fração em
   **razão 0–1** (`_ratio`), não porcentagem
-- **`_total` só em counter.** Hoje é um só: `router_ppp_drops_total`
+- **`_total` só em counter.** Hoje são três: `router_ppp_drops_total` e os bytes do enlace,
+  `router_uplink_rx_bytes_total` e `router_uplink_tx_bytes_total`
 - **Booleano sai como número `0`/`1`, nunca como `true`/`false`.** O parser `json` do
   Telegraf só aproveita número: string e booleano são **descartados em silêncio**, a menos
   que virem tag ou `json_string_fields` (`plugins/parsers/json/README.md`). E como string o
@@ -716,3 +718,22 @@ Aberto por esta rodada:
   só: não prova que o EN preserva sempre, mas derruba a certeza de que apaga
 
 Pendente: o **8**, consumo de dado em 24 h.
+
+**Contador para o critério 8, 26/09/2026.** O firmware não media o próprio consumo: o modem está
+em modo dados PPP (contador por AT exigiria CMUX) e o lwIP não mantém contador de interface
+nesta configuração. `infra/uplink_byte_counter` conta os bytes nas duas funções por onde o PPP
+fala com o modem, `esp_netif_receive()` e `esp_netif_transmit()`, pelo `--wrap` do linker, e a
+telemetria publica `router_uplink_rx_bytes_total` e `router_uplink_tx_bytes_total`. A medida
+de 24 h sai de `increase(...[24h])` no Prometheus.
+
+- **Unidade:** byte do enlace serial PPP, com enquadramento HDLC, escape e LCP echo — alguns
+  por cento acima dos bytes IP que a operadora cobra. Para custo, o lado seguro
+- **Inclui o tráfego que o NAT repassa dos clientes do AP.** A medição do critério exige AP
+  sem cliente nas 24 h
+- **No anel, em KiB**, nos 4 bytes que eram `reserved`: o layout segue com 20 B e a versão do
+  anel não sobe. Dá a volta em 64 MiB, que o `increase()` trata como reset
+- Caminhos descartados, com o motivo, no cabeçalho de `infra/uplink_byte_counter.h`: trocar
+  `netif->input` (o PPP chama `ip4_input()` direto e o RX contaria zero) e os contadores MIB2
+  do lwIP (mudam o layout da `struct netif` num binário com os blobs do Wi-Fi)
+- Conferido no ELF: cada wrapper tem um chamador só, o certo —
+  `esp_modem::Netif::receive` e `pppos_low_level_output`
