@@ -11,17 +11,17 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 26/09/2026, fim do dia, bancada em casa (depois do merge #70).
+Última atualização: 28/09/2026, fim do dia, bancada em casa (depois do merge #75).
 
 ## Ao abrir numa máquina
 
 1. `git fetch && git switch developer && git pull` — `main` e `developer` iguais em
-   26/09/2026 (última promoção: #70)
+   28/09/2026 (última promoção: #75)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20). O
    `scripts/serial_monitor.py` lê a mesma chave. **Abrir a porta reinicia a placa** (ver
    "Bancada"): não reabrir o monitor no meio de um teste
-3. `pio test -e native` (268 testes) e `pio run`. **O #56 mudou o `sdkconfig.defaults`**: na
+3. `pio test -e native` (270 testes) e `pio run`. **O #56 mudou o `sdkconfig.defaults`**: na
    primeira compilação depois dele, em qualquer máquina, o build falha pelo débito 26, como
    deve. Rodar o que a mensagem indica: `rm -f sdkconfig.esp-wrover-kit && rm -rf .pio && pio run`
 4. Relatar o resultado ao usuário e sugerir o próximo trabalho — **sem começar antes de ele
@@ -61,22 +61,30 @@ Fechado em 26/09 (#58 a #70, tudo promovido):
   amostra(s) do boot anterior`, publicadas depois. Rodada inteira no PRD 14, "Validação em
   hardware"
 
-A placa da bancada roda **`ae369cc`** (o código do `developer`; depois dele só entrou
-documentação), com a telemetria ligada como `bancada1`, a cada 30 s. O `App version` do boot
-vale como prova de versão. Heap interno com PPP, AP e TLS de pé (26/09): livre ~168–171 KB,
-mínimo desde o boot ~142–148 KB.
+Fechado em 27–28/09 (#73 a #75, tudo promovido):
+
+- **Contador de bytes do enlace 4G** (#73): `infra/uplink_byte_counter`, pelo `--wrap` de
+  `esp_netif_receive`/`esp_netif_transmit`; telemetria publica `router_uplink_rx_bytes_total` e
+  `router_uplink_tx_bytes_total`, e a linha `PPP:` do serial mostra os totais
+- **Critério 8 medido** (#74): **~2,0 MiB/dia a 60 s, ~64 MB/mês** (27–28/09), 2,5× a
+  estimativa do PRD. "Custo de dado" do PRD 14 corrigido
+
+A placa da bancada roda **`2dc7d33`** (o código do `developer`; depois dele só entrou
+documentação), com a telemetria ligada como `bancada1`, a cada **60 s**. O `App version` do boot
+vale como prova de versão. Heap interno com PPP, AP e TLS de pé: livre ~170–174 KB, mínimo
+desde o boot 159 576 B em 32 h (28/09).
 
 ## Próximo passo recomendado
 
-**Fechar a Fase 9** ([PRD 14](prd/14-telemetria-mqtt.md), critérios pendentes):
+**Fechar a Fase 9** ([PRD 14](prd/14-telemetria-mqtt.md)) — faltam só os critérios **2** e **4**,
+e sem placa: no Grafana, `router_battery_volts{unit_id="bancada1"}` de **26/09 20:31 a 20:36**,
+em escala de minutos — um ponto a cada ~30 s, sem buraco e sem amontoado em 20:35. As 12
+amostras drenadas ali incluem 9 colhidas antes do SNTP. Se a conferência não bastar para o 2,
+queda completa do 4G por outro método: tirar a antena **não** derrubou o enlace em 26/09.
 
-- **Critérios 2 e 4, sem placa** — no Grafana, `router_battery_volts{unit_id="bancada1"}` de
-  **26/09 20:31 a 20:36**, em escala de minutos: um ponto a cada ~30 s, sem buraco e sem
-  amontoado em 20:35. As 12 amostras drenadas incluem 9 colhidas antes do SNTP. As capturas de
-  tela de 26/09 estavam na escala do dia e não resolvem. É o passo mais barato da lista
-- **Critério 8** — placa ligada 24 h com a telemetria a 60 s, e o consumo medido
-- **Critério 2 com queda completa do 4G**, se a conferência acima não bastar — tirar a antena
-  **não** derrubou o 4G em 26/09 (RSSI 12, PPP de pé); precisa de outro método
+**Depois, a decisão que o critério 8 abriu:** o custo medido (~1,5 KiB por amostra) inviabiliza
+60 s numa frota de cem (~6,4 GB/mês). Medir de novo com a amostra ao vivo em QoS 0 e com 300 s
+antes de decidir o default — o contador já existe, é só rodar 24 h por configuração.
 
 Servidor, painéis e alertas: [telemetria-mqtt](https://github.com/beliciobcardoso/telemetria-mqtt).
 Cadastro de unidade pelo `registrar-unidade` no container do broker (Terminal do Coolify).
@@ -87,7 +95,17 @@ A `bancada1` já está cadastrada; a senha está na NVS da placa da bancada.
 
 ## Pendências
 
-### Fase 9 — telemetria MQTT (PRD 14): código pronto, faltam os critérios 2, 4 e 8
+### Fase 9 — telemetria MQTT (PRD 14): código pronto, faltam os critérios 2 e 4
+
+**Broker no Coolify, 27/09/2026:** a deploy key `coolify cockpit-basic` do `telemetria-mqtt` foi
+**removida** a pedido do usuário, e uma GitHub App (`drab-donkey-…`) foi criada como source no
+Coolify. Enquanto o recurso do broker não trocar a source para a App, **todo redeploy falha ao
+clonar** — o broker em execução não é afetado. A troca é tarefa da sessão do `telemetria-mqtt`
+(prompt entregue ao usuário); conferir que a App tem acesso só ao `telemetria-mqtt`.
+
+**Número velho fora do PRD:** a dica da página (`http/index.html`, "A 60 s são ~20–25 MB/mês") e
+os comentários de `domain/router_settings.h/.cpp` ainda citam a estimativa errada; o medido é
+~64 MB/mês. Corrigir junto com a decisão do default.
 
 Decidido em 25/09/2026, e registrado no PRD 14 (seções "Segurança" e "Convenção de nomes"):
 
