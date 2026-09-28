@@ -473,11 +473,21 @@ editável na página.
 
 ## Custo de dado
 
-Estimativa por unidade, TLS ligado, payload ~200 B: cerca de 330 B no fio por publicação, mais
-~5 KB de handshake a cada reconexão.
+**Medido em 28/09/2026 (critério 8): ~2,0 MiB por dia a 60 s, ~61 MiB (~64 MB) por mês** —
+cerca de 2,5× a estimativa abaixo. Detalhe em "Validação em hardware".
 
-- a 60 s → ~20–25 MB/mês
-- a 300 s → ~3–6 MB/mês
+A estimativa original, mantida para registro do erro: TLS ligado, payload ~200 B, cerca de
+330 B no fio por publicação, mais ~5 KB de handshake a cada reconexão.
+
+- a 60 s → ~20–25 MB/mês (**medido: ~64 MB/mês**)
+- a 300 s → ~3–6 MB/mês (não medido; se o custo por amostra se mantiver, ~13 MB/mês)
+
+O medido é ~1,5 KiB por amostra somando os dois sentidos (~950 B de subida, ~530 B de
+descida), contra os ~330 B da conta. Hipótese, não medida separadamente: a conta supunha QoS 0,
+e toda amostra sai do anel em QoS 1 — cada publicação traz um PUBACK de volta e ACKs de TCP nos
+dois sentidos, cada um com cabeçalho TLS, TCP/IP e enquadramento PPP. O payload também cresceu
+desde a conta (~400 B com os counters de bytes). E o contador mede o byte do enlace serial PPP,
+alguns por cento acima do IP que a operadora cobra.
 
 Com o piloto de até 5 unidades o número não decide nada, e o default pode ser 60 s. Ele é
 registrado aqui porque **decide o desenho quando a frota crescer**, e porque o critério de
@@ -680,6 +690,7 @@ intervalo de 30 s:
 | 5 | esperas entre tentativas de 21 → 36 → 86 → 160 → 266 s (5 s × 2ⁿ, ±20 %, teto de 300 s); 20 amostras drenadas em 23 s na volta |
 | 6 | placa parada com o EN em nível baixo (sem fechar socket): `offline` retido em **75 s** |
 | 7 | serial mostra host, porta e código; nunca a senha |
+| 8 | **~2,0 MiB em 24 h a 60 s** (744 KiB recebidos, 1339 KiB enviados), ~61 MiB/mês — 2,5× a estimativa. Rodada abaixo |
 | 9 | heap interno mínimo desde o boot com TLS ativo: **147 816 B** no pior caso, contra o piso de 32 KB. A PSRAM não é necessária |
 | — | desligar e ligar a telemetria pela página: `router_online` 1 → 0 → 1, página respondendo, sem reinício |
 
@@ -717,7 +728,38 @@ Aberto por esta rodada:
   rodada anterior, de que reset pela USB apaga a RTC RAM como queda de energia. Uma ocorrência
   só: não prova que o EN preserva sempre, mas derruba a certeza de que apaga
 
-Pendente: o **8**, consumo de dado em 24 h.
+**27–28/09/2026, rodada do critério 8** — unidade `bancada1`, firmware `2dc7d33` (com
+`infra/uplink_byte_counter`), intervalo de 60 s, captura contínua do serial:
+
+```
+27/09 10:12:18  4G desde o boot: rx   12 KiB, tx    4 KiB
+28/09 10:12:19  4G desde o boot: rx  756 KiB, tx 1343 KiB
+```
+
+| | 24 h | por amostra (1440) | 30 dias |
+|---|---|---|---|
+| recebido | 744 KiB | ~530 B | ~22 MiB |
+| enviado | 1339 KiB | ~950 B | ~39 MiB |
+| **total** | **2083 KiB (~2,0 MiB)** | **~1,5 KiB** | **~61 MiB (~64 MB)** |
+
+Condições conferidas no log: **um boot só** (um único `rst:`, contador nunca zerou), **nenhum
+cliente no AP** (nenhum `wifi:station … join` em todo o log, então sem tráfego de NAT), zero
+descarte de PPP, heap interno mínimo desde o boot de **159 576 B**. Uma interrupção no meio:
+enlace caiu às 04:10:48 por ~20 s e o MQTT voltou às 04:11:13 — entra na conta como custo
+real, com um handshake TLS a mais. A captura seguiu até 32 h e manteve a taxa (2867 KiB em
+32,2 h, ~2,1 MiB/dia).
+
+A medida sai do serial, que é o mesmo contador que a telemetria publica. A conferência no
+Prometheus — `increase()` de `router_uplink_rx_bytes_total` + `router_uplink_tx_bytes_total`
+em 24 h, avaliado em 28/09 10:12 — não foi registrada aqui.
+
+Consequência para o desenho: a 60 s o piloto de 5 unidades fica em ~320 MB/mês, sem problema,
+mas a frota de cem ficaria em ~6,4 GB/mês. Antes de crescer, medir o custo por amostra com a
+drenagem ao vivo em QoS 0 e com intervalo de 300 s — a conta de "Custo de dado" errou por 2,5×
+e não serve de base.
+
+Pendentes desta fase: os critérios **2** (queda real do 4G) e **4**, que dependem de conferir no
+Grafana a rodada do critério 3; os demais estão na tabela.
 
 **Contador para o critério 8, 26/09/2026.** O firmware não media o próprio consumo: o modem está
 em modo dados PPP (contador por AT exigiria CMUX) e o lwIP não mantém contador de interface
