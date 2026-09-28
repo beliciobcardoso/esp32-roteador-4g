@@ -22,6 +22,7 @@
 #include "infra/ppp_drop_counter.h"
 #include "infra/telemetry_publisher.h"
 #include "infra/timestamped_serial.h"
+#include "infra/uplink_byte_counter.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
 #include "usecases/provision_settings.h"
@@ -454,6 +455,17 @@ void settleFirmwareConfirmation(unsigned long now) {
 //
 // MALLOC_CAP_INTERNAL e nao o heap total: a PSRAM da placa tem 8 MB e mascararia a DRAM
 // apertada, que e a que o lwIP usa para pbuf.
+// Totais do enlace 4G desde o boot, no fim da linha do PPP. Para a bancada conferir o
+// contador sem abrir o Grafana — e perceber na hora se o --wrap parou de contar.
+String uplinkBytesSuffix() {
+  String suffix = " | 4G desde o boot: rx ";
+  suffix += String(UplinkByteCounter::rxBytes() / 1024u);
+  suffix += " KiB, tx ";
+  suffix += String(UplinkByteCounter::txBytes() / 1024u);
+  suffix += " KiB";
+  return suffix;
+}
+
 void reportPppDrops(unsigned long now) {
   static uint32_t pending = 0;
   // Janelas fechadas em sequencia sem um descarte sequer. Zera a cada linha emitida, seja
@@ -470,7 +482,7 @@ void reportPppDrops(unsigned long now) {
   uint32_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
   if (pending > 0) {
-    logSerial.println(describeDropWindow(pending, freeInternal));
+    logSerial.println(describeDropWindow(pending, freeInternal) + uplinkBytesSuffix());
     pending = 0;
     quietWindows = 0;
     return;
@@ -483,7 +495,7 @@ void reportPppDrops(unsigned long now) {
   quietWindows++;
   if (!quietReportDue(quietWindows)) return;
 
-  logSerial.println(describeQuietWindows(quietWindows, freeInternal));
+  logSerial.println(describeQuietWindows(quietWindows, freeInternal) + uplinkBytesSuffix());
   quietWindows = 0;
 }
 
