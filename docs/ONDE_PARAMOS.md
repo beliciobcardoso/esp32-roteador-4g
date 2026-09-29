@@ -11,12 +11,12 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 28/09/2026, fim do dia, bancada em casa (depois do merge #75).
+Última atualização: 28/09/2026, noite, bancada em casa (depois do merge #79).
 
 ## Ao abrir numa máquina
 
 1. `git fetch && git switch developer && git pull` — `main` e `developer` iguais em
-   28/09/2026 (última promoção: #75)
+   28/09/2026 (última promoção: #79)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20). O
    `scripts/serial_monitor.py` lê a mesma chave. **Abrir a porta reinicia a placa** (ver
@@ -68,9 +68,14 @@ Fechado em 27–28/09 (#73 a #75, tudo promovido):
   `router_uplink_tx_bytes_total`, e a linha `PPP:` do serial mostra os totais
 - **Critério 8 medido** (#74): **~2,0 MiB/dia a 60 s, ~64 MB/mês** (27–28/09), 2,5× a
   estimativa do PRD. "Custo de dado" do PRD 14 corrigido
+- **Custo decomposto** (#78, janelas curtas de 10 min): com a telemetria desligada, o envio é
+  exatamente o **LCP echo** (`CONFIG_LWIP_LCP_ECHOINTERVAL=3`, 320 B/min), que vai da placa ao
+  modem e **não cruza o rádio**. Keepalive do MQTT ~235 B/min de envio, amostra ~374 B. Custo
+  cobrado estimado **~35–50 MB/mês a 60 s**; os 64 MB são o teto do lado da placa. A linha
+  `PPP:` do serial passou a mostrar bytes exatos
 
-A placa da bancada roda **`2dc7d33`** (o código do `developer`; depois dele só entrou
-documentação), com a telemetria ligada como `bancada1`, a cada **60 s**. O `App version` do boot
+A placa da bancada roda **`18c4595`** (o `developer`), com a telemetria ligada como `bancada1`
+**a 3600 s** — sobra do teste; voltar pela página ao intervalo desejado. O `App version` do boot
 vale como prova de versão. Heap interno com PPP, AP e TLS de pé: livre ~170–174 KB, mínimo
 desde o boot 159 576 B em 32 h (28/09).
 
@@ -82,9 +87,12 @@ em escala de minutos — um ponto a cada ~30 s, sem buraco e sem amontoado em 20
 amostras drenadas ali incluem 9 colhidas antes do SNTP. Se a conferência não bastar para o 2,
 queda completa do 4G por outro método: tirar a antena **não** derrubou o enlace em 26/09.
 
-**Depois, a decisão que o critério 8 abriu:** o custo medido (~1,5 KiB por amostra) inviabiliza
-60 s numa frota de cem (~6,4 GB/mês). Medir de novo com a amostra ao vivo em QoS 0 e com 300 s
-antes de decidir o default — o contador já existe, é só rodar 24 h por configuração.
+**Depois, a decisão que o custo abriu, do usuário:** sem o LCP, o que pesa é o keepalive do MQTT
+(60 s) e o tráfego não solicitado, não a amostra — aumentar o intervalo rende pouco. Keepalive de
+300 s cortaria quase todo o seu custo, mas o `offline` retido iria de ~90 s para ~7,5 min e
+quebraria o **critério 6**; a troca seria por alerta de ausência em 10 min. Número firme de custo
+cobrado pede o consumo do chip no portal da operadora. Detalhe no PRD 14, "Validação em
+hardware".
 
 Servidor, painéis e alertas: [telemetria-mqtt](https://github.com/beliciobcardoso/telemetria-mqtt).
 Cadastro de unidade pelo `registrar-unidade` no container do broker (Terminal do Coolify).
@@ -105,7 +113,7 @@ clonar** — o broker em execução não é afetado. A troca é tarefa da sessã
 
 **Número velho fora do PRD:** a dica da página (`http/index.html`, "A 60 s são ~20–25 MB/mês") e
 os comentários de `domain/router_settings.h/.cpp` ainda citam a estimativa errada; o medido é
-~64 MB/mês. Corrigir junto com a decisão do default.
+~35–50 MB/mês cobrados (~64 MB do lado da placa). Corrigir junto com a decisão do keepalive.
 
 Decidido em 25/09/2026, e registrado no PRD 14 (seções "Segurança" e "Convenção de nomes"):
 
