@@ -11,12 +11,12 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 28/09/2026, noite, bancada em casa (depois do merge #79).
+Última atualização: 28/09/2026, fim do dia, bancada em casa (depois do merge #83).
 
 ## Ao abrir numa máquina
 
 1. `git fetch && git switch developer && git pull` — `main` e `developer` iguais em
-   28/09/2026 (última promoção: #79)
+   28/09/2026 (última promoção: #83)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20). O
    `scripts/serial_monitor.py` lê a mesma chave. **Abrir a porta reinicia a placa** (ver
@@ -74,7 +74,10 @@ Fechado em 27–28/09 (#73 a #75, tudo promovido):
   cobrado estimado **~35–50 MB/mês a 60 s**; os 64 MB são o teto do lado da placa. A linha
   `PPP:` do serial passou a mostrar bytes exatos
 
-A placa da bancada roda **`18c4595`** (o `developer`), com a telemetria ligada como `bancada1`
+- **Keepalive do MQTT fica em 60 s** (#82, decisão do usuário): o critério 6 continua valendo.
+  A dica de custo da página e os comentários de `router_settings` passaram a citar o medido
+
+A placa da bancada roda **`6f8960f`** (o `developer`), com a telemetria ligada como `bancada1`
 **a 3600 s** — sobra do teste; voltar pela página ao intervalo desejado. O `App version` do boot
 vale como prova de versão. Heap interno com PPP, AP e TLS de pé: livre ~170–174 KB, mínimo
 desde o boot 159 576 B em 32 h (28/09).
@@ -87,12 +90,8 @@ em escala de minutos — um ponto a cada ~30 s, sem buraco e sem amontoado em 20
 amostras drenadas ali incluem 9 colhidas antes do SNTP. Se a conferência não bastar para o 2,
 queda completa do 4G por outro método: tirar a antena **não** derrubou o enlace em 26/09.
 
-**Depois, a decisão que o custo abriu, do usuário:** sem o LCP, o que pesa é o keepalive do MQTT
-(60 s) e o tráfego não solicitado, não a amostra — aumentar o intervalo rende pouco. Keepalive de
-300 s cortaria quase todo o seu custo, mas o `offline` retido iria de ~90 s para ~7,5 min e
-quebraria o **critério 6**; a troca seria por alerta de ausência em 10 min. Número firme de custo
-cobrado pede o consumo do chip no portal da operadora. Detalhe no PRD 14, "Validação em
-hardware".
+Custo de dado: decidido e fechado (keepalive 60 s, #82). Número firme de custo cobrado, se um
+dia for preciso, pede o consumo do chip no portal da operadora.
 
 Servidor, painéis e alertas: [telemetria-mqtt](https://github.com/beliciobcardoso/telemetria-mqtt).
 Cadastro de unidade pelo `registrar-unidade` no container do broker (Terminal do Coolify).
@@ -111,9 +110,6 @@ Coolify. Enquanto o recurso do broker não trocar a source para a App, **todo re
 clonar** — o broker em execução não é afetado. A troca é tarefa da sessão do `telemetria-mqtt`
 (prompt entregue ao usuário); conferir que a App tem acesso só ao `telemetria-mqtt`.
 
-**Número velho fora do PRD:** a dica da página (`http/index.html`, "A 60 s são ~20–25 MB/mês") e
-os comentários de `domain/router_settings.h/.cpp` ainda citam a estimativa errada; o medido é
-~35–50 MB/mês cobrados (~64 MB do lado da placa). Corrigir junto com a decisão do keepalive.
 
 Decidido em 25/09/2026, e registrado no PRD 14 (seções "Segurança" e "Convenção de nomes"):
 
