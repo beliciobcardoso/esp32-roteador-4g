@@ -21,3 +21,6 @@ platformio_override.ini
 # Gerado a cada build por scripts/firmware_version.py, a partir do `git describe`. Versionar
 # congelaria a versao de quem clonasse o repo.
 version.txt
+
+# SPIKE WireGuard: chaves reais da bancada, nunca versionar.
+include/wg_spike_secrets.h

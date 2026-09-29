@@ -23,6 +23,7 @@
 #include "infra/telemetry_publisher.h"
 #include "infra/timestamped_serial.h"
 #include "infra/uplink_byte_counter.h"
+#include "infra/wg_spike.h"
 #include "infra/wifi_ap.h"
 #include "usecases/load_settings.h"
 #include "usecases/provision_settings.h"
@@ -518,6 +519,9 @@ void loop() {
   // Primeira coisa da volta: tudo abaixo pode demorar, e o que o watchdog vigia e o
   // intervalo entre voltas, nao o que acontece dentro de uma.
   loopWatchdog.beat();
+
+  // SPIKE WireGuard (tmp/spike-wireguard) — nao mergear.
+  WgSpike::tick(linkSupervisor.status().state == UplinkState::Online, systemClock.synchronized());
 
   httpConfigHandler.handleClient();
   blinkLed(now);
