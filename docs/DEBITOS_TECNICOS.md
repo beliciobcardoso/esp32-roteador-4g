@@ -482,6 +482,53 @@ recebendo o upload pelo Wi-Fi. É a FIFO de hardware da UART, um degrau antes do
 a task do `esp_modem` não drenou a tempo. Mesma família, mesmo gargalo; segue uma ocorrência
 por evento pesado, e segue sem justificar mexer. No reteste do mesmo upload não se repetiu.
 
+**Recorreu em 25/09/2026, e a causa foi medida em 28/09/2026 — não é CPU nem rede, é a escrita
+na flash.** Em 25/09, ~200 avisos em 25 s durante um upload de 4 MiB, parando junto com ele.
+Em 28/09, dois uploads na mesma captura, com controle:
+
+| upload | escreve na flash? | UART do modem | `HW FIFO Overflow` |
+|---|---|---|---|
+| 4 MiB que não é imagem, recusado no 1º bloco | não | **alta**: ~431 KB de RX em 2 min (celular pelo NAT) | **0** |
+| `firmware.bin` válido, 1,2 MB | sim | não medida (o reset veio antes da linha `PPP:` seguinte) | **69 em 16,6 s** |
+| clique em "Confirmar atualização" depois do reboot | sim (`otadata`) | baixa | **1** |
+
+O upload recusado tem mais tráfego de rede e de UART que o válido, e não gera aviso nenhum: a
+leitura anterior, "CPU ocupada recebendo pelo Wi-Fi", está errada. O aviso isolado caiu na
+única outra escrita de flash do período.
+
+**Mecanismo** (documentado na IDF, não medido aqui): enquanto a flash é apagada ou gravada, o
+cache fica desligado e interrupção fora da IRAM espera. O ISR da UART não está em IRAM
+(`# CONFIG_UART_ISR_IN_IRAM is not set`). A FIFO de hardware tem 128 B, que a 115200 bps enchem
+em ~11 ms; um apagamento de setor leva dezenas de ms. Byte perdido ali vira quadro PPP com FCS
+inválido e retransmissão TCP, e não passa pelo `PppDropCounter`. Atinge toda escrita na flash —
+OTA, `otadata`, e a NVS quando a página salva.
+
+**Impacto:** baixo. O OTA vem pelo Wi-Fi e não é afetado; o que perde pacote é o tráfego pelo 4G
+durante a gravação, e o TCP recupera.
+
+**Correção:** `CONFIG_UART_ISR_IN_IRAM=y` no `sdkconfig.defaults`. O `esp_modem` instala a UART
+com `intr_alloc_flags = 0`, mas com a opção ligada o `uart_driver_install()` da IDF acrescenta
+`ESP_INTR_FLAG_IRAM` sozinho — sem mexer no componente gerenciado. A dependência
+(`CONFIG_RINGBUF_PLACE_ISR_FUNCTIONS_INTO_FLASH` desligada) já está atendida.
+
+**Validado em placa em 29/09/2026.** No ELF, `uart_rx_intr_handler_default` e
+`xRingbufferSendFromISR` caem em `0x4008…` (IRAM); no boot, o driver loga `ESP_INTR_FLAG_IRAM flag
+not set while CONFIG_UART_ISR_IN_IRAM is enabled, flag updated` ao instalar a UART do modem. Com a
+correção gravada, uma captura contínua de 28/09 23:31 a 29/09 04:19:
+
+| evento | antes | depois |
+|---|---|---|
+| OTA válido de 1,2 MB (`OTA: gravado`, 04:18:09) | 69 em 16,6 s | **0** |
+| confirmação depois do reboot (`otadata`) | 1 | **0** |
+| ~4,5 h de operação normal | — | **0** |
+
+Nenhum `Ring Buffer Full` também. Ressalva: o aviso só aparece se chegam mais de 128 B pela UART
+com a flash ocupada, então depende do tráfego do momento. Nas duas rodadas havia celular no AP
+puxando pelo NAT (nesta, +78 KB de RX em 2 min antes do upload), mas o tráfego durante os segundos
+da gravação não foi medido em nenhuma delas — prova forte, não comparação de carga controlada.
+Custo observado: heap interno livre ~3 KB abaixo (~165–170 KB livres, mínimo de 150 212 B depois do
+OTA); o build mostra só +400 B de RAM estática.
+
 ## 14. Requisição a rota não registrada vira log de erro — RESOLVIDO em 18/09/2026
 
 **Onde:** [src/adapters/http_config_handler.cpp](../src/adapters/http_config_handler.cpp) — `begin()`
