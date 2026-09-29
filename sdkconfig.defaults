@@ -103,3 +103,12 @@ CONFIG_LWIP_TCPIP_CORE_LOCKING_INPUT=y
 # primeiro contato com o broker falhar ali.
 CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=8192
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048
+
+# ISR da UART em IRAM (debito 13, medido em 28/09/2026). Sem isto, toda escrita na flash
+# (OTA, otadata, NVS) desliga o cache e segura a interrupcao da UART do modem; a FIFO de
+# hardware de 128 B enche em ~11 ms a 115200 bps e o modem perde bytes — 69 `HW FIFO Overflow`
+# em 16,6 s num OTA de 1,2 MB, e zero num upload de 4 MiB recusado sem gravar nada.
+#
+# O esp_modem instala a UART com intr_alloc_flags = 0; com esta opcao o uart_driver_install()
+# da IDF acrescenta ESP_INTR_FLAG_IRAM sozinho. Vale para todas as UARTs, inclusive o console.
+CONFIG_UART_ISR_IN_IRAM=y
