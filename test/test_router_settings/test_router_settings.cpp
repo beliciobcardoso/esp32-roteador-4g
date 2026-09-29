@@ -408,9 +408,9 @@ void test_password_above_the_limit_is_rejected() {
                         code(validate(settings)));
 }
 
-// 30 s de piso: o dobro do dado da cadencia padrao, e abaixo disso o custo por unidade
-// passa de ~50 MB/mes (PRD 14, "Custo de dado"). 3600 s de teto: mais que isso e o painel
-// deixa de responder "como esta agora", que e o primeiro objetivo da fase.
+// 30 s de piso: cada amostra custa ~374 B de envio (PRD 14, medido em 28/09/2026), e abaixo
+// disso o custo cresce sem ganho para quem olha o painel. 3600 s de teto: mais que isso e o
+// painel deixa de responder "como esta agora", que e o primeiro objetivo da fase.
 void test_interval_below_the_floor_is_rejected() {
   RouterSettings settings = telemetryOn();
   settings.telemetry_interval_s = 29;

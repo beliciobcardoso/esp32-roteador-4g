@@ -30,9 +30,10 @@ const uint32_t kMaxTcpPort = 65535;
 // Teto das credenciais do broker. Nao vem de norma: limita o que vai para a NVS e para o
 // CONNECT, e 64 sobra para qualquer usuario e senha gerados por gerenciador.
 const size_t kMaxMqttCredentialLength = 64;
-// Faixa do intervalo. Piso de 30 s: o dobro do dado da cadencia padrao, e abaixo disso o
-// custo passa de ~50 MB/mes por unidade (PRD 14, "Custo de dado"). Teto de 1 h: acima disso
-// o painel deixa de responder "como esta agora", que e o primeiro objetivo da fase.
+// Faixa do intervalo. Piso de 30 s: cada amostra custa ~374 B de envio (PRD 14, medido em
+// 28/09/2026), e abaixo disso o custo cresce sem ganho para quem olha o painel. Teto de 1 h:
+// acima disso o painel deixa de responder "como esta agora", que e o primeiro objetivo da
+// fase.
 const uint32_t kMinTelemetryIntervalS = 30;
 const uint32_t kMaxTelemetryIntervalS = 3600;
 
