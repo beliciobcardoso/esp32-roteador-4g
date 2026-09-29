@@ -11,12 +11,12 @@ chegar, **`/encerrar`** ao sair — definidos em `.claude/commands/`, versionado
 duas máquinas. Se ele estiver velho, confie no `git log` e nos docs, e diga ao
 usuário que ele estava desatualizado.
 
-Última atualização: 28/09/2026, fim do dia, bancada em casa (depois do merge #83).
+Última atualização: 29/09/2026, madrugada, bancada em casa (depois do merge #87).
 
 ## Ao abrir numa máquina
 
 1. `git fetch && git switch developer && git pull` — `main` e `developer` iguais em
-   28/09/2026 (última promoção: #83)
+   29/09/2026 (última promoção: #87)
 2. Porta serial diferente da versionada? `platformio_override.ini` na raiz, ignorado pelo git,
    com `upload_port` e `monitor_port` em `[env:esp-wrover-kit]` (débito 20). O
    `scripts/serial_monitor.py` lê a mesma chave. **Abrir a porta reinicia a placa** (ver
@@ -77,10 +77,20 @@ Fechado em 27–28/09 (#73 a #75, tudo promovido):
 - **Keepalive do MQTT fica em 60 s** (#82, decisão do usuário): o critério 6 continua valendo.
   A dica de custo da página e os comentários de `router_settings` passaram a citar o medido
 
-A placa da bancada roda **`6f8960f`** (o `developer`), com a telemetria ligada como `bancada1`
+Fechado em 28–29/09 (#86 e #87, promovido):
+
+- **`HW FIFO Overflow` resolvido** (#86): a causa medida é a escrita na flash (OTA, `otadata`,
+  NVS) segurando o ISR da UART do modem, e não CPU nem rede — 69 avisos num OTA de 1,2 MB e
+  zero num upload de 4 MiB recusado sem gravar. `CONFIG_UART_ISR_IN_IRAM=y`: depois dela, OTA,
+  confirmação e 4,5 h com zero avisos. Custo: ~3 KB de heap interno. Detalhe no débito 13.
+  **O #86 mudou o `sdkconfig.defaults`**: primeira compilação em qualquer máquina falha pelo
+  débito 26, como deve
+
+A placa da bancada roda **`f8a4f9c`** (o `developer`), com a telemetria ligada como `bancada1`
 **a 3600 s** — sobra do teste; voltar pela página ao intervalo desejado. O `App version` do boot
-vale como prova de versão. Heap interno com PPP, AP e TLS de pé: livre ~170–174 KB, mínimo
-desde o boot 159 576 B em 32 h (28/09).
+vale como prova de versão. Heap interno com PPP, AP e TLS de pé: livre ~170 KB, mínimo desde o
+boot ~156 KB (29/09, com o ISR da UART em IRAM; ~3 KB abaixo de antes). Depois de um OTA, mínimo
+de 150 212 B.
 
 ## Próximo passo recomendado
 
@@ -98,7 +108,8 @@ Cadastro de unidade pelo `registrar-unidade` no container do broker (Terminal do
 A `bancada1` já está cadastrada; a senha está na NVS da placa da bancada.
 
 **No trabalho (com placa), se a antena de GNSS tiver chegado:** Fase 11 pela captura de
-`+CGNSSINFO`. Sem antena, medir o `HW FIFO Overflow` durante OTA (ver pendências).
+`+CGNSSINFO`. Sem antena, a Fase 10 (acesso remoto, [PRD 13](prd/13-acesso-remoto.md)) é a
+próxima fase grande.
 
 ## Pendências
 
@@ -150,15 +161,6 @@ Achados de bancada **ainda não registrados no PRD 15** — registrar junto com 
 Próximo passo com a antena: capturar `+CGNSSINFO` real em modo comando, antes do PPP — ela vira
 o caso de teste do parser —, e só depois a migração para CMUX.
 
-### `HW FIFO Overflow` durante OTA — achado de 25/09, ainda não no débito 13
-
-O débito 13 anota `uart_terminal: HW FIFO Overflow` como "uma vez, sob carga pesada, não mexer
-sem recorrência". **Recorreu**: ~200 linhas em 25 s durante um upload de 4 MiB pela página, em
-25/09/2026, parando junto com o upload. Suspeita, não confirmada: as escritas na flash do OTA
-seguram a interrupção da UART do modem. Primeiro passo é medir, sem código: um upload válido
-com o serial gravado, vendo se os avisos acompanham as escritas. Registrar no débito 13 junto
-com a medição.
-
 ### Débitos abertos
 
 | Débito | Situação |
@@ -168,7 +170,7 @@ com a medição.
 | 11 — NAPT entre sessões PPP | medir antes de mexer |
 | 3, 7, 8 | aceitos, esperando gatilho |
 | 24 | é a Fase 10 inteira (PRD 13) |
-| 13 | fechado, mas o resíduo de `HW FIFO Overflow` recorreu (acima) |
+| 13 | fechado; o resíduo de `HW FIFO Overflow` foi medido e corrigido em 29/09 (#86) |
 
 ## Bancada — o que funcionou
 
