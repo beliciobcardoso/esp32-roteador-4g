@@ -457,12 +457,16 @@ void settleFirmwareConfirmation(unsigned long now) {
 // apertada, que e a que o lwIP usa para pbuf.
 // Totais do enlace 4G desde o boot, no fim da linha do PPP. Para a bancada conferir o
 // contador sem abrir o Grafana — e perceber na hora se o --wrap parou de contar.
+//
+// Em bytes, e nao em KiB: janela de 10 min com a telemetria desligada tem poucos KiB, e o
+// arredondamento para baixo de cada contador engolia a diferenca que se queria medir (PRD 14,
+// "fundo contra custo por amostra"). A telemetria continua em KiB, que e o que cabe no anel.
 String uplinkBytesSuffix() {
   String suffix = " | 4G desde o boot: rx ";
-  suffix += String(UplinkByteCounter::rxBytes() / 1024u);
-  suffix += " KiB, tx ";
-  suffix += String(UplinkByteCounter::txBytes() / 1024u);
-  suffix += " KiB";
+  suffix += String(UplinkByteCounter::rxBytes());
+  suffix += " B, tx ";
+  suffix += String(UplinkByteCounter::txBytes());
+  suffix += " B";
   return suffix;
 }
 

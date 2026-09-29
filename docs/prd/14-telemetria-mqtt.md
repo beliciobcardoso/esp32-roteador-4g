@@ -758,6 +758,85 @@ mas a frota de cem ficaria em ~6,4 GB/mês. Antes de crescer, medir o custo por 
 drenagem ao vivo em QoS 0 e com intervalo de 300 s — a conta de "Custo de dado" errou por 2,5×
 e não serve de base.
 
+**28/09/2026, fundo contra custo por amostra** — duas janelas curtas no lugar de 24 h por
+configuração, pelo modelo `taxa = fundo + amostras/min × custo por amostra`:
+
+| janela | intervalo | período | rx | tx | total/min |
+|---|---|---|---|---|---|
+| A | 60 s | 28/09 18:26 → 20:06 (100 min) | 52 KiB | 95 KiB | 1,47 KiB |
+| B | 30 s | 28/09 21:00 → 21:10 (10 min) | 6 KiB | 13 KiB | 1,9 KiB |
+
+Ambas sem cliente no AP, sem reconexão e sem reset. A janela A projetada para 24 h dá ~2117 KiB,
+contra os 2083 KiB medidos acima — o método curto serve para comparar configurações.
+
+| | rx | tx | total |
+|---|---|---|---|
+| **fundo** (sem amostra) | ~0,44 KiB/min | ~0,60 KiB/min | **~1,04 KiB/min (~1,5 MiB/dia)** |
+| **por amostra** | ~80 B | ~360 B | **~440 B** |
+
+Projeção: 30 s ~80 MiB/mês, 60 s ~62, 120 s ~53, **300 s ~48**, 600 s ~46. **O fundo é ~70 % do
+custo a 60 s**, e aumentar o intervalo quase não o reduz: de 60 s para 300 s são só ~23 % a
+menos. A hipótese da seção "Custo de dado" (QoS 1 por amostra) explica pouco; o que pesa é o que
+trafega com a unidade parada.
+
+Limites: a janela B tem 19 KiB e a linha `PPP:` arredonda cada contador para baixo em KiB, então
+o custo por amostra fica entre ~240 e ~640 B e o fundo entre ~0,85 e ~1,25 KiB/min — a
+conclusão vale em toda a faixa, o número exato não. A troca para 30 s foi feita a quente pela
+página e não deixa linha no serial; a subida da taxa é coerente com o dobro de amostras, mas é
+inferência.
+
+O fundo ainda não tem causa medida. O candidato mais forte é o **LCP echo do PPP**: o `sdkconfig`
+tem `CONFIG_LWIP_LCP_ECHOINTERVAL=3`, um Echo-Request a cada 3 s e a resposta do outro lado. Cada
+quadro tem ~20–24 B no fio serial (flags, escape HDLC, FCS); 20 por minuto em cada sentido dão
+**~0,4 KiB/min por sentido** — quase todo o fundo de recepção e a maior parte do de envio.
+
+Se for isso, **o fundo é em boa parte artefato de onde o contador mede, e não custo cobrado**: o
+PPP termina no modem, o LCP echo vai da ESP32 ao A7670 pela UART e não passa pelo rádio, e a
+operadora cobra os pacotes IP do contexto de dados. Os ~64 MB/mês do critério 8 seriam então
+um teto do lado da placa, acima do que a operadora vê. Os demais candidatos, que esses sim
+cruzam o rádio: keepalive do MQTT (PINGREQ/PINGRESP a cada 60 s, com TLS, TCP/IP), ACKs de TCP,
+SNTP e tráfego não solicitado da rede da operadora.
+
+**Teste do fundo**, com a linha `PPP:` em bytes exatos (a resolução em KiB não separa um fundo de
+poucos KiB em 10 min): janela C com a telemetria desligada — sobram LCP echo, SNTP e o tráfego
+não pedido; se ficar perto de ~0,4 KiB/min por sentido, o fundo está explicado. Janela D com a
+telemetria ligada a 3600 s — quase sem amostra, e D − C é o custo do keepalive do MQTT.
+**Teste do fundo feito em 28/09/2026**, firmware `3af2de3-dirty` com a linha `PPP:` em bytes, sem
+cliente no AP nos trechos usados:
+
+| janela | configuração | período | rx | tx |
+|---|---|---|---|---|
+| B' | telemetria a 30 s | 21:21 → 21:25 | 517 B/min | 1303 B/min |
+| C | telemetria **desligada** | 21:29 → 21:35 e 21:37 → 21:41 | ~490 B/min, com um pico de ~7 KB | **320 B/min**, exatos |
+| D | telemetria a **3600 s** (sem amostra) | 21:45 → 21:55 | 810 B/min | 555 B/min |
+
+Composição do **envio**, o sentido limpo:
+
+| parte | tx | cruza o rádio? |
+|---|---|---|
+| LCP echo, a cada 3 s (janela C) | **320 B/min** — 640 B a cada 2 min, sem variação | **não**: placa → modem |
+| keepalive do MQTT, a cada 60 s (D − C) | **~235 B/min** | sim |
+| amostra ((B' − D) / 2) | **~374 B por amostra** | sim |
+
+Conferência: a 60 s o modelo dá 320 + 235 + 374 ≈ 929 B/min de envio; a janela A mediu 973.
+
+**Confirmado: o fundo de envio é o LCP echo** (`CONFIG_LWIP_LCP_ECHOINTERVAL=3`), medido na
+serial e não cobrado. O de recepção tem os 320 B/min das respostas do LCP mais **tráfego não
+solicitado** — ~160 a 500 B/min, com picos de até ~7 KB em 2 min mesmo sem conexão aberta. É
+ruído demais para medir keepalive ou PUBACK em rx numa janela de 10 min; a origem do tráfego
+não solicitado não foi investigada.
+
+Tirando o LCP (~640 B/min nos dois sentidos), **o que a operadora cobra fica em ~35–50 MB/mês a
+60 s e ~30–35 MB/mês a 300 s**, e não os ~64 MB/mês do critério 8, que são o teto do lado da
+placa. A faixa larga vem do rx. Sem o LCP, o que pesa é o keepalive do MQTT e o tráfego não
+solicitado, não a amostra: aumentar o intervalo segue rendendo pouco.
+
+**A alavanca real é o keepalive, e ela esbarra no critério 6.** Keepalive de 300 s cortaria quase
+todo o seu custo, mas o broker declara a placa morta em 1,5 × keepalive: o `offline` retido
+passaria de ~90 s para ~7,5 min, fora dos 2 min do critério. O alerta "unidade sumiu" por
+`absent()` em 10 min cobre o mesmo buraco — mas isso é reescrever o critério, decisão do
+usuário. Número firme de custo cobrado pede o consumo do chip no portal da operadora.
+
 Pendentes desta fase: os critérios **2** (queda real do 4G) e **4**, que dependem de conferir no
 Grafana a rodada do critério 3; os demais estão na tabela.
 
