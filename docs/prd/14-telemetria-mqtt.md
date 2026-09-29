@@ -837,6 +837,11 @@ passaria de ~90 s para ~7,5 min, fora dos 2 min do critério. O alerta "unidade 
 `absent()` em 10 min cobre o mesmo buraco — mas isso é reescrever o critério, decisão do
 usuário. Número firme de custo cobrado pede o consumo do chip no portal da operadora.
 
+**Decidido em 28/09/2026: keepalive do MQTT fica em 60 s.** O critério 6 (`offline` retido em
+até 2 min) continua valendo, e o custo aceito é ~235 B/min de envio para o keepalive, dentro
+dos ~35–50 MB/mês cobrados a 60 s. O intervalo de amostra segue editável na página (30 a
+3600 s) e mexe pouco no total.
+
 Pendentes desta fase: os critérios **2** (queda real do 4G) e **4**, que dependem de conferir no
 Grafana a rodada do critério 3; os demais estão na tabela.
 

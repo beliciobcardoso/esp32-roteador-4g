@@ -10,7 +10,8 @@
 //
 // 443 e nao a 8883 registrada do MQTT sobre TLS: decisao de 26/09/2026, o broker atende na
 // 443. Continua so TLS (PRD 14, "Seguranca") — a porta muda, o protocolo nao.
-// 60 s e a cadencia que o PRD dimensionou para o piloto (~20-25 MB/mes por unidade).
+// 60 s e a cadencia do piloto: ~35-50 MB/mes cobrados por unidade, medido em 28/09/2026
+// (PRD 14, "Validacao em hardware"). A estimativa original de 20-25 MB/mes estava errada.
 extern const uint32_t kDefaultMqttPort;
 extern const uint32_t kDefaultTelemetryIntervalS;
 
