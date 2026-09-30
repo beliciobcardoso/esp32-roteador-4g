@@ -1127,12 +1127,26 @@
             }
         }
 
+        // O codigo da unidade so aceita minusculas (e o usuario do broker, que diferencia
+        // maiuscula). Converte enquanto digita, mantendo o cursor no lugar, para Caps Lock
+        // nao virar erro de formato na hora de salvar.
+        function lowercaseUnitCode(event) {
+            const input = event.target;
+            const lower = input.value.toLowerCase();
+            if (lower === input.value) return;
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            input.value = lower;
+            input.setSelectionRange(start, end);
+        }
+
         window.addEventListener('hashchange', route);
         document.addEventListener('visibilitychange', schedulePolling);
         el('config-form').addEventListener('submit', submitConfig);
         el('update-form').addEventListener('submit', submitUpdate);
         el('firmware-confirm').addEventListener('click', confirmFirmware);
         el('toast').addEventListener('click', hideToast);
+        el('mqtt_user').addEventListener('input', lowercaseUnitCode);
 
         route();
         loadConfig();
