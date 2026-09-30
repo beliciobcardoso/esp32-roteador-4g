@@ -89,7 +89,7 @@ SettingsValidationError validateRouting(const RouterSettings& settings);
 // So os campos do broker e do intervalo.
 SettingsValidationError validateTelemetry(const RouterSettings& settings);
 
-// Codigo da unidade: 3 a 8 de [a-z0-9]. E o usuario MQTT e entra no topico e no %u da ACL
+// Codigo da unidade: 3 a 12 de [a-z0-9]. E o usuario MQTT e entra no topico e no %u da ACL
 // do broker, entao nada que vire curinga (+ #) ou separador (/). Texto, nao numero: 042 e
 // 42 sao unidades diferentes.
 bool isValidUnitCode(const String& code);

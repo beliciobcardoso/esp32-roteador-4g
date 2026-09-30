@@ -166,7 +166,8 @@ roteador/<unit_id>/info     # {"fw_version", "image_state"}, QoS 1, retido
 ```
 
 **`unit_id` é o código da unidade, dado pelo operador, e é o usuário MQTT** — decidido em
-26/09/2026, substituindo o "derivado do MAC" desta seção. Formato `[a-z0-9]{3,8}`, tratado
+26/09/2026, substituindo o "derivado do MAC" desta seção. Formato `[a-z0-9]{3,12}` (era
+`{3,8}` até 29/09/2026, alargado para caber códigos maiores do operador), tratado
 como texto (`042` e `42` são unidades diferentes). O operador precisa identificar as unidades
 por um código curto, e o MAC tinha ainda uma ambiguidade sem dono: o MAC base e o do SoftAP
 (o BSSID) diferem no último byte, e o firmware nunca mostrou nenhum dos dois. Como o código é
