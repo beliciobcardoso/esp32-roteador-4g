@@ -128,6 +128,9 @@ err_t wireguardif_connect(struct netif *netif, u8_t peer_index);
 // Stop trying to connect to the given peer
 err_t wireguardif_disconnect(struct netif *netif, u8_t peer_index);
 
+// FORK (esp32-roteador-4g): swap the uplink netif; NULL detaches it. Must hold the tcpip core lock.
+err_t wireguardif_set_uplink(struct netif *netif, struct netif *uplink);
+
 // Shutdown the WireGuard interface
 void wireguardif_shutdown(struct netif *netif);
 

@@ -20,7 +20,14 @@ mudanças estão só na cola com o lwIP, marcadas com `FORK (esp32-roteador-4g)`
    `netif_default` no init e o restaurava no disconnect; como o PPP é recriado a cada sessão,
    o ponteiro guardado vira memória liberada.
 
+4. **Troca da netif de saída sem derrubar o túnel.** O device guarda ponteiro cru da netif do
+   uplink e chama a função de saída dela em todo envio, inclusive no keepalive do timer. O PPP é
+   destruído e recriado a cada sessão, e o envio pela netif liberada saltava para uma função
+   nula (`InstrFetchProhibited`, PC `0x0`, medido em placa em 03/10/2026, duas vezes, a cada
+   queda do PPP). `esp_wireguard_set_uplink()` solta (NULL) e religa a netif, mantendo chaves,
+   peer e sessão; sem netif, envio volta `ERR_RTE` (`wireguardif.c`, `esp_wireguard.c`).
+
 O contrato de lock de cada função está no topo de `include/esp_wireguard.h`.
 
-Ao atualizar a partir do upstream: refazer os três pontos acima e conferir se alguma função
+Ao atualizar a partir do upstream: refazer os quatro pontos acima e conferir se alguma função
 nova chama API crua do lwIP ou de socket.

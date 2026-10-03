@@ -105,13 +105,15 @@ esp_err_t esp_wireguard_init(wireguard_config_t *config, wireguard_ctx_t *ctx);
  *   esp_wireguard_connect()       must hold the tcpip core lock (raw lwIP API)
  *   esp_wireguard_set_default()   must hold the tcpip core lock
  *   esp_wireguardif_peer_is_up()  must hold the tcpip core lock
+ *   esp_wireguard_set_uplink()    must hold the tcpip core lock
  *   esp_wireguard_disconnect()    must hold the tcpip core lock
  *
  * "Hold the lock" means: run inside esp_netif_tcpip_exec().
  *
- * The uplink passed to esp_wireguard_connect() is bound to the tunnel's UDP socket. If that
- * netif is removed (a PPP session ending), call esp_wireguard_disconnect() BEFORE it goes away,
- * then esp_wireguard_connect() again with the new one: the device keeps a raw pointer to it.
+ * The uplink passed to esp_wireguard_connect() is bound to the tunnel's UDP socket, and the
+ * device keeps a raw pointer to it. If that netif is removed (a PPP session ending), call
+ * esp_wireguard_set_uplink(ctx, NULL) BEFORE it goes away, and esp_wireguard_set_uplink(ctx,
+ * new_uplink) when the next one is up. Sending through a removed netif crashes.
  */
 
 /**
@@ -156,6 +158,20 @@ esp_err_t esp_wireguard_set_default(wireguard_ctx_t *ctx);
  * @brief Test if the peer is up.
  */
 esp_err_t esp_wireguardif_peer_is_up(wireguard_ctx_t *ctx);
+
+/**
+ * @brief FORK (esp32-roteador-4g): swap the uplink netif without tearing the tunnel down.
+ *
+ * NULL detaches it: the tunnel keeps its keys and peer, and drops what it tries to send until
+ * an uplink is attached again. Must hold the tcpip core lock.
+ *
+ * @param ctx    Context of WireGuard, already connected.
+ * @param uplink New uplink netif, or NULL.
+ * @return
+ *      - ESP_OK on success.
+ *      - ESP_ERR_INVALID_ARG: ctx not connected.
+ */
+esp_err_t esp_wireguard_set_uplink(wireguard_ctx_t *ctx, struct netif *uplink);
 
 /**
  * @brief Disconnect from the peer

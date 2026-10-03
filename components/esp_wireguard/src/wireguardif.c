@@ -89,13 +89,39 @@ static bool wireguardif_can_send_initiation(struct wireguard_peer *peer) {
 
 static err_t wireguardif_peer_output(struct netif *netif, struct pbuf *q, struct wireguard_peer *peer) {
 	struct wireguard_device *device = (struct wireguard_device *)netif->state;
+	// FORK (esp32-roteador-4g): no uplink between PPP sessions, see wireguardif_set_uplink().
+	if (device->underlying_netif == NULL) {
+		return ERR_RTE;
+	}
 	// Send to last know port, not the connect port
 	//TODO: Support DSCP and ECN - lwip requires this set on PCB globally, not per packet
 	return udp_sendto_if(device->udp_pcb, q, &peer->ip, peer->port, device->underlying_netif);
 }
 
 static err_t wireguardif_device_output(struct wireguard_device *device, struct pbuf *q, const ip_addr_t *ipaddr, u16_t port) {
+	// FORK (esp32-roteador-4g): no uplink between PPP sessions, see wireguardif_set_uplink().
+	if (device->underlying_netif == NULL) {
+		return ERR_RTE;
+	}
 	return udp_sendto_if(device->udp_pcb, q, ipaddr, port, device->underlying_netif);
+}
+
+// FORK (esp32-roteador-4g): the device keeps a raw pointer to the uplink netif and calls its
+// output function on every send, including the keepalive timer. A PPP uplink is destroyed and
+// recreated with each session, and a send through the freed netif jumped to a NULL output
+// function (InstrFetchProhibited, measured on the bench on 03/10/2026). Detach with NULL
+// before the uplink goes away — sends are then dropped with ERR_RTE — and attach the new one
+// when it comes up. Keys, peer and session state are kept. Must hold the tcpip core lock.
+err_t wireguardif_set_uplink(struct netif *netif, struct netif *uplink) {
+	if (netif == NULL || netif->state == NULL) {
+		return ERR_ARG;
+	}
+	struct wireguard_device *device = (struct wireguard_device *)netif->state;
+	device->underlying_netif = uplink;
+	if (device->udp_pcb) {
+		udp_bind_netif(device->udp_pcb, uplink);
+	}
+	return ERR_OK;
 }
 
 static err_t wireguardif_output_to_peer(struct netif *netif, struct pbuf *q, const ip_addr_t *ipaddr, struct wireguard_peer *peer) {

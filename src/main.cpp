@@ -91,7 +91,14 @@ FirmwareImageState currentImageState() {
 // task do supervisor, nao na do loop() — por isso nao toca em nada do HTTP.
 void onUplinkOnline() {
   systemClock.onUplinkOnline();
+#ifndef WG_SPIKE_OFF
+  WgSpike::attachUplink(modemPpp.netif());  // SPIKE: task do LinkSupervisor
+#endif
 }
+
+#ifndef WG_SPIKE_OFF
+void detachWgUplink() { WgSpike::detachUplink(); }  // SPIKE: task do LinkSupervisor
+#endif
 
 // A pagina pergunta a hora sem conhecer quem responde. String vazia enquanto nao houve
 // sincronizacao nenhuma; quem formata a desculpa e o adaptador.
@@ -256,6 +263,9 @@ void setup() {
   batteryAdc.begin(provision.settings.battery_divider_ratio);
 
   linkSupervisor.onUplinkOnline(&onUplinkOnline);
+#ifndef WG_SPIKE_OFF
+  modemPpp.onBeforeStop(&detachWgUplink);
+#endif
 
   // O retorno importa agora: e a prova de que o AP subiu, e sem AP ninguem chega na pagina
   // para confirmar coisa nenhuma. Ver settleFirmwareConfirmation().

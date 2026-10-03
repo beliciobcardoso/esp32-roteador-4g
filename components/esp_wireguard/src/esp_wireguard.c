@@ -345,6 +345,15 @@ fail:
     return err;
 }
 
+/* FORK (esp32-roteador-4g): see wireguardif_set_uplink(). */
+esp_err_t esp_wireguard_set_uplink(wireguard_ctx_t *ctx, struct netif *uplink)
+{
+    if (!ctx || !ctx->netif) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return wireguardif_set_uplink(ctx->netif, uplink) == ERR_OK ? ESP_OK : ESP_FAIL;
+}
+
 esp_err_t esp_wireguardif_peer_is_up(wireguard_ctx_t *ctx)
 {
     esp_err_t err;

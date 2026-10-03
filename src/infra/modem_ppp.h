@@ -29,6 +29,10 @@ class ModemPpp {
   // o reset por hardware do proximo start() sai disso de forma confiavel.
   void stop();
 
+  // SPIKE (tmp/spike-wireguard): chamado no comeco do stop(), com a netif ainda viva. O tunel
+  // guarda ponteiro cru dela e precisa solta-la antes do esp_netif_destroy().
+  void onBeforeStop(void (*callback)()) { beforeStop_ = callback; }
+
   // Bloqueia ate o IP_EVENT_PPP_GOT_IP ou o timeout. Precisa existir porque o DNS
   // da operadora so chega no IPCP, e o NAT depende dele pra configurar o DHCP do AP.
   bool waitForIp(uint32_t timeoutMs);
@@ -54,4 +58,5 @@ class ModemPpp {
   esp_modem_dce_t* dce_ = nullptr;
   ModemIdentity identity_;
   bool identityRead_ = false;
+  void (*beforeStop_)() = nullptr;
 };

@@ -441,6 +441,7 @@ bool ModemPpp::waitForIp(uint32_t timeoutMs) {
 // powerOnSequence do proximo start() da um reset por hardware que resolve de qualquer
 // jeito. Ordem importa — o DCE referencia o netif, entao morre primeiro.
 void ModemPpp::stop() {
+  if (beforeStop_ != nullptr && netif_ != nullptr) beforeStop_();
   if (dce_ != nullptr) {
     esp_modem_destroy(dce_);
     dce_ = nullptr;
