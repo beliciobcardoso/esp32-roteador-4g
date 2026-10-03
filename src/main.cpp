@@ -521,7 +521,8 @@ void loop() {
   loopWatchdog.beat();
 
   // SPIKE WireGuard (tmp/spike-wireguard) — nao mergear.
-  WgSpike::tick(linkSupervisor.status().state == UplinkState::Online, systemClock.synchronized());
+  WgSpike::tick(linkSupervisor.status().state == UplinkState::Online, systemClock.synchronized(),
+                modemPpp.netif());
 
   httpConfigHandler.handleClient();
   blinkLed(now);
