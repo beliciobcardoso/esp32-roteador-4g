@@ -4,6 +4,7 @@
 #include <esp_system.h>
 
 #include "../domain/loop_health.h"
+#include "ota_trace.h"  // SPIKE (tmp/spike-wireguard)
 #include "timestamped_serial.h"
 
 namespace {
@@ -53,6 +54,7 @@ void LoopWatchdog::run() {
     // reiniciou sozinha" e nao se distingue de nada.
     logSerial.printf("LoopWatchdog: loop parado ha %lu ms — reiniciando\n",
                   static_cast<unsigned long>(now - lastBeat));
+    OtaTrace::dumpStall();
     Serial.flush();
 
     // Reinicia mesmo com confirmacao de firmware pendente, ao contrario do LinkSupervisor,

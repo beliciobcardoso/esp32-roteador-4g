@@ -7,6 +7,7 @@
 #include "../domain/json.h"
 #include "../domain/timezone.h"
 #include "html_page.h"
+#include "../infra/ota_trace.h"  // SPIKE (tmp/spike-wireguard): bancada da OTA pelo tunel
 
 namespace {
 const int kServerPort = 80;
@@ -500,6 +501,7 @@ void HttpConfigHandler::handleUpdateUpload() {
   if (uploadProgress_ != nullptr) {
     uploadProgress_();
   }
+  OtaTrace::onChunk(upload.totalSize, upload.status == UPLOAD_FILE_START);
 
   if (upload.status == UPLOAD_FILE_START) {
     // Armado no primeiro pedaco, que e a primeira vez que o socket desta requisicao esta ao
@@ -531,6 +533,7 @@ void HttpConfigHandler::handleUpdateUpload() {
                  (upload.status == UPLOAD_FILE_WRITE ? upload.currentSize : 0);
 
   if (upload.status == UPLOAD_FILE_ABORTED) {
+    OtaTrace::mark("abortado");
     handleUpdateAborted();
     return;
   }
@@ -577,6 +580,7 @@ void HttpConfigHandler::handleUpdateUpload() {
   }
 
   if (upload.status == UPLOAD_FILE_END) {
+    OtaTrace::mark("end");
     // O tamanho final. O "grande demais" ja foi pego bloco a bloco no WRITE; aqui fica o
     // caminho que pega o formulario enviado com um arquivo de zero bytes, que chega como uma
     // parte vazia e nunca passa pelo WRITE.
@@ -591,7 +595,10 @@ void HttpConfigHandler::handleUpdateUpload() {
 
     // Aqui dentro roda a verificacao da imagem inteira, com o SHA-256 que ela carrega:
     // arquivo truncado ou corrompido morre neste ponto, sem trocar o slot de boot.
-    if (!firmwareWriter_.finish()) {
+    OtaTrace::mark("finish:antes");
+    const bool finished = firmwareWriter_.finish();
+    OtaTrace::mark(finished ? "finish:ok" : "finish:falhou");
+    if (!finished) {
       log_->printf("OTA: ativacao do slot falhou (%s)\n", firmwareWriter_.lastErrorText().c_str());
       updateError_ = "a imagem enviada não passou na verificação";
       updateReason_ = "verificacao_falhou";

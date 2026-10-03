@@ -521,8 +521,11 @@ void loop() {
   loopWatchdog.beat();
 
   // SPIKE WireGuard (tmp/spike-wireguard) — nao mergear.
+  // SPIKE: -DWG_SPIKE_OFF compila a imagem de bancada sem o tunel (experimento B1 da OTA).
+#ifndef WG_SPIKE_OFF
   WgSpike::tick(linkSupervisor.status().state == UplinkState::Online, systemClock.synchronized(),
                 modemPpp.netif());
+#endif
 
   httpConfigHandler.handleClient();
   blinkLed(now);

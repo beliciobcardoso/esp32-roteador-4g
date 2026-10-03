@@ -24,6 +24,14 @@ std::atomic<uint32_t> gTotal{0};
 // escreve e le esta variavel, e o unico chamador e o loop(). Ver o contrato no header.
 uint32_t gLastTaken = 0;
 
+// SPIKE (tmp/spike-wireguard): eventos da UART do modem, contados sem suprimir a linha. Um
+// `Ring Buffer Full` faz o esp_modem chamar uart_flush_input() e descartar o buffer de RX
+// inteiro (4 KB), entao cada evento e uma rajada de quadros PPP perdidos.
+constexpr const char* kRingFullFragment = "Ring Buffer Full";
+constexpr const char* kFifoOverflowFragment = "HW FIFO Overflow";
+std::atomic<uint32_t> gRingFull{0};
+std::atomic<uint32_t> gFifoOverflow{0};
+
 // Roda na task que emitiu o log — inclusive a do lwIP, dentro do caminho de recepcao. Por
 // isso nao aloca, nao formata e nao loga: um ESP_LOG daqui reentraria neste mesmo hook.
 int filteringVprintf(const char* format, va_list args) {
@@ -31,6 +39,11 @@ int filteringVprintf(const char* format, va_list args) {
     gTotal.fetch_add(1, std::memory_order_relaxed);
     // Devolve o que um printf teria escrito. Zero e honesto: nada foi para o serial.
     return 0;
+  }
+  if (format != nullptr && std::strstr(format, kRingFullFragment) != nullptr) {
+    gRingFull.fetch_add(1, std::memory_order_relaxed);
+  } else if (format != nullptr && std::strstr(format, kFifoOverflowFragment) != nullptr) {
+    gFifoOverflow.fetch_add(1, std::memory_order_relaxed);
   }
   if (gPreviousVprintf == nullptr) return 0;
   return gPreviousVprintf(format, args);
@@ -58,5 +71,9 @@ uint32_t takeCount() {
 }
 
 uint32_t totalCount() { return gTotal.load(std::memory_order_relaxed); }
+
+uint32_t uartRingBufferFullTotal() { return gRingFull.load(std::memory_order_relaxed); }
+
+uint32_t uartFifoOverflowTotal() { return gFifoOverflow.load(std::memory_order_relaxed); }
 
 }  // namespace PppDropCounter

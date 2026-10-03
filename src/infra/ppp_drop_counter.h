@@ -48,4 +48,9 @@ uint32_t takeCount();
 // Vira em 2^32, e a subtracao de takeCount() atravessa a virada sem perder nada.
 uint32_t totalCount();
 
+// SPIKE (tmp/spike-wireguard): `Ring Buffer Full` e `HW FIFO Overflow` da UART do modem desde
+// o boot. A linha continua saindo no serial; isto so conta.
+uint32_t uartRingBufferFullTotal();
+uint32_t uartFifoOverflowTotal();
+
 }  // namespace PppDropCounter
