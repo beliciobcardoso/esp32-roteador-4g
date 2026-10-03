@@ -112,3 +112,13 @@ CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048
 # O esp_modem instala a UART com intr_alloc_flags = 0; com esta opcao o uart_driver_install()
 # da IDF acrescenta ESP_INTR_FLAG_IRAM sozinho. Vale para todas as UARTs, inclusive o console.
 CONFIG_UART_ISR_IN_IRAM=y
+
+# Janela TCP de recepcao. O padrao do lwIP (5760 B, 4 segmentos) limita a vazao a
+# janela / RTT: pelo tunel WireGuard sobre 4G (RTT ~0,8 s), 1,2 MB de firmware desciam a
+# ~7 KB/s e a OTA levava ~3 min — mais que os 100 s que o Cloudflare espera pela resposta
+# (524 medido em 03/10/2026). 16 KB triplica a vazao. Custo: cada conexao TCP pode prender
+# ate 16 KB de pbuf em transito; com MQTT + pagina + upload, ~40 KB no pior caso, dentro da
+# folga medida (minimo de heap interno ~140 KB). A caixa de recepcao precisa caber a janela
+# inteira em segmentos (16384 / 1440 = 12).
+CONFIG_LWIP_TCP_WND_DEFAULT=16384
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=16

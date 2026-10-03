@@ -56,7 +56,7 @@ bool isWellFormedHost(const String& host) {
 // registrar-unidade do servidor aceita, e divergir daqui produziria unidade que a pagina
 // aceita e o broker recusa.
 const size_t kMinUnitCodeLength = 3;
-const size_t kMaxUnitCodeLength = 8;
+const size_t kMaxUnitCodeLength = 12;
 
 bool isUnitCodeChar(char c) {
   return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
@@ -141,7 +141,7 @@ const char* to_string(SettingsValidationError error) {
     case SettingsValidationError::MqttHostInvalid: return "host do broker precisa ser um nome ou IP, sem mqtts:// e sem porta";
     case SettingsValidationError::MqttPortOutOfRange: return "porta do broker precisa ficar entre 1 e 65535";
     case SettingsValidationError::EmptyMqttUser: return "com a telemetria ligada, o usuário do broker não pode ser vazio";
-    case SettingsValidationError::MqttUserInvalid: return "usuário do broker é o código da unidade: 3 a 8 letras minúsculas ou dígitos";
+    case SettingsValidationError::MqttUserInvalid: return "usuário do broker é o código da unidade: 3 a 12 letras minúsculas ou dígitos";
     case SettingsValidationError::MqttPasswordTooShort: return "com a telemetria ligada, a senha do broker precisa ter no mínimo 8 caracteres";
     case SettingsValidationError::MqttPasswordTooLong: return "senha do broker não pode passar de 64 caracteres";
     case SettingsValidationError::TelemetryIntervalOutOfRange: return "intervalo da telemetria precisa ficar entre 30 e 3600 segundos";

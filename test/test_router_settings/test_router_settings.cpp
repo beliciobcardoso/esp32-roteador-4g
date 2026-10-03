@@ -346,10 +346,10 @@ void test_enabled_telemetry_without_user_is_rejected() {
 }
 
 // O usuario e o codigo da unidade e entra no topico (roteador/<usuario>/tel) e na ACL do
-// broker pelo %u. So [a-z0-9], de 3 a 8: nada que vire curinga (+ #) ou separador (/), e
+// broker pelo %u. So [a-z0-9], de 3 a 12: nada que vire curinga (+ #) ou separador (/), e
 // o mesmo formato que o registrar-unidade do servidor aceita.
 void test_unit_codes_in_the_format_are_accepted() {
-  const char* codes[] = {"abc", "sp042", "00731", "042", "12345678", "bancada1"};
+  const char* codes[] = {"abc", "sp042", "00731", "042", "12345678", "bancada1", "obra2026sp42", "123456789012"};
   for (const char* unit : codes) {
     RouterSettings settings = telemetryOn();
     settings.mqtt_user = unit;
@@ -358,7 +358,7 @@ void test_unit_codes_in_the_format_are_accepted() {
 }
 
 void test_unit_codes_out_of_the_format_are_rejected() {
-  const char* codes[] = {"ab", "123456789", "SP042", "sp-42", "a+b", "x/y", "rt#1", "roteador-4g",
+  const char* codes[] = {"ab", "1234567890123", "SP042", "sp-42", "a+b", "x/y", "rt#1", "roteador-4g",
                          "sp 42", "bancadá"};
   for (const char* unit : codes) {
     RouterSettings settings = telemetryOn();
